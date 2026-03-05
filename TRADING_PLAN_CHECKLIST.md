@@ -397,6 +397,224 @@ Notes: _____________
 
 ---
 
+## SECTION 7: SESSION NOTES
+
+*This section is free-form. Write in full sentences, bullet points, or shorthand — whatever helps you process the session honestly. Completeness matters more than polish. The goal is to build a personal trading journal you can audit over time.*
+
+---
+
+### 7.1 Market Conditions Observed Today
+
+**What was the overall market character today?**
+(e.g., trending cleanly, choppy and rangebound, news-driven spike, low-volume grind, high-volatility expansion)
+
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+
+**How did SPY, QQQ, and IWM behave relative to each other?**
+(Were they in sync? Was one leading or lagging? Was there rotation between large-cap and small-cap?)
+
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+
+**Did the market behave as expected given the daily bias, or did it surprise you? How?**
+
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+
+**Where did the key levels (PDH, PDL, VWAP, ORH, ORL) hold or break?**
+(Note which levels acted as strong support/resistance and which failed to hold)
+
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+
+---
+
+### 7.2 What Worked Today
+
+**Setups or decisions that went well (be specific — what was the setup, why did it work):**
+
+1. _______________________________________________________________________________
+   _______________________________________________________________________________
+
+2. _______________________________________________________________________________
+   _______________________________________________________________________________
+
+3. _______________________________________________________________________________
+   _______________________________________________________________________________
+
+**Was there a specific indicator, level, or timeframe that gave especially clean signals today?**
+
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+
+**Did you execute a setup exactly as planned? What made that possible?**
+
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+
+---
+
+### 7.3 What Did Not Work Today
+
+**Setups or decisions that underperformed (be honest — what broke down and why):**
+
+1. _______________________________________________________________________________
+   _______________________________________________________________________________
+
+2. _______________________________________________________________________________
+   _______________________________________________________________________________
+
+**Was there a rule you bent or broke? What was your reasoning in the moment, and was it justified in hindsight?**
+
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+
+**Was there a setup you passed on that you regret missing? Why did you pass, and was that the right call?**
+
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+
+**Was there a trade you took that should have been skipped? What confluence was actually missing?**
+
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+
+---
+
+### 7.4 Emotions and Mental State During the Session
+
+**Describe how you felt at the open (first 15 minutes):**
+(e.g., calm and prepared, anxious, rushed, overconfident, hesitant)
+
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+
+**Was there a specific moment when your emotions shifted during the session? What triggered it?**
+(e.g., a stop out, a missed move, an unexpected news spike, a large winning trade)
+
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+
+**Did you experience any of the following? (Circle or mark all that apply)**
+
+- FOMO (chased price after missing a move)
+- Revenge trading (entered after a loss to "make it back")
+- Overconfidence (sized up or skipped confluence checks after a win)
+- Paralysis (hesitated on a valid setup due to fear)
+- Boredom (entered a low-quality setup because the session felt slow)
+- Frustration (let emotion affect stop placement or trade management)
+
+**Notes on emotional triggers observed today:**
+
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+
+**What is one mental or behavioral adjustment you can make in the next session?**
+
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+
+---
+
+### 7.5 Patterns and Setups Noticed
+
+*Use this space to document any recurring patterns, price action sequences, or structural behaviors you noticed today — even if you did not trade them. This builds your pattern library over time.*
+
+**Pattern / Setup #1:**
+- Name or description: _______________________________________________________________
+- Instrument and timeframe: _________________________________________________________
+- What triggered it: _________________________________________________________________
+- How it resolved: __________________________________________________________________
+- Would this qualify under the checklist rules? Yes / No / Partially
+- Notes: ___________________________________________________________________________
+
+**Pattern / Setup #2:**
+- Name or description: _______________________________________________________________
+- Instrument and timeframe: _________________________________________________________
+- What triggered it: _________________________________________________________________
+- How it resolved: __________________________________________________________________
+- Would this qualify under the checklist rules? Yes / No / Partially
+- Notes: ___________________________________________________________________________
+
+**Pattern / Setup #3:**
+- Name or description: _______________________________________________________________
+- Instrument and timeframe: _________________________________________________________
+- What triggered it: _________________________________________________________________
+- How it resolved: __________________________________________________________________
+- Would this qualify under the checklist rules? Yes / No / Partially
+- Notes: ___________________________________________________________________________
+
+**Any new patterns emerging that are worth tracking across future sessions?**
+
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+
+---
+
+### 7.6 General Observations and Free-Form Notes
+
+*Anything else worth capturing — market structure shifts, breadth observations, volume behavior, sector rotation, news impact, or anything that felt notable and does not fit elsewhere.*
+
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+
+---
+
+### 7.7 Tomorrow's Focus
+
+*This section carries your lessons forward. Write it at the end of today's session so tomorrow's you starts with intention, not just routine.*
+
+**One rule or discipline point I must reinforce tomorrow:**
+
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+
+**One technical skill or setup I want to execute more cleanly tomorrow:**
+
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+
+**Key levels to watch tomorrow (pre-mark before the session opens):**
+
+- Potential support levels: _________________________________________________________
+- Potential resistance levels: ________________________________________________________
+- Critical level to monitor (make-or-break for bias): _____________________________________
+
+**Any news events or catalysts scheduled tomorrow that could affect the session?**
+
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+
+**My mental and physical preparation plan for tomorrow:**
+(e.g., sleep, exercise, screen time before open, meditation, review this journal entry)
+
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+
+**Intention for tomorrow's session (one sentence — write it like a commitment):**
+
+> _______________________________________________________________________________
+> _______________________________________________________________________________
+
+---
+
+**Session Notes Completed:** Date: _______________ Time: _______________
+
+---
+
 *This checklist is a living document. Review it after each session and update it as your edge evolves. Discipline is the edge. Execution is the skill. Capital preservation is the mission.*
 
 **Last Updated: 2026-03-04**
