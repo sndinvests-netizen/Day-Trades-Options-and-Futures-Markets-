@@ -1,5 +1,9 @@
 # TRADING QUICK REFERENCE — Futures & Options Day Trading
+
+> **Single-page session sheet.** Fill in the header fields before the open. Work top to bottom during the session. For full detail on any section, see [TRADING_PLAN_CHECKLIST.md](./TRADING_PLAN_CHECKLIST.md).
+
 **Window: 9:30–11:00 AM ET ONLY | No trades outside this window. No exceptions.**
+
 Date: ___________ Instrument: ___________ Bias: LONG / SHORT
 
 ---
@@ -31,7 +35,7 @@ Date: ___________ Instrument: ___________ Bias: LONG / SHORT
 - [ ] ORH-5: _______ ORL-5: _______ ORH-15: _______ ORL-15: _______
 - [ ] Price above VWAP (bullish) / below VWAP (bearish)?
 - [ ] VWAP position agrees with daily 50 MA bias? Yes / No
-- [ ] Opening price action confirms bias? (2 of 3 required to trade)
+- [ ] Opening price action confirms bias? (2 of 3 required to proceed)
   - [ ] Price action (HH/HL or LH/LL) confirms bias
   - [ ] VWAP position confirms bias
   - [ ] Opening range location confirms bias
@@ -49,7 +53,7 @@ Date: ___________ Instrument: ___________ Bias: LONG / SHORT
 - [ ] No FOMO entries, no revenge trades
 
 **Before each trade — emotional check:**
-- [ ] Emotional state (1=calm, 10=anxious): _____ — if 7+, do not trade
+- [ ] Emotional state (1 = calm, 10 = anxious): _____ — if 7 or higher, do not trade
 - [ ] Trying to make back a loss? → STOP
 - [ ] Chasing a move just missed? → WAIT
 
@@ -63,7 +67,7 @@ Date: ___________ Instrument: ___________ Bias: LONG / SHORT
 
 | Gate | Check |
 |------|-------|
-| Within 9:30–11:00 AM window? | Yes / NO TRADE |
+| Within 9:30–11:00 AM window? | Yes / **NO TRADE** |
 | Aligns with daily bias (50 MA)? | Yes / needs 3+ confluence |
 | Clean break of a key level? | Yes / No |
 | Break retested (ORBT pattern)? | Yes / No |
@@ -71,8 +75,8 @@ Date: ___________ Instrument: ___________ Bias: LONG / SHORT
 | 5m confirms setup forming? | Yes / No |
 | 2m confirms entry trigger? | Yes / No |
 | Price on correct side of VWAP? | Yes / No |
-| R/R minimum 1:2? | Yes / NO TRADE |
-| Confluence score 3/5 minimum? | ___/5 — if <3, skip |
+| R/R minimum 1:2? | Yes / **NO TRADE** |
+| Confluence score 3/5 minimum? | ___/5 — if below 3, skip |
 
 **Confluence Scorecard (need 3 of 5):**
 - [ ] (1) Daily bias alignment (50 MA)
@@ -101,7 +105,7 @@ Date: ___________ Instrument: ___________ Bias: LONG / SHORT
 **Pre-session (set once before open):**
 - [ ] Max risk per trade: $_______ (___% of account)
 - [ ] Daily max loss limit: $_______ — if hit, STOP trading
-- [ ] Size formula: Risk $ / (Entry – Stop) = shares/contracts
+- [ ] Size formula: Risk $ ÷ (Entry – Stop) = shares/contracts
 
 **Stop loss rules:**
 - [ ] Stop anchored to structure — not a round number
@@ -113,7 +117,7 @@ Date: ___________ Instrument: ___________ Bias: LONG / SHORT
 - [ ] Let remainder run to Target 2 with trailing stop
 - [ ] Never let a winner turn into a loser without a stop in place
 
-**Loss management:**
+**Loss escalation protocol:**
 - [ ] At 50% of daily max loss → cut position size in half
 - [ ] At 100% of daily max loss → close platform, session over
 
@@ -125,10 +129,18 @@ Date: ___________ Instrument: ___________ Bias: LONG / SHORT
 - Trades: _____ W: _____ L: _____ BE: _____ Net P&L: $_______
 - Stayed in 90-min window? Yes / No
 
-**Rule compliance (circle violations):**
-Window | Bias alignment | Key levels marked | 1:2 R/R | Stops honored | No averaging down | No revenge trading | Emotional check done | Loss limit respected
+**Rule compliance (mark any violations):**
+- [ ] Window respected
+- [ ] Bias alignment followed
+- [ ] Key levels marked before trading
+- [ ] 1:2 R/R minimum met on all trades
+- [ ] Stops honored — none moved against position
+- [ ] No averaging down on losing trades
+- [ ] No revenge trading after a loss
+- [ ] Emotional check run before each trade
+- [ ] Daily loss limit not breached
 
-**Scores:**
+**Session scores:**
 - Discipline (rules followed): ___ /10
 - Execution (entry/manage/exit): ___ /10
 - Setup quality (high-probability only): ___ /10
@@ -154,5 +166,7 @@ Window | Bias alignment | Key levels marked | 1:2 R/R | Stops honored | No avera
 **News tomorrow:** ___________________________________________________
 
 ---
+
 *Discipline is the edge. Execution is the skill. Capital preservation is the mission.*
-*Full detail: TRADING_PLAN_CHECKLIST.md | Updated: 2026-03-04*
+
+*Full detail: [TRADING_PLAN_CHECKLIST.md](./TRADING_PLAN_CHECKLIST.md) | Indicator notes: [Ripstercloud.md](./Ripstercloud.md) | Updated: 2026-03-06*

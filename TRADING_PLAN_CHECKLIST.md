@@ -6,6 +6,21 @@
 
 ---
 
+## TABLE OF CONTENTS
+
+1. [Pre-Market Preparation](#section-1-pre-market-preparation-before-930-am-et)
+2. [Market Open Routine](#section-2-market-open-routine-930-am--945-am-et)
+3. [Active Trading Session — Rules and Discipline](#section-3-active-trading-session--rules-and-discipline-930-am--1100-am-et)
+4. [Trade Setup Evaluation Criteria](#section-4-trade-setup-evaluation-criteria)
+5. [Risk Management Rules](#section-5-risk-management-rules)
+6. [Post-Session Debrief and Review](#section-6-post-session-debrief-and-review-after-1100-am-et)
+7. [Pre-Trade Decision Tree](#quick-reference-pre-trade-decision-tree)
+8. [Key Indicator Quick Reference](#key-indicator-quick-reference)
+9. [Trade Setup Template](#trade-setup-template-copy-for-each-trade)
+10. [Session Notes](#section-7-session-notes)
+
+---
+
 ## SECTION 1: PRE-MARKET PREPARATION (Before 9:30 AM ET)
 
 ### 1.1 Market Bias — Daily Chart Review
@@ -306,6 +321,8 @@ ___________________________
 
 ## QUICK REFERENCE: PRE-TRADE DECISION TREE
 
+> Use this flow before every trade entry. All gates must pass before executing.
+
 ```
 Is it between 9:30 AM and 11:00 AM ET?
         |
@@ -363,6 +380,8 @@ Enter stop loss immediately. Define targets. Manage the trade per your plan.
 
 ## KEY INDICATOR QUICK REFERENCE
 
+> Quick-scan reference for assessing bias at a glance. See Section 4 for full confluence scoring rules.
+
 | Indicator | Bullish Signal | Bearish Signal |
 |-----------|---------------|----------------|
 | 50 MA (Daily) | Price above | Price below |
@@ -377,6 +396,8 @@ Enter stop loss immediately. Define targets. Manage the trade per your plan.
 
 ## TRADE SETUP TEMPLATE (Copy for Each Trade)
 
+> Print or duplicate this block for every trade. Complete it before entry, not after.
+
 ```
 Date: _____________ Time: _____________
 Instrument: _____________
@@ -384,12 +405,13 @@ Direction: Long / Short
 Timeframe: 15m / 5m / 2m
 Trigger: _____________
 Entry: _____________ Stop: _____________ Target 1: _____________ Target 2: _____________
-R/R Ratio: _____________
+R/R Ratio: _____________  (must be 1:2 minimum — if below 1:2, do not enter)
 Daily Bias Alignment: Yes / No
-Confluence (min 3):
+Confluence (min 3 of 5 required):
   1. _____________
   2. _____________
   3. _____________
+  Score: ___ / 5
 Result: Win / Loss / Breakeven
 P&L: $_____________
 Notes: _____________
@@ -617,4 +639,10 @@ Notes: _____________
 
 *This checklist is a living document. Review it after each session and update it as your edge evolves. Discipline is the edge. Execution is the skill. Capital preservation is the mission.*
 
-**Last Updated: 2026-03-04**
+---
+
+**Related Documents:**
+- [TRADING_QUICK_REFERENCE.md](./TRADING_QUICK_REFERENCE.md) — condensed single-page version for use during the live session
+- [Ripstercloud.md](./Ripstercloud.md) — EMA cloud indicator reference
+
+**Last Updated: 2026-03-06**
