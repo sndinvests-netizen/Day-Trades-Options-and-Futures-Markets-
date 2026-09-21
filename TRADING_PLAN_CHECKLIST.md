@@ -61,6 +61,15 @@ For each major index, note the MA stack:
 - [ ] Confirm liquidity and spreads are acceptable
 - [ ] Set position size based on today's risk allocation (see Section 5)
 
+### 1.6 Watchlist
+
+- [ ] INTC
+- [ ] TSLA
+- [ ] AMD
+- [ ] AAPL
+- [ ] QQQ
+- [ ] SPY
+
 ---
 
 ## SECTION 2: MARKET OPEN ROUTINE (9:30 AM – 9:45 AM ET)
