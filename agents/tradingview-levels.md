@@ -33,8 +33,10 @@ own Chrome, where they're logged in to TradingView. You're a charting assistant,
 
 ## Step 1: Compute the levels (before touching the chart)
 Prior day = the most recent **completed** session for that market, so skip weekends and market holidays.
+A run after the session closes (e.g. after 20:00 ET for US stocks) uses *that same day's* session as the "prior day" for the next session. Say which date you used.
 
 **Primary source:** pull intraday bars with extended hours, e.g. `curl -s -A "Mozilla/5.0" "https://query1.finance.yahoo.com/v8/finance/chart/<SYM>?interval=5m&range=5d&includePrePost=true"`. Compute max(high) and min(low) over the session window in that market's timezone.
+**Filter bad prints first:** Yahoo's extended-hours data has bad ticks, e.g. SPY low 711 and INTC low 40 on 2026-09-30. Drop any bar whose high or low is more than 3% away from the median close of the session, and report how many were dropped.
 
 **Yahoo symbols:**
 - Stocks: as-is (SPY).
@@ -42,15 +44,21 @@ Prior day = the most recent **completed** session for that market, so skip weeke
 - Crypto: `BTC-USD`.
 - Forex: `EURUSD=X`.
 
-**Cross-check on TradingView:** with extended hours on and a 5m–15m chart, hover the prior session's extreme bars (or use the Data Window), and confirm the high and low match within one tick.
+**Cross-check on TradingView, which is required, not optional:**
+- Use the chart API to read the bars: `TradingViewApi.activeChart().getSeries().data().each(...)` gives OHLC.
+- Switch to extended hours with `getSeries().properties().sessionId.setValue('extended')` on a 5m chart.
+- Confirm the high and low match within one tick.
+- About 1.7 extended days of 5m history load. If the prior day is only partly covered, say so.
+- `exportData` and `setVisibleRange` aren't available.
 - **If they differ:** trust TradingView's feed (it's what the user trades from), note the discrepancy, and use TradingView's value.
 - **TradingView continuous futures** (`ES1!`) can differ from Yahoo `ES=F` around rollover. Prefer TradingView's values there.
 
 ## Step 2: Draw on the chart
 1. **Your own tab:** call `tabs_context_mcp`, then open your own new tab at `https://www.tradingview.com/chart/`. If the user has a specific saved layout URL, use it. Load the user's named symbol.
+   **Check login first.** Take a screenshot of the header. A guest session shows "Join for free", "Sign in" or "Upgrade", and guests can't draw ("Join for free to access horizontal line…"). If you're logged out, compute and cross-check the levels anyway, report them for manual drawing, and tell the user to log in to TradingView in Chrome themselves. Never log in for them.
 2. **Remove yesterday's lines.** Remove any existing lines whose text starts with `PDH ` or `PDL ` (yours from earlier runs) before drawing new ones. Never remove other drawings.
 3. **Preferred method: the in-page charting API.** In `javascript_tool`, check whether `window.TradingViewApi` exists. If it does, use:
-   - `TradingViewApi.activeChart().createShape({price: <level>}, {shape: 'horizontal_line', text: 'PDH <level>', overrides: {linecolor: '#E53935', linewidth: 1, showLabel: true, textcolor: '#E53935', horzLabelsAlign: 'right'}})`
+   - `TradingViewApi.activeChart().createShape({time: <unix seconds of the latest bar>, price: <level>}, {shape: 'horizontal_line', text: 'PDH <level>', overrides: {linecolor: '#E53935', linewidth: 1, showLabel: true, textcolor: '#E53935', horzLabelsAlign: 'right'}})`
    - `getAllShapes()` and `removeEntity(id)` to clean up the old lines. Check the line's text with `getShapeById(id).getProperties()`.
    - Then read the shapes back to verify the price and text.
 4. **Fallback: the UI.**
