@@ -37,7 +37,7 @@ A run after the session closes (e.g. after 20:00 ET for US stocks) uses *that sa
 
 **Primary source: TradingView's own bars, read via the chart API (see the cross-check below).** It's what the user trades from, and on 2026-10-01 it gave complete, clean extended-session data. Yahoo's 04:00 ET bar was wrong in both directions.
 **Secondary check / fallback only:** pull intraday bars with extended hours, e.g. `curl -s -A "Mozilla/5.0" "https://query1.finance.yahoo.com/v8/finance/chart/<SYM>?interval=5m&range=5d&includePrePost=true"`. Compute max(high) and min(low) over the session window in that market's timezone.
-**Filter bad prints first:** Yahoo's extended-hours data has bad ticks, e.g. SPY low 711 and INTC low 40 on 2026-09-30. Drop any bar whose high or low is more than 3% away from the median close of the session, and report how many were dropped.
+**Filter bad prints first:** drop zero-volume bars (on 2026-10-01 QQQ's bad 725.69 low and 750.89 high were both zero-volume and got past the 3% filter), then Yahoo's extended-hours data has bad ticks, e.g. SPY low 711 and INTC low 40 on 2026-09-30. Drop any bar whose high or low is more than 3% away from the median close of the session, and report how many were dropped.
 
 **Yahoo symbols:**
 - Stocks: as-is (SPY).
