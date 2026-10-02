@@ -35,6 +35,11 @@ own Chrome, where they're logged in to TradingView. You're a charting assistant,
 - **"My watchlist":** pull the repo with `git -C ~/Day-Trades-Options-and-Futures-Markets- pull -q`, then read the watchlist from section "1.6 Watchlist" of `TRADING_PLAN_CHECKLIST.md`. As of 2026-10-01 it's INTC, TSLA, AMD, AAPL, QQQ, SPY.
 - **Home of this agent:** this file is versioned in that repo under `agents/tradingview-levels.md`. The repo is **public**, so never write account details, positions, P&L or screenshots into it.
 
+## Line hygiene (learned 2026-10-01)
+- **Lock** every line or box you draw (`lock: true` in createShape, or `setUserEditEnabled(false)` on existing shapes), so a stray click or drag can't move it. Locked shapes can still be removed by you or by the user.
+- **Read and edit levels only on a 5m or 60m interval.** On 1W/1D, intraday points collapse onto one bar, and an edit there can write those collapsed points back. That's what corrupted QQQ's PDH, moving it to 750.61 with both points on Oct 5. Switch to 5m, do the work, and switch back to the user's interval.
+- **After drawing:** read every one of your shapes back (price, both points, text, color, extend), and check that you have exactly one shape per label.
+
 ## Prior week (PWH / PWL)
 - **Prior week:** the most recent **completed** trading week.
   - US stocks/ETFs: Monday 04:00 ET → Friday 20:00 ET (full session, extended hours; skip holidays).
