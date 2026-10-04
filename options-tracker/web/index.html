@@ -145,7 +145,12 @@ dialog::backdrop { background: rgba(10,20,35,.45); backdrop-filter: blur(2px); }
 .legs th, .legs td { text-align: left; }
 .legs td { padding: 6px 8px; }
 .legs select, .legs input { padding: 5px 7px; }
-.legs input.qty { width: 64px; }
+.legs input.qty { width: 52px; -moz-appearance: textfield; }
+.legs input.qty::-webkit-inner-spin-button, .legs input.qty::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+/* qty stepper: small embossed up/down arrows beside the box */
+.stepper { display: inline-flex; align-items: stretch; gap: 4px; }
+.stepper .steps { display: flex; flex-direction: column; gap: 3px; }
+button.ghost.step { padding: 0 10px; height: 17px; font-size: 10px; line-height: 1; border-radius: 5px; display: flex; align-items: center; justify-content: center; }
 .legs input.price { width: 92px; }
 .legs tr.buy td:first-child { box-shadow: inset 3px 0 0 var(--up); }
 .legs tr.sell td:first-child { box-shadow: inset 3px 0 0 var(--down); }
@@ -970,7 +975,8 @@ function renderLegs() {
       const g = stock ? { delta: 1 } : bsGreeks(l.type, B.spot, l.strike, (expMs(l.exp) - Date.now()) / YEAR, legIv(l, 1));
       return `<tr class="${l.side}" data-i="${i}">
         <td><select data-f="side"><option value="buy" ${l.side === "buy" ? "selected" : ""}>Buy</option><option value="sell" ${l.side === "sell" ? "selected" : ""}>Sell</option></select></td>
-        <td><input class="qty" data-f="qty" type="number" min="1" step="1" value="${l.qty}" title="${stock ? "lots of 100 shares" : "contracts"}"></td>
+        <td><div class="stepper"><input class="qty" data-f="qty" type="number" min="1" step="1" value="${l.qty}" title="${stock ? "lots of 100 shares" : "contracts"}">
+          <span class="steps"><button type="button" class="ghost step" data-step="1" aria-label="Increase quantity">▲</button><button type="button" class="ghost step" data-step="-1" aria-label="Decrease quantity">▼</button></span></div></td>
         <td><select data-f="type">${["call", "put", "stock"].map(t => `<option value="${t}" ${l.type === t ? "selected" : ""}>${t === "stock" ? "Stock (100 sh)" : t[0].toUpperCase() + t.slice(1)}</option>`).join("")}</select></td>
         <td>${stock ? '<span class="note">–</span>' : `<select data-f="exp">${B.exps.map(e => `<option value="${e}" ${e === l.exp ? "selected" : ""}>${e}</option>`).join("")}</select>`}</td>
         <td>${stock ? '<span class="note">–</span>' : `<select data-f="strike">${(ks.includes(l.strike) ? ks : [l.strike, ...ks].sort((a, b) => a - b)).map(k => `<option value="${k}" ${k === l.strike ? "selected" : ""}>${f2(k)}</option>`).join("")}</select>`}</td>
@@ -1014,6 +1020,14 @@ $("#bLegs").addEventListener("change", async e => {
   renderBuilder();
 });
 $("#bLegs").addEventListener("click", e => {
+  const step = e.target.closest("button[data-step]");
+  if (step) {
+    const l = B.legs[+step.closest("tr[data-i]").dataset.i];
+    l.qty = Math.max(1, l.qty + (+step.dataset.step));
+    B.strategy = "Custom";
+    renderBuilder();
+    return;
+  }
   const i = e.target.dataset.del;
   if (i == null) return;
   B.legs.splice(+i, 1);
