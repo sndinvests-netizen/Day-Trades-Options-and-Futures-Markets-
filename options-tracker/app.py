@@ -161,8 +161,17 @@ class Handler(BaseHTTPRequestHandler):
                 tracker.save(DB, trades)
             return out
 
+        def delete():
+            with db_lock:
+                trades = tracker.load(DB)
+                out = tracker.delete_position(trades, num(body, "id", int))
+                tracker.save(DB, trades)
+            return out
+
         if path == "/api/trades":
             self.guard(add)
+        elif path == "/api/trades/delete":
+            self.guard(delete)
         elif path == "/api/trades/close":
             self.guard(close)
         elif path == "/api/positions":

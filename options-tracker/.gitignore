@@ -2,3 +2,4 @@ trades.json
 __pycache__/
 *.pyc
 .venv/
+trades.json.bak

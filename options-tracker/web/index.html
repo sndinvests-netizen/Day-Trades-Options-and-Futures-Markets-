@@ -87,6 +87,10 @@ button.primary { background: linear-gradient(180deg, var(--pri-top), var(--pri-b
   box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 2px 0 var(--pri-edge), 0 4px 10px var(--btn-drop); color: #072c50; }
 button.primary:hover { filter: brightness(1.05); background: linear-gradient(180deg, var(--pri-top), var(--pri-bot)); }
 button.small { padding: 3px 10px; font-size: 12px; border-radius: 7px; }
+button.danger { color: #b3261e; }
+button.danger.primary { color: #fff; text-shadow: none; background: linear-gradient(180deg, #f07a72, #d9473d); border-color: #c0392f;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 2px 0 #9e2c24, 0 4px 10px var(--btn-drop); }
+button.danger.primary:hover { filter: brightness(1.06); background: linear-gradient(180deg, #f07a72, #d9473d); }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 .chip { border-radius: 999px; padding: 3px 13px; font-size: 12px; }
 
@@ -400,6 +404,15 @@ tr.pos-leg td.contract { padding-left: 24px; }
     <div class="formerr" id="saveErr"></div>
     <div class="actions"><button class="ghost" type="button" data-close>Cancel</button><button class="primary" type="submit">Save</button></div>
   </form>
+</dialog>
+
+<dialog id="delDlg">
+  <h2 id="delTitle">Delete trade?</h2>
+  <ul id="delList" style="margin:8px 0 10px;padding-left:18px;line-height:1.7"></ul>
+  <p class="note">This removes it from My Trades and your results, as if it was never logged. Use it for input mistakes; to record a real exit, use Close instead.
+    The file from just before the delete is kept as <code>trades.json.bak</code>.</p>
+  <div class="formerr" id="delErr"></div>
+  <div class="actions"><button class="ghost" type="button" data-close>Cancel</button><button class="primary danger" type="button" id="delGo">Delete</button></div>
 </dialog>
 
 <dialog id="closePosDlg">
@@ -1334,9 +1347,9 @@ function renderTrades() {
     ["Paid for long options", usd(d.long_cost), ""],
   ].map(([k, v, s]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
 
-  const head = `<thead><tr><th class="left">#</th><th class="left">Position</th><th class="left">Side</th><th>Qty</th><th>Entry</th><th>Stock</th>
+  const head = `<thead><tr><th class="left">#</th><th class="left">Position</th><th></th><th class="left">Side</th><th>Qty</th><th>Entry</th><th>Stock</th>
     <th>Bid / Ask</th><th>Mark</th><th>Unrealized</th><th>Position delta</th><th>DTE</th><th>Breakeven</th>
-    <th>Max profit</th><th>Max loss</th><th class="left">Alerts</th><th></th></tr></thead>`;
+    <th>Max profit</th><th>Max loss</th><th class="left">Alerts</th></tr></thead>`;
   const legCells = t => {
     const q = t.live;
     return `<td class="left">${t.side === "buy" ? "Long" : "Short"}</td><td>${t.contracts}</td><td>${f2(t.premium)}</td>
@@ -1359,14 +1372,15 @@ function renderTrades() {
       const sub = { Hop: "90 days or less at open", Skip: "91–360 days at open", Leap: "over 360 days at open" }[cat];
       return `<h3>${cat} <span class="note" style="text-transform:none;letter-spacing:0">${sub}</span></h3><div class="scroll"><table>${head}<tbody>` +
         ps.map(p => {
-          const buttons = `<button class="ghost small" data-builder="${posKey(p)}">Builder</button> <button class="ghost small" data-close-key="${posKey(p)}">Close</button>`;
+          const buttons = `<button class="ghost small" data-builder="${posKey(p)}">Builder</button> <button class="ghost small" data-close-key="${posKey(p)}">Close</button> <button class="ghost small danger" data-del-id="${p[0].id}" title="Delete a trade logged by mistake">Delete</button>`;
           if (p.length === 1) {
             const t = p[0], s = t.stats;
             return `<tr><td class="left">${t.id}</td>
               <td class="left"><b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp || ""}${t.notes ? `<div class="note">${esc(t.notes)}</div>` : ""}</td>
+              <td style="white-space:nowrap">${buttons}</td>
               ${legCells(t)}<td>${f2(s.breakeven)}</td><td>${usd(s.max_profit)}</td><td>${usd(s.max_loss)}</td>
               <td class="left">${alertHtml(alertsOf(p))}${s.annualized != null ? `<div class="note">${pct(s.annualized)} annualized</div>` : ""}</td>
-              <td style="white-space:nowrap">${buttons}</td></tr>`;
+</tr>`;
           }
           const spot = (p.find(t => t.live) || {}).live?.spot;
           const a = spot ? analyze(legsForEngine(p), spot, 0) : null;
@@ -1377,13 +1391,14 @@ function renderTrades() {
           const dtes = p.map(t => t.dte).filter(x => x != null);
           const headRow = `<tr class="pos-head"><td class="left">P${p[0].group}</td>
             <td class="left"><b>${esc(p[0].ticker)}</b> ${esc(p[0].strategy)} <span class="note">· ${p.length} legs${p[0].notes ? " · " + esc(p[0].notes) : ""}</span></td>
+            <td style="white-space:nowrap">${buttons}</td>
             <td class="left">${net >= 0 ? "Debit" : "Credit"}</td><td></td><td>${usd(Math.abs(net))}</td><td>${spot ? f2(spot) : "–"}</td><td></td>
             <td>${usd(Math.abs(now))}</td><td class="${signed(un)}">${usd(un, true)}</td>
             <td>${(delta > 0 ? "+" : "") + delta.toFixed(0)} sh</td><td>${dtes.length ? Math.min(...dtes) : "–"}</td>
             <td>${a && a.bes.length ? a.bes.slice(0, 2).map(f2).join(" / ") : "–"}</td>
             <td>${a ? (a.maxP == null ? "unlimited" : usd(a.maxP)) : "–"}</td><td>${a ? (a.maxL == null ? "unlimited" : usd(-a.maxL)) : "–"}</td>
-            <td class="left">${alertHtml(alertsOf(p))}</td><td style="white-space:nowrap">${buttons}</td></tr>`;
-          return headRow + p.map(t => `<tr class="pos-leg"><td class="left">${t.id}</td><td class="left contract">${esc(t.label)} ${t.exp || ""}</td>${legCells(t)}<td colspan="5"></td><td></td></tr>`).join("");
+            <td class="left">${alertHtml(alertsOf(p))}</td></tr>`;
+          return headRow + p.map(t => `<tr class="pos-leg"><td class="left">${t.id}</td><td class="left contract">${esc(t.label)} ${t.exp || ""}</td><td></td>${legCells(t)}<td colspan="4"></td></tr>`).join("");
         }).join("") + "</tbody></table></div>";
     }).join("");
   }
@@ -1396,11 +1411,12 @@ function renderTrades() {
 
   $("#closed").innerHTML = d.closed.length
     ? `<thead><tr><th class="left">#</th><th class="left">Contract</th><th class="left">Side</th><th>Qty</th><th class="left">Group</th><th>Opened</th><th>Closed</th>
-        <th class="left">How</th><th>Entry</th><th>Exit</th><th>Realized</th></tr></thead><tbody>` +
+        <th class="left">How</th><th>Entry</th><th>Exit</th><th>Realized</th><th></th></tr></thead><tbody>` +
       [...d.closed].reverse().map(t => `<tr><td class="left">${t.id}</td><td class="left"><b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp || ""}${t.group ? ` <span class="note">${esc(t.strategy)} P${t.group}</span>` : ""}</td>
         <td class="left">${t.side === "buy" ? "Long" : "Short"}</td><td>${t.contracts}</td><td class="left">${t.category}</td><td>${t.opened}</td><td>${t.closed}</td>
         <td class="left">${t.status}</td><td>${f2(t.premium)}</td><td>${f2(t.exit_premium)}</td>
-        <td class="${signed(t.realized)}">${usd(t.realized, true)}</td></tr>`).join("") + "</tbody>"
+        <td class="${signed(t.realized)}">${usd(t.realized, true)}</td>
+        <td><button class="ghost small danger" data-del-id="${t.id}" title="Delete a trade logged by mistake">Delete</button></td></tr>`).join("") + "</tbody>"
     : '<tbody><tr><td class="left note">No closed trades yet.</td></tr></tbody>';
 }
 
@@ -1410,11 +1426,36 @@ $("#newTrade").onclick = () => openAdd({});
 $("#openGroups").onclick = e => {
   const b = e.target.closest("button");
   if (!b) return;
+  if (b.dataset.delId) return openDelete(+b.dataset.delId);
   if (b.dataset.builder) openInBuilder(positionByKey(b.dataset.builder));
   if (b.dataset.closeKey) {
     const p = positionByKey(b.dataset.closeKey);
     if (p.length === 1) openClose(p[0].id); else openClosePosition(p);
   }
+};
+
+$("#closed").onclick = e => { const b = e.target.closest("button[data-del-id]"); if (b) openDelete(+b.dataset.delId); };
+
+/* ---- delete a trade logged by mistake ---- */
+let deletingId = null;
+function openDelete(id) {
+  const all = [...tradeData.open, ...tradeData.closed];
+  const t = all.find(x => x.id === id);
+  if (!t) return;
+  const legs = t.group ? all.filter(x => x.group === t.group) : [t];
+  deletingId = id;
+  $("#delTitle").textContent = legs.length > 1 ? `Delete ${t.ticker} ${t.strategy} (all ${legs.length} legs)?` : `Delete trade #${t.id}?`;
+  $("#delList").innerHTML = legs.map(x => `<li>${x.side === "buy" ? "Bought" : "Sold"} ${x.contracts} ${esc(x.ticker)} ${esc(x.label)} ${x.exp || ""} @ ${f2(x.premium)}
+    <span class="note">(${x.status === "open" ? "open" : x.status + " " + usd(x.realized, true)})</span></li>`).join("");
+  $("#delErr").textContent = "";
+  $("#delDlg").showModal();
+}
+$("#delGo").onclick = async () => {
+  try {
+    await api("/api/trades/delete", { id: deletingId });
+    $("#delDlg").close();
+    loadTrades();
+  } catch (err) { $("#delErr").textContent = err.message; }
 };
 
 /* ================= dialogs ================= */

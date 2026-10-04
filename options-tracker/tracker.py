@@ -21,6 +21,7 @@ Usage examples:
 import argparse
 import json
 import os
+import shutil
 import sys
 from datetime import date, datetime
 
@@ -42,6 +43,9 @@ def load(db):
 
 
 def save(db, trades):
+    # Keep the previous version as trades.json.bak, so one bad edit or delete can be undone.
+    if os.path.exists(db):
+        shutil.copyfile(db, db + ".bak")
     with open(db, "w") as f:
         json.dump(trades, f, indent=2)
 
@@ -212,6 +216,21 @@ def add_position(trades, ticker, legs, strategy="", fees=0.0, opened=None, notes
     return out
 
 
+def delete_position(trades, trade_id):
+    """Remove a trade logged by mistake, open or closed, and return what was removed.
+
+    A leg of a multi-leg position takes the whole position with it, so a spread is
+    never left half-deleted.
+    """
+    t = next((t for t in trades if t["id"] == trade_id), None)
+    if t is None:
+        raise TradeError(f"No trade #{trade_id}")
+    removed = [x for x in trades if x.get("group") == t["group"]] if t.get("group") else [t]
+    ids = {x["id"] for x in removed}
+    trades[:] = [x for x in trades if x["id"] not in ids]
+    return removed
+
+
 def close_position(trades, legs, fees=0.0, closed=None):
     """Close several legs at once: legs = [{"id": .., "premium": exit price}].
 
@@ -267,6 +286,19 @@ def cmd_add(args, trades):
     verb = "Bought" if args.side == "buy" else "Sold"
     print(f"#{trade['id']} {verb} {args.contracts} {trade['ticker']} {args.exp} {label(trade)} "
           f"@ {args.premium:.2f}  [{trade['category']}, {trade['dte_at_open']} DTE]")
+
+
+def cmd_delete(args, trades):
+    t = next((t for t in trades if t["id"] == args.id), None)
+    if t is None:
+        sys.exit(f"No trade #{args.id}")
+    legs = [x for x in trades if x.get("group") == t["group"]] if t.get("group") else [t]
+    for x in legs:
+        print(f"  #{x['id']} {x['side']} {x['contracts']} {x['ticker']} {label(x)} {x['exp'] or ''} @ {x['premium']:.2f} ({x['status']})")
+    if not args.yes:
+        sys.exit(f"Run again with --yes to delete {'these ' + str(len(legs)) + ' legs' if len(legs) > 1 else 'this trade'}.")
+    delete_position(trades, args.id)
+    print(f"Deleted {len(legs)} leg(s). The previous file is saved as trades.json.bak.")
 
 
 def cmd_close(args, trades):
@@ -431,10 +463,15 @@ def main(argv=None):
 
     sub.add_parser("report", help="win rate and realized P&L by Hop/Skip/Leap, side, and ticker")
 
+    d = sub.add_parser("delete", help="delete a trade logged by mistake (a multi-leg position goes as a whole)")
+    d.add_argument("id", type=int)
+    d.add_argument("--yes", action="store_true", help="actually delete (without it, just shows what would go)")
+
     args = p.parse_args(argv)
     trades = load(args.db)
-    {"add": cmd_add, "close": cmd_close, "list": cmd_list, "report": cmd_report}[args.cmd](args, trades)
-    if args.cmd in ("add", "close"):
+    {"add": cmd_add, "close": cmd_close, "delete": cmd_delete, "list": cmd_list,
+     "report": cmd_report}[args.cmd](args, trades)
+    if args.cmd in ("add", "close", "delete"):
         save(args.db, trades)
 
 

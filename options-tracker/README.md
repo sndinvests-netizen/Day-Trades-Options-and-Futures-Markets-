@@ -44,6 +44,7 @@ Your trades are saved to `options-tracker/trades.json`, which is kept out of git
 - Live quote, unrealized P&L, position delta, days left, breakeven, max profit and max loss for each position.
 - Assignment warnings on short options.
 - Close a trade as bought/sold to close, expired, or assigned. A multi-leg position closes all at once, with an exit price for each leg.
+- **Delete** a trade logged by mistake (open or closed). It asks first, a multi-leg position is deleted as a whole, and the file from just before is kept as `trades.json.bak`.
 - Results: win rate and realized P&L by group, by bought vs sold puts and calls, multi-leg, and by ticker. A spread counts as one position.
 
 ## Command line
@@ -69,6 +70,10 @@ python3 tracker.py close 5 --assigned --premium 8  # assigned; 8 = intrinsic val
 
 # Win rate and realized P&L
 python3 tracker.py report
+
+# Delete a trade logged by mistake (shows what would go; add --yes to delete)
+python3 tracker.py delete 7
+python3 tracker.py delete 7 --yes
 ```
 
 ## Notes
