@@ -307,7 +307,7 @@ tr.pos-leg td.contract { padding-left: 24px; }
             <span class="note"><span style="color:var(--up)">━</span> at expiration &nbsp; <span style="color:#5fa4e8">╍</span> on the chosen date &nbsp; <span style="color:var(--spot)">│</span> stock price</span></div>
           <div class="sliders">
             <label>Date: <b id="bDateLbl"></b> <input type="range" class="glow" id="bDate" min="0" max="0" step="1" value="0"></label>
-            <label>Implied volatility: <b id="bIvLbl"></b> <input type="range" class="glow" id="bIv" min="-50" max="100" step="5" value="0"></label>
+            <label title="Double-click the slider to go back to the quoted IV">Implied volatility: <b id="bIvLbl"></b> <input type="range" class="glow" id="bIv" min="0" max="168" step="any" value="42"></label>
             <label>Price range: <b id="bRangeLbl"></b> <input type="range" class="glow" id="bRange" min="2" max="133" step="1" value="20"></label>
           </div>
           <div class="chart" id="bChart"></div>
@@ -863,7 +863,21 @@ function autoRange() {
   $("#bRange").value = Math.round(B.range * 100);
 }
 
-function resetIv() { B.ivShift = 0; $("#bIv").value = 0; paintRange($("#bIv")); }
+function resetIv() { B.ivShift = 0; syncIvSlider(); }
+
+/* IV slider shows the position's actual IV (near-term at-the-money), like OptionStrat:
+   0% up to 4x the quoted IV. Moving it scales every leg's IV by the same factor,
+   so the skew between strikes is kept. */
+let ivBase = 0.3;
+const IV_MAX_MULT = 4;
+function syncIvSlider() {
+  const el = $("#bIv");
+  el.max = Math.max(5, Math.round(ivBase * 100 * IV_MAX_MULT));
+  el.value = ivBase * 100 * (1 + B.ivShift);
+  const now = ivBase * (1 + B.ivShift) * 100, pts = now - ivBase * 100;
+  $("#bIvLbl").textContent = `${now.toFixed(1)}%` + (Math.abs(pts) < 0.05 ? " (as quoted)" : ` (${pts > 0 ? "+" : ""}${pts.toFixed(1)} pts)`);
+  paintRange(el);
+}
 
 function renderBuilder() {
   $("#bErr").classList.add("hidden");
@@ -982,7 +996,11 @@ $("#bExp").onchange = async () => {
   } catch (err) { builderError(err); }
 };
 $("#bDate").oninput = () => { B.day = +$("#bDate").value; renderAnalysis(false); };
-$("#bIv").oninput = () => { B.ivShift = +$("#bIv").value / 100; renderAnalysis(); };
+$("#bIv").oninput = () => {
+  B.ivShift = Math.max(0.005, +$("#bIv").value / 100) / ivBase - 1;  // never exactly 0% IV
+  renderAnalysis();
+};
+$("#bIv").ondblclick = () => { B.ivShift = 0; renderAnalysis(); };
 $("#bRange").oninput = () => { B.range = +$("#bRange").value / 100; renderAnalysis(false); };
 function setUnit(u) {
   B.unit = u;
@@ -1053,7 +1071,8 @@ function renderAnalysis(recalc = true) {
   $("#bDate").value = B.day;
   const dateMs = B.day >= maxDay ? tE : now + B.day * DAY;
   $("#bDateLbl").textContent = B.day === 0 && maxDay > 0 ? "Today" : B.day >= maxDay ? `Expiration (${shortDate(tE)})` : `${shortDate(dateMs)} (${Math.ceil((tE - dateMs) / DAY)}d to expiration)`;
-  $("#bIvLbl").textContent = B.ivShift === 0 ? "as quoted" : `${B.ivShift > 0 ? "+" : ""}${Math.round(B.ivShift * 100)}%`;
+  ivBase = nearSigma(legs) || 0.3;
+  syncIvSlider();
   const down = Math.min(B.range, MAX_DOWN), up = B.range;
   $("#bRangeLbl").textContent = down < up ? `−${Math.round(down * 100)}% / +${Math.round(up * 100)}%` : `±${Math.round(up * 100)}%`;
 
