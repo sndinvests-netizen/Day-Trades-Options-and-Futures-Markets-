@@ -219,6 +219,9 @@ tr.pos-leg td { font-size: 12.5px; color: var(--muted); }
 tr.pos-leg td.contract { padding-left: 24px; }
 .closelegs { display: grid; grid-template-columns: 1fr 130px; gap: 8px 12px; align-items: center; margin: 10px 0; }
 .closelegs input { width: 100%; }
+.partlegs { display: grid; grid-template-columns: 1fr 110px 120px; gap: 8px 12px; align-items: center; margin: 10px 0; }
+.partlegs input { width: 100%; }
+.partlegs .hdr { font-size: 12px; color: var(--muted); }
 .empty { padding: 26px 8px; text-align: center; }
 /* green glowing dot: position has reached the 50% profit target */
 .target-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 7px; vertical-align: 0;
@@ -407,7 +410,7 @@ tr.pos-leg td.contract { padding-left: 24px; }
       <label>Strike <input name="strike" type="number" step="any" required></label>
       <label>Expiration <input name="exp" type="date" required></label>
       <label>Price per share <input name="premium" type="number" step="any" min="0" required></label>
-      <label>Fees ($ total) <input name="fees" type="number" step="any" min="0" value="0"></label>
+      <label>Fees ($ total) <input name="fees" type="number" step="any" min="0" placeholder="auto: Robinhood fees"><span class="note feeest"></span></label>
       <label>Opened <input name="opened" type="date"></label>
       <label>Notes <input name="notes"></label>
     </div>
@@ -425,7 +428,7 @@ tr.pos-leg td.contract { padding-left: 24px; }
         <option value="expired">Expired worthless</option>
         <option value="assigned">Assigned / exercised</option></select></label>
       <label id="closePriceLbl">Exit price per share <input name="premium" type="number" step="any" min="0"></label>
-      <label>Fees ($ total) <input name="fees" type="number" step="any" min="0" value="0"></label>
+      <label>Fees ($ total) <input name="fees" type="number" step="any" min="0" placeholder="auto: Robinhood fees"><span class="note feeest"></span></label>
       <label>Closed on <input name="closed" type="date"></label>
     </div>
     <p class="note" id="closeHint"></p>
@@ -440,7 +443,7 @@ tr.pos-leg td.contract { padding-left: 24px; }
     <p class="note" id="saveSummary"></p>
     <div class="grid2">
       <label>Strategy name <input name="strategy"></label>
-      <label>Fees ($ total) <input name="fees" type="number" step="any" min="0" value="0"></label>
+      <label>Fees ($ total) <input name="fees" type="number" step="any" min="0" placeholder="auto: Robinhood fees"><span class="note feeest"></span></label>
       <label>Opened <input name="opened" type="date"></label>
       <label>Notes <input name="notes"></label>
     </div>
@@ -459,6 +462,22 @@ tr.pos-leg td.contract { padding-left: 24px; }
   <div class="actions"><button class="ghost" type="button" data-close>Cancel</button><button class="primary danger" type="button" id="delGo">Delete</button></div>
 </dialog>
 
+<dialog id="partialDlg">
+  <form id="partialForm" method="dialog">
+    <h2 id="partialTitle">Partial close</h2>
+    <p class="note">Close some contracts and keep the rest open. Short legs are bought back, long legs are sold. Leave a leg at 0 to keep all of it.
+      Price per share is prefilled at the current mid.</p>
+    <div class="partlegs" id="partialLegs"></div>
+    <div class="grid2" style="margin-top:12px">
+      <label>Fees ($ total) <input name="fees" type="number" step="any" min="0" placeholder="auto: Robinhood fees"><span class="note feeest"></span></label>
+      <label>Closed on <input name="closed" type="date"></label>
+    </div>
+    <p class="note" id="partialSummary"></p>
+    <div class="formerr" id="partialErr"></div>
+    <div class="actions"><button class="ghost" type="button" data-close>Cancel</button><button class="primary" type="submit">Save</button></div>
+  </form>
+</dialog>
+
 <dialog id="closePosDlg">
   <form id="closePosForm" method="dialog">
     <h2 id="closePosTitle">Close position</h2>
@@ -466,7 +485,7 @@ tr.pos-leg td.contract { padding-left: 24px; }
     <div class="closelegs" id="closePosLegs"></div>
     <button class="ghost small" type="button" id="closePosExpire">Options expired: set all to 0</button>
     <div class="grid2" style="margin-top:12px">
-      <label>Fees ($ total) <input name="fees" type="number" step="any" min="0" value="0"></label>
+      <label>Fees ($ total) <input name="fees" type="number" step="any" min="0" placeholder="auto: Robinhood fees"><span class="note feeest"></span></label>
       <label>Closed on <input name="closed" type="date"></label>
     </div>
     <div class="formerr" id="closePosErr"></div>
@@ -1361,6 +1380,7 @@ $("#bSave").onclick = () => {
   $("#saveSummary").innerHTML = `${esc(B.ticker)}: ` + B.legs.map(l => `${l.side === "buy" ? "Buy" : "Sell"} ${l.qty} ${l.type === "stock" ? "x 100 sh" : f2(l.strike) + " " + l.type + " " + l.exp} @ ${f2(l.price)}`).map(esc).join(" · ");
   $("#saveErr").textContent = "";
   $("#saveDlg").showModal();
+  feeSave();
 };
 $("#saveForm").onsubmit = async e => {
   e.preventDefault();
@@ -1529,7 +1549,7 @@ function renderTrades() {
       const sub = { Hop: "90 days or less at open", Skip: "91–360 days at open", Leap: "over 360 days at open" }[cat];
       return `<h3>${cat} <span class="note" style="text-transform:none;letter-spacing:0">${sub}</span></h3><div class="scroll-top"><div></div></div><div class="scroll"><table>${head}<tbody>` +
         ps.map(p => {
-          const buttons = `<button class="ghost small" data-builder="${posKey(p)}">Builder</button> <button class="ghost small" data-close-key="${posKey(p)}">Close</button> <button class="ghost small danger" data-del-id="${p[0].id}" title="Delete a trade logged by mistake">Delete</button>`;
+          const buttons = `<button class="ghost small" data-builder="${posKey(p)}">Builder</button> <button class="ghost small" data-close-key="${posKey(p)}">Close</button> <button class="ghost small" data-partial-key="${posKey(p)}" title="Buy back or sell some of the contracts and keep the rest open">Partial</button> <button class="ghost small danger" data-del-id="${p[0].id}" title="Delete a trade logged by mistake">Delete</button>`;
           if (p.length === 1) {
             const t = p[0], s = t.stats;
             return `<tr><td class="left">${t.id}</td>
@@ -1569,7 +1589,7 @@ function renderTrades() {
   $("#closed").innerHTML = d.closed.length
     ? `<thead><tr><th class="left">#</th><th class="left">Contract</th><th class="left">Side</th><th>Qty</th><th class="left">Group</th><th>Opened</th><th>Closed</th>
         <th class="left">How</th><th>Entry</th><th>Exit</th><th>Realized</th><th></th></tr></thead><tbody>` +
-      [...d.closed].reverse().map(t => `<tr><td class="left">${t.id}</td><td class="left"><b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp || ""}${t.group ? ` <span class="note">${esc(t.strategy)} P${t.group}</span>` : ""}</td>
+      [...d.closed].reverse().map(t => `<tr><td class="left">${t.id}</td><td class="left"><b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp || ""}${t.group ? ` <span class="note">${esc(t.strategy)} P${t.group}</span>` : ""}${t.split_from ? ` <span class="note">partial of #${t.split_from}</span>` : ""}</td>
         <td class="left">${t.side === "buy" ? "Long" : "Short"}</td><td>${t.contracts}</td><td class="left">${t.category}</td><td>${t.opened}</td><td>${t.closed}</td>
         <td class="left">${t.status}</td><td>${f2(t.premium)}</td><td>${f2(t.exit_premium)}</td>
         <td class="${signed(t.realized)}">${usd(t.realized, true)}</td>
@@ -1644,6 +1664,7 @@ $("#openGroups").onclick = e => {
   if (!b) return;
   if (b.dataset.delId) return openDelete(+b.dataset.delId);
   if (b.dataset.builder) openInBuilder(positionByKey(b.dataset.builder));
+  if (b.dataset.partialKey) return openPartial(positionByKey(b.dataset.partialKey));
   if (b.dataset.closeKey) {
     const p = positionByKey(b.dataset.closeKey);
     if (p.length === 1) openClose(p[0].id); else openClosePosition(p);
@@ -1684,6 +1705,7 @@ function openAdd(v) {
   f.elements.opened.value = today();
   $("#addErr").textContent = "";
   $("#addDlg").showModal();
+  feeAdd();
 }
 $("#addForm").onsubmit = async e => {
   e.preventDefault();
@@ -1707,6 +1729,7 @@ function openClose(id) {
   updateCloseForm();
   $("#closeErr").textContent = "";
   $("#closeDlg").showModal();
+  feeClose();
 }
 function updateCloseForm() {
   const how = $("#closeForm").elements.how.value;
@@ -1740,8 +1763,9 @@ function openClosePosition(p) {
     <input type="number" step="any" min="0" data-leg="${t.id}" data-stock="${t.type === "stock" ? 1 : ""}" value="${t.live ? t.live.mark.toFixed(2) : ""}">`).join("");
   $("#closePosErr").textContent = "";
   $("#closePosDlg").showModal();
+  feeClosePos();
 }
-$("#closePosExpire").onclick = () => { for (const i of document.querySelectorAll("#closePosLegs input")) if (!i.dataset.stock) i.value = "0"; };
+$("#closePosExpire").onclick = () => { for (const i of document.querySelectorAll("#closePosLegs input")) if (!i.dataset.stock) i.value = "0"; feeClosePos(); };
 $("#closePosForm").onsubmit = async e => {
   e.preventDefault();
   const f = e.target;
@@ -1754,6 +1778,101 @@ $("#closePosForm").onsubmit = async e => {
     loadTrades();
   } catch (err) { $("#closePosErr").textContent = err.message; }
 };
+
+/* ---- partial close: buy back or sell some contracts, keep the rest open ---- */
+let partialLegs = [];
+function openPartial(p) {
+  partialLegs = p;
+  const f = $("#partialForm");
+  f.reset();
+  f.elements.closed.value = today();
+  $("#partialTitle").textContent = p.length > 1 ? `Partial close: ${p[0].ticker} ${p[0].strategy} (P${p[0].group})`
+    : `Partial close #${p[0].id}: ${p[0].ticker} ${p[0].label} ${p[0].exp || ""}`;
+  $("#partialLegs").innerHTML = `<span class="hdr">Leg</span><span class="hdr">Contracts</span><span class="hdr">Price per share</span>` +
+    p.map(t => {
+      const verb = t.side === "sell" ? "Buy back" : "Sell";
+      const unit = t.type === "stock" ? "lots of 100 sh" : "contracts";
+      return `<span>${verb} ${esc(t.label)} ${t.exp || ""} <span class="note">· ${t.contracts} ${unit} open · entry ${f2(t.premium)}</span></span>
+        <input type="number" min="0" max="${t.contracts}" step="1" data-qty="${t.id}" value="${p.length === 1 ? 1 : 0}">
+        <input type="number" step="any" min="0" data-px="${t.id}" value="${t.live ? t.live.mark.toFixed(2) : ""}">`;
+    }).join("");
+  $("#partialErr").textContent = "";
+  updatePartialSummary();
+  $("#partialDlg").showModal();
+  feePartial();
+}
+function updatePartialSummary() {
+  let total = 0;
+  const parts = partialLegs.map(t => {
+    const n = +(document.querySelector(`#partialLegs [data-qty="${t.id}"]`).value || 0);
+    const px = +(document.querySelector(`#partialLegs [data-px="${t.id}"]`).value || 0);
+    if (!n) return null;
+    total += (t.side === "buy" ? 1 : -1) * (px - t.premium) * 100 * n;
+    return `${t.side === "sell" ? "Buy back" : "Sell"} ${n} of ${t.contracts} ${t.label}, ${t.contracts - n} left open`;
+  }).filter(Boolean);
+  $("#partialSummary").innerHTML = parts.length
+    ? `${esc(parts.join("; "))}. Realized on these: <b class="${signed(total)}">${usd(total, true)}</b> before fees.` : "Nothing selected to close yet.";
+}
+$("#partialLegs").oninput = updatePartialSummary;
+$("#partialForm").onsubmit = async e => {
+  e.preventDefault();
+  const f = e.target;
+  const legs = partialLegs.map(t => ({
+    id: t.id,
+    contracts: document.querySelector(`#partialLegs [data-qty="${t.id}"]`).value || 0,
+    premium: document.querySelector(`#partialLegs [data-px="${t.id}"]`).value,
+  }));
+  try {
+    const out = await api("/api/positions/close", { legs, fees: f.elements.fees.value, closed: f.elements.closed.value });
+    const realized = out.reduce((a, t) => a + t.realized, 0);
+    if (realized > 0) celebrate(realized);
+    $("#partialDlg").close();
+    loadTrades();
+  } catch (err) { $("#partialErr").textContent = err.message; }
+};
+
+/* ---- broker fees: blank Fees = Robinhood's fees, worked out by the server (fees.py) ---- */
+const closeSide = s => s === "buy" ? "sell" : "buy";
+function wireFees(form, getOrder) {
+  let timer;
+  const run = async () => {
+    const el = form.querySelector(".feeest");
+    const order = getOrder();
+    if (!order) { el.textContent = ""; return; }
+    try {
+      const r = await api("/api/fees", order);
+      const parts = Object.entries(r.parts).map(([k, v]) => `${k} ${usd(v, true)}`).join(", ");
+      const typed = form.elements.fees.value !== "";
+      el.textContent = `${typed ? "Robinhood would charge" : "Auto"}: ${usd(r.total, true)}${parts ? ` (${parts})` : ""}`;
+    } catch { el.textContent = ""; }
+  };
+  const later = () => { clearTimeout(timer); timer = setTimeout(run, 250); };
+  form.addEventListener("input", later);
+  form.addEventListener("change", later);
+  return run;
+}
+const feeAdd = wireFees($("#addForm"), () => {
+  const e = $("#addForm").elements;
+  return { ticker: e.ticker.value, legs: [{ type: e.type.value, action: e.side.value, price: e.premium.value, contracts: e.contracts.value }] };
+});
+const feeSave = wireFees($("#saveForm"), () => ({ ticker: B.ticker,
+  legs: B.legs.map(l => ({ type: l.type, action: l.side, price: l.price, contracts: l.qty })) }));
+const feeClose = wireFees($("#closeForm"), () => {
+  const t = tradeData.open.find(x => x.id === closingId), e = $("#closeForm").elements;
+  if (!t) return null;
+  if (e.how.value !== "closed") return { ticker: t.ticker, legs: [] };
+  return { ticker: t.ticker, legs: [{ type: t.type, action: closeSide(t.side), price: e.premium.value, contracts: t.contracts }] };
+});
+const feeClosePos = wireFees($("#closePosForm"), () => ({ ticker: closingLegs[0]?.ticker || "",
+  legs: closingLegs.map(t => {
+    const v = document.querySelector(`#closePosLegs [data-leg="${t.id}"]`)?.value;
+    const expired = +v === 0 && t.type !== "stock";
+    return { type: t.type, action: closeSide(t.side), price: v, contracts: expired ? 0 : t.contracts };
+  }) }));
+const feePartial = wireFees($("#partialForm"), () => ({ ticker: partialLegs[0]?.ticker || "",
+  legs: partialLegs.map(t => ({ type: t.type, action: closeSide(t.side),
+    price: document.querySelector(`#partialLegs [data-px="${t.id}"]`)?.value,
+    contracts: document.querySelector(`#partialLegs [data-qty="${t.id}"]`)?.value || 0 })) }));
 
 /* ================= start ================= */
 $("#range").value = store.get("range", "20");

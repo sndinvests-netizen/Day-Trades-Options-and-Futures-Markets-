@@ -25,6 +25,7 @@ import shutil
 import sys
 from datetime import date, datetime
 
+from fees import order_fees
 from options_data import QuoteError, greeks, quote, spot_price, years_to_expiry
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -149,18 +150,19 @@ class TradeError(Exception):
     pass
 
 
-def add_trade(trades, ticker, type, side, strike, exp, premium, contracts=1, fees=0.0,
+def add_trade(trades, ticker, type, side, strike, exp, premium, contracts=1, fees=None,
               opened=None, notes=""):
     """Append a new single-option trade and return it. Raises TradeError on bad input."""
     leg = {"type": type, "side": side, "strike": strike, "exp": exp, "premium": premium, "contracts": contracts}
     return add_position(trades, ticker, [leg], fees=fees, opened=opened, notes=notes)[0]
 
 
-def add_position(trades, ticker, legs, strategy="", fees=0.0, opened=None, notes=""):
+def add_position(trades, ticker, legs, strategy="", fees=None, opened=None, notes=""):
     """Append one position (one or more legs) and return its leg records.
 
     Multi-leg positions share a "group" id and "strategy" name, and are grouped as
-    Hop / Skip / Leap by their nearest option expiration. Fees go on the first leg.
+    Hop / Skip / Leap by their nearest option expiration. Fees go on the first leg;
+    fees=None fills in the broker's fees for the opening order (see fees.py).
     """
     if not legs:
         raise TradeError("Add at least one leg")
@@ -182,6 +184,8 @@ def add_position(trades, ticker, legs, strategy="", fees=0.0, opened=None, notes
                 raise TradeError("dates must be YYYY-MM-DD")
             if leg["dte"] < 0:
                 raise TradeError("Expiration is before the open date.")
+    if fees is None:
+        fees = opening_fees(ticker, legs)
     option_days = [leg["dte"] for leg in legs if leg["type"] != "stock"]
     if not option_days:
         raise TradeError("A position needs at least one option leg")
@@ -231,29 +235,78 @@ def delete_position(trades, trade_id):
     return removed
 
 
-def close_position(trades, legs, fees=0.0, closed=None):
-    """Close several legs at once: legs = [{"id": .., "premium": exit price}].
+def close_position(trades, legs, fees=None, closed=None):
+    """Close several legs at once: legs = [{"id": .., "premium": exit price, "contracts": n}].
 
-    An option leg closed at 0 is recorded as expired. Fees go on the first leg.
+    "contracts" is optional: leave it out to close the whole leg, give fewer than the
+    leg holds to close part of it (buy back some short contracts, sell some long ones),
+    or 0 to leave that leg alone. An option leg closed at 0 is recorded as expired.
+    Fees go on the first leg that is closed; fees=None fills in the broker's fees.
     """
-    if not legs:
-        raise TradeError("No legs to close")
-    out = []
-    for i, leg in enumerate(legs):
+    todo = []
+    for leg in legs or []:
         t = next((t for t in trades if t["id"] == leg.get("id")), None)
         if t is None:
             raise TradeError(f"No trade #{leg.get('id')}")
+        if t["status"] != "open":
+            raise TradeError(f"Trade #{t['id']} is already {t['status']}")
+        n = leg.get("contracts")
+        n = t["contracts"] if n is None else n
+        if n < 0 or n > t["contracts"]:
+            raise TradeError(f"#{t['id']} has {t['contracts']} contract(s) open; can't close {n}")
+        if n == 0:
+            continue
         price = leg.get("premium")
         if price is None or price < 0:
             raise TradeError(f"Exit price needed for #{t['id']}")
+        todo.append((t, n, price))
+    if not todo:
+        raise TradeError("No legs to close")
+    if fees is None:
+        fees = closing_fees(todo[0][0]["ticker"], todo)
+    out = []
+    for i, (t, n, price) in enumerate(todo):
+        if n < t["contracts"]:
+            t = split_trade(trades, t, n)
         expired = price == 0 and kind(t) != "stock"
         out.append(close_trade(trades, t["id"], None if expired else price, expired=expired,
                                fees=fees if i == 0 else 0.0, closed=closed))
     return out
 
 
-def close_trade(trades, trade_id, premium=None, expired=False, assigned=False, fees=0.0, closed=None):
-    """Close, expire or assign an open trade and return it. Raises TradeError on bad input."""
+def split_trade(trades, t, n):
+    """Split n contracts off open trade t into a new trade record and return the new record.
+
+    The new record keeps the entry price, dates and position group, and takes its share
+    of the entry fees, so realized and open P&L still add up to the original trade.
+    """
+    part_fees = round(t["fees"] * n / t["contracts"], 2)
+    part = dict(t, id=max(x["id"] for x in trades) + 1, contracts=n, fees=part_fees, split_from=t["id"])
+    t.update(contracts=t["contracts"] - n, fees=round(t["fees"] - part_fees, 2))
+    trades.append(part)
+    return part
+
+
+def opening_fees(ticker, legs):
+    """Broker fees for opening legs: [{type, side, premium, contracts}]."""
+    return order_fees(ticker, [{"type": l["type"], "action": l["side"], "price": l["premium"],
+                                "contracts": l["contracts"]} for l in legs])[0]
+
+
+def closing_fees(ticker, todo):
+    """Broker fees for closing [(trade, contracts, exit price)]. The closing order is the
+    opposite side, and options closed at 0 (expired) have no fees."""
+    legs = [{"type": kind(t), "action": "sell" if t["side"] == "buy" else "buy", "price": price, "contracts": n}
+            for t, n, price in todo if not (price == 0 and kind(t) != "stock")]
+    return order_fees(ticker, legs)[0] if legs else 0.0
+
+
+def close_trade(trades, trade_id, premium=None, expired=False, assigned=False, fees=None, closed=None):
+    """Close, expire or assign an open trade and return it. Raises TradeError on bad input.
+
+    fees=None fills in the broker's fees for a closing order; expiring or being assigned
+    has none.
+    """
     t = next((t for t in trades if t["id"] == trade_id), None)
     if not t:
         raise TradeError(f"No trade #{trade_id}")
@@ -271,6 +324,8 @@ def close_trade(trades, trade_id, premium=None, expired=False, assigned=False, f
         price, status = premium, "closed"
     else:
         raise TradeError("Give an exit price, expired, or assigned with intrinsic value")
+    if fees is None:
+        fees = closing_fees(t["ticker"], [(t, t["contracts"], price)]) if status == "closed" else 0.0
     t.update(status=status, exit_premium=price, exit_fees=fees,
              closed=(closed or date.today().isoformat()),
              realized=round(pnl(t, price, fees), 2))
@@ -375,15 +430,19 @@ def describe(t, show_live=False):
 
 
 def positions_of(trades):
-    """Group legs into positions: a multi-leg group, or a single trade on its own."""
+    """Group legs into positions: a multi-leg group, or a single trade on its own.
+
+    Contracts split off by a partial close stay with the trade they came from.
+    """
     out = {}
     for t in trades:
-        out.setdefault(("g", t["group"]) if t.get("group") else ("t", t["id"]), []).append(t)
+        key = ("g", t["group"]) if t.get("group") else ("t", t.get("split_from") or t["id"])
+        out.setdefault(key, []).append(t)
     return list(out.values())
 
 
 def position_kind(legs):
-    if len(legs) > 1:
+    if legs[0].get("group"):
         return "Multi-leg"
     t = legs[0]
     return f"{'Bought' if t['side'] == 'buy' else 'Sold'} {kind(t)}s"
@@ -440,7 +499,7 @@ def premium_kind(legs):
         return "Covered calls"  # includes collars
     if "sell" in stock_side and any(kind(t) == "put" for t in shorts):
         return "Covered puts"
-    if len(opts) == 1:
+    if not opts[0].get("group"):  # one option leg, maybe split by partial closes
         return "Cash-secured puts" if kind(opts[0]) == "put" else "Short calls"
     if any(t["side"] == "buy" for t in opts):
         return "Credit spreads"
@@ -531,7 +590,7 @@ def main(argv=None):
     a.add_argument("--exp", required=True, help="expiration YYYY-MM-DD")
     a.add_argument("--premium", type=float, required=True, help="price per share, e.g. 3.20")
     a.add_argument("--contracts", type=int, default=1)
-    a.add_argument("--fees", type=float, default=0.0, help="total opening fees in dollars")
+    a.add_argument("--fees", type=float, default=None, help="total opening fees in dollars (default: Robinhood's fees)")
     a.add_argument("--date", help="open date YYYY-MM-DD (default today)")
     a.add_argument("--notes")
 
@@ -541,7 +600,7 @@ def main(argv=None):
     c.add_argument("--expired", action="store_true", help="expired worthless")
     c.add_argument("--assigned", action="store_true",
                    help="exercised/assigned; --premium = intrinsic value at assignment")
-    c.add_argument("--fees", type=float, default=0.0)
+    c.add_argument("--fees", type=float, default=None, help="total closing fees in dollars (default: Robinhood's fees)")
     c.add_argument("--date", help="close date YYYY-MM-DD (default today)")
 
     l = sub.add_parser("list", help="show trades")

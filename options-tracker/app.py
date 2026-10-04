@@ -17,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import tracker
+from fees import order_fees
 from options_data import QuoteError, chain
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -127,7 +128,7 @@ class Handler(BaseHTTPRequestHandler):
                 trades = tracker.load(DB)
                 t = tracker.add_trade(trades, str(body.get("ticker", "")), body.get("type"), body.get("side"),
                                       num(body, "strike"), str(body.get("exp", "")), num(body, "premium"),
-                                      num(body, "contracts", int, 1), num(body, "fees", float, 0.0),
+                                      num(body, "contracts", int, 1), num(body, "fees"),
                                       body.get("opened") or None, body.get("notes", ""))
                 tracker.save(DB, trades)
             return t
@@ -137,7 +138,7 @@ class Handler(BaseHTTPRequestHandler):
                 trades = tracker.load(DB)
                 t = tracker.close_trade(trades, num(body, "id", int), num(body, "premium"),
                                         bool(body.get("expired")), bool(body.get("assigned")),
-                                        num(body, "fees", float, 0.0), body.get("closed") or None)
+                                        num(body, "fees"), body.get("closed") or None)
                 tracker.save(DB, trades)
             return t
 
@@ -148,18 +149,25 @@ class Handler(BaseHTTPRequestHandler):
             with db_lock:
                 trades = tracker.load(DB)
                 out = tracker.add_position(trades, str(body.get("ticker", "")), legs, str(body.get("strategy", "")),
-                                           num(body, "fees", float, 0.0), body.get("opened") or None,
+                                           num(body, "fees"), body.get("opened") or None,
                                            body.get("notes", ""))
                 tracker.save(DB, trades)
             return out
 
         def close_position():
-            legs = [{"id": num(l, "id", int), "premium": num(l, "premium")} for l in body.get("legs") or []]
+            legs = [{"id": num(l, "id", int), "premium": num(l, "premium"), "contracts": num(l, "contracts", int)}
+                    for l in body.get("legs") or []]
             with db_lock:
                 trades = tracker.load(DB)
-                out = tracker.close_position(trades, legs, num(body, "fees", float, 0.0), body.get("closed") or None)
+                out = tracker.close_position(trades, legs, num(body, "fees"), body.get("closed") or None)
                 tracker.save(DB, trades)
             return out
+
+        def fee_quote():
+            legs = [{"type": l.get("type"), "action": l.get("action"), "price": num(l, "price", float, 0.0),
+                     "contracts": num(l, "contracts", int, 0) or 0} for l in body.get("legs") or []]
+            total, parts = order_fees(str(body.get("ticker", "")), [l for l in legs if l["contracts"] > 0])
+            return {"total": total, "parts": parts}
 
         def delete():
             with db_lock:
@@ -168,7 +176,9 @@ class Handler(BaseHTTPRequestHandler):
                 tracker.save(DB, trades)
             return out
 
-        if path == "/api/trades":
+        if path == "/api/fees":
+            self.guard(fee_quote)
+        elif path == "/api/trades":
             self.guard(add)
         elif path == "/api/trades/delete":
             self.guard(delete)
