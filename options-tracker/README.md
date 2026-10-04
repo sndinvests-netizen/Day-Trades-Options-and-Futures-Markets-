@@ -19,6 +19,16 @@ The first run installs `yfinance` into `options-tracker/.venv`. It then opens **
 
 Your trades are saved to `options-tracker/trades.json`, which is kept out of git. This repo is public, so never commit that file.
 
+## Open it automatically on weekday mornings (macOS)
+
+`launch-morning.sh` starts the tracker if it isn't running and opens it in the browser. A launchd agent in `~/Library/LaunchAgents/com.soundinvestmentsolutions.optiontracker.plist` runs it Monday to Friday at 6:00 AM local time, ahead of the 6:30 AM PT market open. It logs to `~/Library/Logs/option-tracker.log`.
+
+- Turn it off: `launchctl bootout gui/$(id -u)/com.soundinvestmentsolutions.optiontracker`
+- Turn it back on: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.soundinvestmentsolutions.optiontracker.plist`
+- Run it now: `launchctl kickstart gui/$(id -u)/com.soundinvestmentsolutions.optiontracker`
+
+If the Mac is asleep at 6:00 it runs when the Mac wakes up; if the Mac is shut down it doesn't run. To have the Mac wake itself first: `sudo pmset repeat wakeorpoweron MTWRF 05:55:00`.
+
 ## In the browser
 
 **Chain tab.** Type any ticker and pick an expiration.
