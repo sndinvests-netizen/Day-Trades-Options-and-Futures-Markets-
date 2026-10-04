@@ -39,7 +39,15 @@
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text);
   font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-.wrap { max-width: 1480px; margin: 0 auto; padding: 18px 16px; }
+.wrap { max-width: 1480px; margin: 14px auto; padding: 18px 16px; border-radius: 20px;
+  border: 1px solid rgba(111,174,233,.28); animation: glow 4.5s ease-in-out infinite; }
+/* subtle light-blue pulse around the tracker */
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 6px rgba(95,164,232,.08), inset 0 0 6px rgba(95,164,232,.03); border-color: rgba(111,174,233,.22); }
+  50%      { box-shadow: 0 0 20px rgba(95,164,232,.22), inset 0 0 10px rgba(95,164,232,.06); border-color: rgba(111,174,233,.45); }
+}
+@media (prefers-reduced-motion: reduce) { .wrap { animation: none; } }
+@media (max-width: 640px) { .wrap { margin: 8px; padding: 14px 12px; } }
 header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
 .brand { display: flex; align-items: center; gap: 12px; }
 .brand .badge { background: linear-gradient(180deg, #ffffff, #e9f3fd); border: 1px solid var(--btn-border); border-radius: 12px;
@@ -241,6 +249,7 @@ tr.pos-leg td.contract { padding-left: 24px; }
         <div class="row">
           <h2>Legs</h2>
           <div>
+            <button class="ghost" type="button" id="bReset" title="Clear all legs and reset the sliders to start over">Reset</button>
             <button class="ghost" type="button" id="bAddLeg">+ Add leg</button>
             <button class="ghost" type="button" id="bRefresh">Refresh prices</button>
             <button class="primary" type="button" id="bSave">Save to My Trades</button>
@@ -817,6 +826,7 @@ function renderLegs() {
   $("#bLegNote").textContent = fromTrades
     ? "Showing a saved position from My Trades at its entry prices. Changes here aren't saved back; click a contract on the Chain tab to start a new idea."
     : "Price is what you pay or receive per share; it starts at the current mid. Edit it to match your fill.";
+  $("#bLegs").classList.toggle("hidden", !B.legs.length);
   $("#bSave").disabled = fromTrades || !B.legs.length;
   $("#bSave").style.opacity = $("#bSave").disabled ? .5 : 1;
 }
@@ -853,6 +863,14 @@ $("#bLegs").addEventListener("click", e => {
   B.strategy = "Custom";
   renderBuilder();
 });
+$("#bReset").onclick = () => {
+  B.legs = [];
+  B.strategy = "Custom";
+  B.day = 0;
+  resetIv();
+  store.set("bStrategy", "Custom");
+  renderBuilder();
+};
 $("#bAddLeg").onclick = () => {
   const ks = strikesFor(B.exp);
   const l = { uid: ++legUid, side: "buy", type: "call", qty: 1, exp: B.exp, strike: ks[nearestIdx(ks, B.spot)] };
