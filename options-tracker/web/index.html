@@ -150,6 +150,29 @@ dialog::backdrop { background: rgba(10,20,35,.45); backdrop-filter: blur(2px); }
 .sliders label { flex: 1; min-width: 200px; }
 .sliders b { color: var(--text); font-weight: 600; }
 input[type=range] { padding: 0; border: 0; background: none; box-shadow: none; accent-color: #5fa4e8; width: 100%; }
+/* glowing sliders: the track fills up to the thumb and lights up while you drag */
+input[type=range].glow { -webkit-appearance: none; appearance: none; height: 8px; margin: 8px 0; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); box-shadow: var(--well-shadow); outline: none;
+  background: linear-gradient(90deg, #4f97e0 0, #9fd0ff var(--fill, 0%), var(--well) var(--fill, 0%));
+  transition: box-shadow .35s ease, border-color .35s ease; }
+input[type=range].glow::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%;
+  background: linear-gradient(180deg, var(--btn-top), var(--btn-bot)); border: 1px solid var(--btn-border);
+  box-shadow: inset 0 1px 0 #fff, 0 2px 4px var(--btn-drop); transition: box-shadow .35s ease; }
+input[type=range].glow::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%;
+  background: linear-gradient(180deg, var(--btn-top), var(--btn-bot)); border: 1px solid var(--btn-border);
+  box-shadow: inset 0 1px 0 #fff, 0 2px 4px var(--btn-drop); transition: box-shadow .35s ease; }
+input[type=range].glow.lit { border-color: rgba(159,208,255,.8);
+  box-shadow: 0 0 8px rgba(95,164,232,.65), 0 0 22px rgba(95,164,232,.35), var(--well-shadow); }
+input[type=range].glow.lit::-webkit-slider-thumb { box-shadow: inset 0 1px 0 #fff, 0 0 10px rgba(159,208,255,.95), 0 0 22px rgba(95,164,232,.6); }
+input[type=range].glow.lit::-moz-range-thumb { box-shadow: inset 0 1px 0 #fff, 0 0 10px rgba(159,208,255,.95), 0 0 22px rgba(95,164,232,.6); }
+input[type=range].glow:focus-visible { outline: 3px solid rgba(111,174,233,.5); outline-offset: 3px; }
+/* price scrubber under the chart, lined up with the plot area */
+.scrub { padding: 2px 1.8% 0 7.5%; }
+.scrub-out { font-size: 13px; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; margin-top: 2px; }
+.scrub-out b { color: var(--text); font-variant-numeric: tabular-nums; }
+#bMark line { filter: drop-shadow(0 0 4px rgba(95,164,232,.9)); }
+.heat tr.scrubrow td { box-shadow: inset 0 1px 0 rgba(159,208,255,.95), inset 0 -1px 0 rgba(159,208,255,.95); }
+.heat tr.scrubrow td.price { color: #9fd0ff; font-weight: 700; text-shadow: 0 0 8px rgba(95,164,232,.8); }
 .chart svg { width: 100%; height: auto; display: block; touch-action: none; }
 .chart text { font-size: 11px; fill: var(--muted); font-family: inherit; }
 .chart .tip text { fill: var(--text); font-size: 12px; }
@@ -279,11 +302,15 @@ tr.pos-leg td.contract { padding-left: 24px; }
           <div class="row"><h2>Profit / loss</h2>
             <span class="note"><span style="color:var(--up)">━</span> at expiration &nbsp; <span style="color:#5fa4e8">╍</span> on the chosen date &nbsp; <span style="color:var(--spot)">│</span> stock price</span></div>
           <div class="sliders">
-            <label>Date: <b id="bDateLbl"></b> <input type="range" id="bDate" min="0" max="0" step="1" value="0"></label>
-            <label>Implied volatility: <b id="bIvLbl"></b> <input type="range" id="bIv" min="-50" max="100" step="5" value="0"></label>
-            <label>Price range: <b id="bRangeLbl"></b> <input type="range" id="bRange" min="2" max="60" step="1" value="20"></label>
+            <label>Date: <b id="bDateLbl"></b> <input type="range" class="glow" id="bDate" min="0" max="0" step="1" value="0"></label>
+            <label>Implied volatility: <b id="bIvLbl"></b> <input type="range" class="glow" id="bIv" min="-50" max="100" step="5" value="0"></label>
+            <label>Price range: <b id="bRangeLbl"></b> <input type="range" class="glow" id="bRange" min="2" max="60" step="1" value="20"></label>
           </div>
           <div class="chart" id="bChart"></div>
+          <div class="scrub">
+            <input type="range" class="glow" id="bScrub" min="0" max="1000" step="1" value="500" aria-label="Stock price to check">
+            <div class="scrub-out" id="bScrubOut"></div>
+          </div>
         </div>
         <div class="panel">
           <div class="row"><h2>Profit / loss by price and date</h2></div>
@@ -680,7 +707,7 @@ const TEMPLATES = {
   "Diagonal call spread": [["sell", "call", 1], ["buy", "call", 0, 1, "far"]],
 };
 const B = { ticker: null, spot: null, exps: [], chains: {}, legs: [], strategy: "Custom", exp: null,
-            day: 0, ivShift: 0, range: 0.2, unit: "$", seq: 0 };
+            day: 0, ivShift: 0, range: 0.2, unit: "$", seq: 0, scrub: null };
 let legUid = 0;
 
 $("#bStrategy").innerHTML = ["Custom", ...Object.keys(TEMPLATES)].map(n => `<option>${esc(n)}</option>`).join("");
@@ -714,7 +741,7 @@ async function setBuilderTicker(ticker, preferExp) {
   $("#bSpot").textContent = "Loading " + ticker + "…";
   const d = await api(`/api/chain?ticker=${encodeURIComponent(ticker)}`);
   if (seq !== B.seq) return false;
-  Object.assign(B, { ticker: d.ticker, spot: d.spot, exps: d.expirations, chains: { [d.exp]: d }, legs: [] });
+  Object.assign(B, { ticker: d.ticker, spot: d.spot, exps: d.expirations, chains: { [d.exp]: d }, legs: [], scrub: null });
   resetIv();
   // default to about a month out, like most strategy builders
   B.exp = preferExp && d.expirations.includes(preferExp) ? preferExp
@@ -805,7 +832,7 @@ function autoRange() {
   $("#bRange").value = Math.round(B.range * 100);
 }
 
-function resetIv() { B.ivShift = 0; $("#bIv").value = 0; }
+function resetIv() { B.ivShift = 0; $("#bIv").value = 0; paintRange($("#bIv")); }
 
 function renderBuilder() {
   $("#bErr").classList.add("hidden");
@@ -1002,7 +1029,50 @@ function renderAnalysis(recalc = true) {
   ].map(([k, v, s]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
   renderChart(tE, dateMs, B.day < maxDay, ivm, a);
   renderHeat(tE, maxDay, ivm, a);
+  updateScrub();
+  paintRanges();
 }
+
+/* ---- glowing sliders ---- */
+function paintRange(el) {
+  const span = (+el.max) - (+el.min);
+  el.style.setProperty("--fill", (span > 0 ? ((+el.value) - (+el.min)) / span * 100 : 0) + "%");
+}
+const paintRanges = () => document.querySelectorAll("input[type=range].glow").forEach(paintRange);
+for (const el of document.querySelectorAll("input[type=range].glow")) {
+  let t = null;
+  const light = () => { el.classList.add("lit"); clearTimeout(t); };
+  const dim = () => { clearTimeout(t); t = setTimeout(() => el.classList.remove("lit"), 700); };
+  el.addEventListener("input", () => { paintRange(el); light(); dim(); });
+  el.addEventListener("pointerdown", light);
+  el.addEventListener("pointerup", dim);
+  el.addEventListener("keyup", dim);
+}
+
+/* ---- price scrubber: drag across to read P/L at any stock price ---- */
+let chartCtx = null, heatPrices = [];
+function updateScrub() {
+  if (!chartCtx) return;
+  const { X, Y, lo, hi, tE, dateMs, ivm, showDate } = chartCtx;
+  if (B.scrub == null || B.scrub < lo || B.scrub > hi) B.scrub = B.spot;
+  $("#bScrub").value = Math.round((B.scrub - lo) / (hi - lo) * 1000);
+  const S = B.scrub, ve = pnlAt(B.legs, S, tE, ivm), vd = showDate ? pnlAt(B.legs, S, dateMs, ivm) : null;
+  $("#bMl").setAttribute("x1", X(S)); $("#bMl").setAttribute("x2", X(S));
+  $("#bMe").setAttribute("cx", X(S)); $("#bMe").setAttribute("cy", Y(ve));
+  $("#bMd").style.display = showDate ? "" : "none";
+  if (showDate) { $("#bMd").setAttribute("cx", X(S)); $("#bMd").setAttribute("cy", Y(vd)); }
+  $("#bScrubOut").innerHTML = `<span>Stock at <b>${f2(S)}</b> (${pct((S - B.spot) / B.spot)})</span>
+    <span>At expiration <b class="${signed(ve)}">${plFmt(ve)}</b></span>` +
+    (showDate ? `<span>${B.day === 0 ? "Today" : "On " + shortDate(dateMs)} <b class="${signed(vd)}">${plFmt(vd)}</b></span>` : "");
+  const row = heatPrices.length ? nearestIdx(heatPrices, S) : -1;
+  document.querySelectorAll("#bHeat tbody tr").forEach((tr, i) => tr.classList.toggle("scrubrow", i === row));
+  paintRange($("#bScrub"));
+}
+$("#bScrub").addEventListener("input", () => {
+  if (!chartCtx) return;
+  B.scrub = chartCtx.lo + (chartCtx.hi - chartCtx.lo) * (+$("#bScrub").value) / 1000;
+  updateScrub();
+});
 
 function niceTicks(lo, hi, n = 6) {
   const span = hi - lo;
@@ -1041,7 +1111,10 @@ function renderChart(tE, dateMs, showDate, ivm, a) {
     <circle id="bHe" r="4" fill="var(--up)"/><circle id="bHd" r="4" fill="#5fa4e8"/>
     <g class="tip"><rect id="bTipBg" rx="8" fill="var(--panel)" stroke="var(--line)"/><text id="bTip"></text></g></g>`;
   svg += `<rect x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent" id="bHit"/></svg>`;
+  svg = svg.replace("</svg>", "") + `<g id="bMark"><line id="bMl" y1="${m.t}" y2="${H - m.b}" stroke="#9fd0ff" stroke-width="1.5"/>
+    <circle id="bMe" r="5" fill="var(--up)" stroke="#fff" stroke-width="1.5"/><circle id="bMd" r="5" fill="#5fa4e8" stroke="#fff" stroke-width="1.5"/></g></svg>`;
   $("#bChart").innerHTML = svg;
+  chartCtx = { X, Y, lo, hi, tE, dateMs, ivm, showDate: !!yd };
 
   const hit = $("#bHit"), svgEl = $("#bSvg");
   const move = ev => {
@@ -1055,7 +1128,7 @@ function renderChart(tE, dateMs, showDate, ivm, a) {
     $("#bHd").style.display = yd ? "" : "none";
     if (yd) { $("#bHd").setAttribute("cx", X(S)); $("#bHd").setAttribute("cy", Y(vd)); }
     const lines = [`Stock ${f2(S)} (${pct((S - B.spot) / B.spot)})`, `At expiration: ${plFmt(ve)}`];
-    if (yd) lines.push(`On ${shortDate(dateMs)}: ${plFmt(vd)}`);
+    if (yd) lines.push(`${B.day === 0 ? "Today" : "On " + shortDate(dateMs)}: ${plFmt(vd)}`);
     const tw = 190, th = 14 + lines.length * 17;
     const tx = X(S) + 12 + tw > W - m.r ? X(S) - 12 - tw : X(S) + 12, ty = m.t + 6;
     const bg = $("#bTipBg");
@@ -1075,6 +1148,7 @@ function renderHeat(tE, maxDay, ivm, a) {
   const lo = B.spot * (1 - B.range), hi = B.spot * (1 + B.range), rows = 25;
   const prices = Array.from({ length: rows }, (_, i) => hi - (hi - lo) * i / (rows - 1));
   const spotRow = nearestIdx(prices, B.spot);
+  heatPrices = prices;
   const vals = prices.map(S => days.map(d => pnlAt(B.legs, S, colMs(d), ivm)));
   const maxAbs = Math.max(1, ...vals.flat().map(Math.abs));
   const show = v => plFmt(v, true);

@@ -34,6 +34,7 @@ Your trades are saved to `options-tracker/trades.json`, which is kept out of git
 - Or build your own: add, remove and edit legs (buy/sell, call/put/stock, expiration, strike, quantity, price). On the Chain tab, clicking a contract adds it as a leg: a click on the bid sells, a click anywhere else buys.
 - Summary boxes: net debit or credit, max profit and max loss, breakevens, chance of profit, buying power (estimated as max loss), and combined delta, gamma, theta and vega.
 - Profit/loss chart at expiration and on any date before it (date slider), with an implied volatility slider and a price range slider. Hover over the chart to read exact values.
+- **Price slider** under the chart: drag it across to light up any stock price on the chart and in the grid, with the P/L there today (or on the chosen date) and at expiration.
 - Profit/loss grid by stock price and date.
 - **P/L $ / P/L % switch** at the top of the Builder: shows the summary boxes, chart and grid in dollars or as a percent of max risk (or of the premium when risk is unlimited).
 - **Save to My Trades** stores the whole position. Each open position in My Trades has a **Builder** button that opens it back up at its entry prices.
