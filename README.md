@@ -7,3 +7,7 @@
 
 **Install:** copy `agents/*.md` to `~/.claude/agents/`. Then in Claude Code, say *"mark PDH/PDL on my watchlist"* or *"mark PDH/PDL on NQ and ES"*.
 The watchlist is read from `TRADING_PLAN_CHECKLIST.md`, section 1.6.
+
+## Put tracker
+
+[`options-tracker/`](options-tracker/) logs bought and sold puts, groups them as **Hop** (90 days or less), **Skip** (91-360 days) or **Leap** (over 360 days), and pulls live prices from Yahoo Finance. See [`options-tracker/README.md`](options-tracker/README.md).
