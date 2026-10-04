@@ -37,6 +37,7 @@ Your trades are saved to `options-tracker/trades.json`, which is kept out of git
 - **Price slider** under the chart: drag it across to light up any stock price on the chart and in the grid, with the P/L there today (or on the chosen date) and at expiration.
 - Profit/loss grid by stock price and date.
 - **P/L $ / P/L % switch** at the top of the Builder: shows the summary boxes, chart and grid in dollars or as a percent of max risk (or of the premium when risk is unlimited).
+- **Contract value switch** next to it: shows what the position is worth at each price and date (what you would receive, or pay if negative, to close it) instead of profit/loss. A dashed line marks your entry cost or credit; grid colors still show profit (green) or loss (red).
 - **Save to My Trades** stores the whole position. Each open position in My Trades has a **Builder** button that opens it back up at its entry prices.
 
 **My Trades tab.** Open positions grouped Hop / Skip / Leap. A multi-leg position is grouped by its nearest expiration and shown as one row with its legs underneath.
