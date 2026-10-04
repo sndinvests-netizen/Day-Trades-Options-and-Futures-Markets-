@@ -418,6 +418,95 @@ def open_totals(trades):
     return collateral, long_cost
 
 
+# ---------- premium income ----------
+
+PREMIUM_KINDS = ("Cash-secured puts", "Covered calls", "Covered puts", "Short calls",
+                 "Credit spreads", "Short straddles & strangles")
+
+
+def option_credit(legs):
+    """Net premium received for the option legs at open (stock legs left out)."""
+    return sum(-sign(t) * t["premium"] * MULTIPLIER * t["contracts"] for t in legs if kind(t) != "stock")
+
+
+def premium_kind(legs):
+    """Which premium-selling type a position is, or None if it was opened for a debit."""
+    opts = [t for t in legs if kind(t) != "stock"]
+    if not opts or option_credit(legs) <= 0:
+        return None
+    shorts = [t for t in opts if t["side"] == "sell"]
+    stock_side = {t["side"] for t in legs if kind(t) == "stock"}
+    if "buy" in stock_side and any(kind(t) == "call" for t in shorts):
+        return "Covered calls"  # includes collars
+    if "sell" in stock_side and any(kind(t) == "put" for t in shorts):
+        return "Covered puts"
+    if len(opts) == 1:
+        return "Cash-secured puts" if kind(opts[0]) == "put" else "Short calls"
+    if any(t["side"] == "buy" for t in opts):
+        return "Credit spreads"
+    return "Short straddles & strangles"
+
+
+def premium_kept(legs):
+    """For a closed position: premium kept on the option legs after buybacks and all fees."""
+    gross = sum(sign(t) * (t["exit_premium"] - t["premium"]) * MULTIPLIER * t["contracts"]
+                for t in legs if kind(t) != "stock")
+    return gross - sum(t["fees"] + t.get("exit_fees", 0.0) for t in legs)
+
+
+def premium_report(trades):
+    """Premium collected and kept from selling options, by type and by month.
+
+    Collected = net credit at open (counted in the month opened). Kept = what was left
+    after buying back, assignment and fees, once every leg is closed (counted in the
+    month closed). Open positions show their credit as still in play.
+    """
+    by_kind = {k: {"kind": k, "positions": 0, "open": 0, "collected": 0.0, "open_credit": 0.0,
+                   "closed_credit": 0.0, "kept": 0.0, "wins": 0} for k in PREMIUM_KINDS}
+    months, open_positions = {}, []
+    for legs in positions_of(trades):
+        k = premium_kind(legs)
+        if not k:
+            continue
+        row, credit = by_kind[k], option_credit(legs)
+        row["positions"] += 1
+        row["collected"] += credit
+        m = months.setdefault(legs[0]["opened"][:7], {"collected": 0.0, "kept": 0.0})
+        m["collected"] += credit
+        if any(t["status"] == "open" for t in legs):
+            row["open"] += 1
+            row["open_credit"] += credit
+            open_positions.append({"ids": [t["id"] for t in legs], "kind": k, "credit": credit})
+        else:
+            kept = premium_kept(legs)
+            row["closed_credit"] += credit
+            row["kept"] += kept
+            row["wins"] += kept > 0
+            closed = max(t["closed"] for t in legs)[:7]
+            months.setdefault(closed, {"collected": 0.0, "kept": 0.0})["kept"] += kept
+    rows = [r for r in by_kind.values() if r["positions"]]
+    total = {key: sum(r[key] for r in rows) for key in
+             ("positions", "open", "collected", "open_credit", "closed_credit", "kept", "wins")}
+    return {"by_kind": rows, "total": total, "open_positions": open_positions,
+            "by_month": [dict(month=m, **v) for m, v in sorted(months.items())]}
+
+
+def cmd_premium(args, trades):
+    rep = premium_report(trades)
+    if not rep["by_kind"]:
+        print("No premium-selling positions yet (sold puts, covered calls, credit spreads...).")
+        return
+    print(f"{'Type':<28}{'Positions':>10}{'Open':>6}{'Collected':>12}{'Kept':>12}{'Kept %':>8}")
+    for r in rep["by_kind"] + [dict(rep["total"], kind="TOTAL")]:
+        pct = f"{r['kept'] / r['closed_credit']:.0%}" if r["closed_credit"] else "-"
+        print(f"{r['kind']:<28}{r['positions']:>10}{r['open']:>6}{money(r['collected']):>12}"
+              f"{money(r['kept'], True):>12}{pct:>8}")
+    print(f"\nStill open: {money(rep['total']['open_credit'])} of premium in {rep['total']['open']} position(s)")
+    print(f"\n{'Month':<10}{'Collected':>12}{'Kept':>12}")
+    for m in rep["by_month"]:
+        print(f"{m['month']:<10}{money(m['collected']):>12}{money(m['kept'], True):>12}")
+
+
 def cmd_report(args, trades):
     closed = [t for t in trades if t["status"] != "open"]
     open_ = [t for t in trades if t["status"] == "open"]
@@ -462,6 +551,7 @@ def main(argv=None):
     l.add_argument("--live", action="store_true", help="pull live prices, P&L, delta, assignment risk")
 
     sub.add_parser("report", help="win rate and realized P&L by Hop/Skip/Leap, side, and ticker")
+    sub.add_parser("premium", help="premium collected and kept from sold puts, covered calls, credit spreads")
 
     d = sub.add_parser("delete", help="delete a trade logged by mistake (a multi-leg position goes as a whole)")
     d.add_argument("id", type=int)
@@ -470,7 +560,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     trades = load(args.db)
     {"add": cmd_add, "close": cmd_close, "delete": cmd_delete, "list": cmd_list,
-     "report": cmd_report}[args.cmd](args, trades)
+     "report": cmd_report, "premium": cmd_premium}[args.cmd](args, trades)
     if args.cmd in ("add", "close", "delete"):
         save(args.db, trades)
 

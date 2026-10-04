@@ -45,6 +45,7 @@ Your trades are saved to `options-tracker/trades.json`, which is kept out of git
 - Assignment warnings on short options.
 - Close a trade as bought/sold to close, expired, or assigned. A multi-leg position closes all at once, with an exit price for each leg.
 - **Delete** a trade logged by mistake (open or closed). It asks first, a multi-leg position is deleted as a whole, and the file from just before is kept as `trades.json.bak`.
+- **Premium income:** premium collected and kept from cash-secured puts, covered calls, covered puts, short calls, credit spreads (verticals, iron condors, iron butterflies) and short straddles/strangles. Shows each type's collected, kept (after buybacks, assignment and fees), kept %, premium still open, what the open ones would cost to close now, and a month-by-month table. Debit trades are left out; a short call is listed as a short call unless the shares are a stock leg in the same position.
 - Results: win rate and realized P&L by group, by bought vs sold puts and calls, multi-leg, and by ticker. A spread counts as one position.
 
 ## Command line
@@ -70,6 +71,9 @@ python3 tracker.py close 5 --assigned --premium 8  # assigned; 8 = intrinsic val
 
 # Win rate and realized P&L
 python3 tracker.py report
+
+# Premium collected and kept from selling options, by type and month
+python3 tracker.py premium
 
 # Delete a trade logged by mistake (shows what would go; add --yes to delete)
 python3 tracker.py delete 7

@@ -44,7 +44,7 @@ def positions():
     report = [{"group": n, "trades": c, "wins": w, "realized": r}
               for n, c, w, r in tracker.report_groups(trades)]
     collateral, long_cost = tracker.open_totals(trades)
-    return {"open": open_, "closed": closed, "report": report,
+    return {"open": open_, "closed": closed, "report": report, "premium": tracker.premium_report(trades),
             "collateral": collateral, "long_cost": long_cost}
 
 
