@@ -304,7 +304,7 @@ tr.pos-leg td.contract { padding-left: 24px; }
           <div class="sliders">
             <label>Date: <b id="bDateLbl"></b> <input type="range" class="glow" id="bDate" min="0" max="0" step="1" value="0"></label>
             <label>Implied volatility: <b id="bIvLbl"></b> <input type="range" class="glow" id="bIv" min="-50" max="100" step="5" value="0"></label>
-            <label>Price range: <b id="bRangeLbl"></b> <input type="range" class="glow" id="bRange" min="2" max="60" step="1" value="20"></label>
+            <label>Price range: <b id="bRangeLbl"></b> <input type="range" class="glow" id="bRange" min="2" max="133" step="1" value="20"></label>
           </div>
           <div class="chart" id="bChart"></div>
           <div class="scrub">
@@ -1002,7 +1002,8 @@ function renderAnalysis(recalc = true) {
   const dateMs = B.day >= maxDay ? tE : now + B.day * DAY;
   $("#bDateLbl").textContent = B.day === 0 && maxDay > 0 ? "Today" : B.day >= maxDay ? `Expiration (${shortDate(tE)})` : `${shortDate(dateMs)} (${Math.ceil((tE - dateMs) / DAY)}d to expiration)`;
   $("#bIvLbl").textContent = B.ivShift === 0 ? "as quoted" : `${B.ivShift > 0 ? "+" : ""}${Math.round(B.ivShift * 100)}%`;
-  $("#bRangeLbl").textContent = `±${Math.round(B.range * 100)}%`;
+  const down = Math.min(B.range, MAX_DOWN), up = B.range;
+  $("#bRangeLbl").textContent = down < up ? `−${Math.round(down * 100)}% / +${Math.round(up * 100)}%` : `±${Math.round(up * 100)}%`;
 
   if (recalc || !lastAnalysis) lastAnalysis = analyze(legs, B.spot, nearSigma(legs), ivm);
   const a = lastAnalysis, g = a.greeks;
@@ -1074,6 +1075,10 @@ $("#bScrub").addEventListener("input", () => {
   updateScrub();
 });
 
+/* Chart/grid price window. Up to +133%; the downside stops at -99% since a price can't go below zero. */
+const MAX_DOWN = 0.99;
+const priceBounds = () => [B.spot * (1 - Math.min(B.range, MAX_DOWN)), B.spot * (1 + B.range)];
+
 function niceTicks(lo, hi, n = 6) {
   const span = hi - lo;
   if (!(span > 0)) return [lo];
@@ -1086,7 +1091,7 @@ function niceTicks(lo, hi, n = 6) {
 
 function renderChart(tE, dateMs, showDate, ivm, a) {
   const W = 880, H = 340, m = { l: 66, r: 16, t: 14, b: 34 };
-  const lo = B.spot * (1 - B.range), hi = B.spot * (1 + B.range), N = 260;
+  const [lo, hi] = priceBounds(), N = 260;
   const xs = Array.from({ length: N + 1 }, (_, i) => lo + (hi - lo) * i / N);
   const ye = xs.map(S => pnlAt(B.legs, S, tE, ivm));
   const yd = showDate ? xs.map(S => pnlAt(B.legs, S, dateMs, ivm)) : null;
@@ -1145,7 +1150,7 @@ function renderHeat(tE, maxDay, ivm, a) {
   let days = maxDay <= 8 ? Array.from({ length: maxDay + 1 }, (_, i) => i)
            : [...new Set(Array.from({ length: 9 }, (_, i) => Math.round(i * maxDay / 8)))];
   const colMs = d => d >= maxDay ? tE : now + d * DAY;
-  const lo = B.spot * (1 - B.range), hi = B.spot * (1 + B.range), rows = 25;
+  const [lo, hi] = priceBounds(), rows = 25;
   const prices = Array.from({ length: rows }, (_, i) => hi - (hi - lo) * i / (rows - 1));
   const spotRow = nearestIdx(prices, B.spot);
   heatPrices = prices;
