@@ -24,7 +24,7 @@ import os
 import sys
 from datetime import date, datetime
 
-from options_data import QuoteError, greeks, quote, years_to_expiry
+from options_data import QuoteError, greeks, quote, spot_price, years_to_expiry
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DB = os.path.join(HERE, "trades.json")
@@ -65,11 +65,17 @@ def category(days):
 
 
 def kind(trade):
-    """'put' or 'call'. Trades logged before calls were supported are puts."""
+    """'put', 'call' or 'stock'. Trades logged before calls were supported are puts.
+
+    Stock legs only come from multi-leg positions saved in the Builder (covered
+    call, collar); their contracts count is lots of 100 shares and they have no exp.
+    """
     return trade.get("type", "put")
 
 
 def label(trade):
+    if kind(trade) == "stock":
+        return f"{trade['contracts'] * MULTIPLIER} sh"
     return f"{trade['strike']:g}{kind(trade)[0].upper()}"
 
 
@@ -86,6 +92,11 @@ def pnl(trade, exit_price, exit_fees=0.0):
 def stats(trade):
     """Static numbers that don't need live data. None means unlimited."""
     n, k, p = trade["contracts"], trade["strike"], trade["premium"]
+    if kind(trade) == "stock":
+        value = p * MULTIPLIER * n
+        if trade["side"] == "buy":
+            return {"breakeven": p, "max_loss": value, "max_profit": None}
+        return {"breakeven": p, "max_profit": value, "max_loss": None}
     call = kind(trade) == "call"
     out = {"breakeven": k + p if call else k - p}
     if trade["side"] == "buy":
@@ -103,11 +114,17 @@ def stats(trade):
 
 def live(trade):
     """Live quote, delta, unrealized P&L and warnings for an open trade."""
+    cost = trade["premium"] * MULTIPLIER * trade["contracts"]
+    if kind(trade) == "stock":
+        s = spot_price(trade["ticker"])
+        upnl = pnl(trade, s)
+        return {"spot": s, "bid": s, "ask": s, "last": s, "mark": s, "iv": 0.0, "volume": 0, "oi": 0,
+                "delta": 1.0, "position_delta": sign(trade) * MULTIPLIER * trade["contracts"],
+                "unrealized": upnl, "unrealized_pct": upnl / cost if cost else 0, "warning": None}
     q = quote(trade["ticker"], trade["exp"], trade["strike"], kind(trade))
     g = greeks(kind(trade), q["spot"], trade["strike"], years_to_expiry(trade["exp"]), q["iv"])
     delta = g["delta"] if g else None
     upnl = pnl(trade, q["mark"])
-    cost = trade["premium"] * MULTIPLIER * trade["contracts"]
     warning = None
     if trade["side"] == "sell":
         k, s = trade["strike"], q["spot"]
@@ -130,36 +147,90 @@ class TradeError(Exception):
 
 def add_trade(trades, ticker, type, side, strike, exp, premium, contracts=1, fees=0.0,
               opened=None, notes=""):
-    """Append a new open trade and return it. Raises TradeError on bad input."""
-    if type not in ("put", "call") or side not in ("buy", "sell"):
-        raise TradeError("type must be put/call and side buy/sell")
-    if strike <= 0 or premium < 0 or contracts < 1:
-        raise TradeError("strike must be above 0, premium 0 or more, contracts at least 1")
+    """Append a new single-option trade and return it. Raises TradeError on bad input."""
+    leg = {"type": type, "side": side, "strike": strike, "exp": exp, "premium": premium, "contracts": contracts}
+    return add_position(trades, ticker, [leg], fees=fees, opened=opened, notes=notes)[0]
+
+
+def add_position(trades, ticker, legs, strategy="", fees=0.0, opened=None, notes=""):
+    """Append one position (one or more legs) and return its leg records.
+
+    Multi-leg positions share a "group" id and "strategy" name, and are grouped as
+    Hop / Skip / Leap by their nearest option expiration. Fees go on the first leg.
+    """
+    if not legs:
+        raise TradeError("Add at least one leg")
     try:
         opened = parse_date(opened) if opened else date.today()
-        days = dte(exp, opened)
     except ValueError:
         raise TradeError("dates must be YYYY-MM-DD")
-    if days < 0:
-        raise TradeError("Expiration is before the open date.")
-    trade = {
-        "id": max([t["id"] for t in trades], default=0) + 1,
-        "ticker": ticker.upper().strip(),
-        "type": type,
-        "side": side,
-        "strike": strike,
-        "exp": exp,
-        "contracts": contracts,
-        "premium": premium,
-        "fees": fees,
-        "opened": opened.isoformat(),
-        "dte_at_open": days,
-        "category": category(days),
-        "status": "open",
-        "notes": notes or "",
-    }
-    trades.append(trade)
-    return trade
+    for leg in legs:
+        if leg.get("type") not in ("put", "call", "stock") or leg.get("side") not in ("buy", "sell"):
+            raise TradeError("each leg needs type put/call/stock and side buy/sell")
+        if leg["premium"] is None or leg["premium"] < 0 or not leg.get("contracts") or leg["contracts"] < 1:
+            raise TradeError("each leg needs a price of 0 or more and at least 1 contract")
+        if leg["type"] != "stock":
+            if not leg.get("strike") or leg["strike"] <= 0:
+                raise TradeError("strike must be above 0")
+            try:
+                leg["dte"] = dte(leg["exp"], opened)
+            except (TypeError, ValueError):
+                raise TradeError("dates must be YYYY-MM-DD")
+            if leg["dte"] < 0:
+                raise TradeError("Expiration is before the open date.")
+    option_days = [leg["dte"] for leg in legs if leg["type"] != "stock"]
+    if not option_days:
+        raise TradeError("A position needs at least one option leg")
+    cat = category(min(option_days))
+    group = None
+    if len(legs) > 1:
+        group = max([t.get("group") or 0 for t in trades], default=0) + 1
+    next_id = max([t["id"] for t in trades], default=0) + 1
+    out = []
+    for i, leg in enumerate(legs):
+        stock = leg["type"] == "stock"
+        trade = {
+            "id": next_id + i,
+            "ticker": ticker.upper().strip(),
+            "type": leg["type"],
+            "side": leg["side"],
+            "strike": 0.0 if stock else leg["strike"],
+            "exp": None if stock else leg["exp"],
+            "contracts": leg["contracts"],
+            "premium": leg["premium"],
+            "fees": fees if i == 0 else 0.0,
+            "opened": opened.isoformat(),
+            "dte_at_open": min(option_days) if stock else leg["dte"],
+            "category": cat,
+            "status": "open",
+            "notes": notes or "",
+        }
+        if group:
+            trade.update(group=group, strategy=strategy or "Multi-leg")
+        out.append(trade)
+    trades.extend(out)
+    return out
+
+
+def close_position(trades, legs, fees=0.0, closed=None):
+    """Close several legs at once: legs = [{"id": .., "premium": exit price}].
+
+    An option leg closed at 0 is recorded as expired. Fees go on the first leg.
+    """
+    if not legs:
+        raise TradeError("No legs to close")
+    out = []
+    for i, leg in enumerate(legs):
+        t = next((t for t in trades if t["id"] == leg.get("id")), None)
+        if t is None:
+            raise TradeError(f"No trade #{leg.get('id')}")
+        price = leg.get("premium")
+        if price is None or price < 0:
+            raise TradeError(f"Exit price needed for #{t['id']}")
+        expired = price == 0 and kind(t) != "stock"
+        out.append(close_trade(trades, t["id"], None if expired else price, expired=expired,
+                               fees=fees if i == 0 else 0.0, closed=closed))
+    return out
 
 
 def close_trade(trades, trade_id, premium=None, expired=False, assigned=False, fees=0.0, closed=None):
@@ -235,21 +306,23 @@ def cmd_list(args, trades):
 def describe(t, show_live=False):
     s = stats(t)
     side = "LONG " if t["side"] == "buy" else "SHORT"
-    head = (f"#{t['id']:<3} {side} {t['contracts']}x {t['ticker']:<5} {label(t)} {t['exp']}  "
+    head = (f"#{t['id']:<3} {side} {t['contracts']}x {t['ticker']:<5} {label(t)} {t['exp'] or ''}  "
             f"entry {t['premium']:.2f}  BE {s['breakeven']:.2f}")
+    if t.get("group"):
+        head += f"  [{t['strategy']}, position {t['group']}]"
     lines = [head]
     if t["status"] != "open":
         lines.append(f"      {t['status']} {t['closed']} @ {t['exit_premium']:.2f}  "
                      f"realized {money(t['realized'], True)}")
         return "\n".join(lines)
-    days = dte(t["exp"])
-    info = f"      {days} DTE  max profit {money(s['max_profit'])}  max loss {money(s['max_loss'])}"
+    days = dte(t["exp"]) if t["exp"] else None
+    info = f"      {'-' if days is None else days} DTE  max profit {money(s['max_profit'])}  max loss {money(s['max_loss'])}"
     if "collateral" in s:
         info += f"  collateral {money(s['collateral'])}"
     if "annualized" in s:
         info += f"  annualized {s['annualized']:.1%}"
     lines.append(info)
-    if days <= 7:
+    if days is not None and days <= 7:
         lines.append("      ! expires within a week")
     if show_live:
         try:
@@ -267,33 +340,59 @@ def describe(t, show_live=False):
     return "\n".join(lines)
 
 
-def report_groups(closed):
-    """(name, trades, wins, realized) rows for the report table."""
-    groups = [(c, lambda t, c=c: t["category"] == c) for c in ("Hop", "Skip", "Leap")]
-    for side, verb in (("buy", "Bought"), ("sell", "Sold")):
-        for k in ("put", "call"):
-            groups.append((f"{verb} {k}s", lambda t, side=side, k=k: t["side"] == side and kind(t) == k))
-    for tk in sorted({t["ticker"] for t in closed}):
-        groups.append((tk, lambda t, tk=tk: t["ticker"] == tk))
-    groups.append(("TOTAL", lambda t: True))
+def positions_of(trades):
+    """Group legs into positions: a multi-leg group, or a single trade on its own."""
+    out = {}
+    for t in trades:
+        out.setdefault(("g", t["group"]) if t.get("group") else ("t", t["id"]), []).append(t)
+    return list(out.values())
+
+
+def position_kind(legs):
+    if len(legs) > 1:
+        return "Multi-leg"
+    t = legs[0]
+    return f"{'Bought' if t['side'] == 'buy' else 'Sold'} {kind(t)}s"
+
+
+def report_groups(trades):
+    """(name, positions, wins, realized) rows for the report table.
+
+    Counts whole positions: a spread is one win or loss, once all its legs are closed.
+    """
+    closed = [p for p in positions_of(trades) if all(t["status"] != "open" for t in p)]
+    groups = [(c, lambda p, c=c: p[0]["category"] == c) for c in ("Hop", "Skip", "Leap")]
+    for name in ("Bought puts", "Sold puts", "Bought calls", "Sold calls", "Multi-leg"):
+        groups.append((name, lambda p, name=name: position_kind(p) == name))
+    for tk in sorted({p[0]["ticker"] for p in closed}):
+        groups.append((tk, lambda p, tk=tk: p[0]["ticker"] == tk))
+    groups.append(("TOTAL", lambda p: True))
     out = []
     for name, f in groups:
-        g = [t for t in closed if f(t)]
+        g = [sum(t["realized"] for t in p) for p in closed if f(p)]
         if g:
-            out.append((name, len(g), sum(1 for t in g if t["realized"] > 0), sum(t["realized"] for t in g)))
+            out.append((name, len(g), sum(1 for r in g if r > 0), sum(g)))
     return out
+
+
+def open_totals(trades):
+    """(cash securing single short puts, paid for open long options)."""
+    open_ = [t for t in trades if t["status"] == "open"]
+    collateral = sum(stats(t).get("collateral", 0) for t in open_
+                     if t["side"] == "sell" and kind(t) == "put" and not t.get("group"))
+    long_cost = sum(stats(t)["max_loss"] for t in open_ if t["side"] == "buy" and kind(t) != "stock")
+    return collateral, long_cost
 
 
 def cmd_report(args, trades):
     closed = [t for t in trades if t["status"] != "open"]
     open_ = [t for t in trades if t["status"] == "open"]
-    print(f"Open: {len(open_)}   Closed: {len(closed)}")
-    short_collateral = sum(stats(t).get("collateral", 0) for t in open_ if t["side"] == "sell")
-    long_cost = sum(stats(t)["max_loss"] for t in open_ if t["side"] == "buy")
+    print(f"Open legs: {len(open_)}   Closed legs: {len(closed)}")
+    short_collateral, long_cost = open_totals(trades)
     print(f"Cash securing short puts: {money(short_collateral)}   Paid for open long options: {money(long_cost)}")
-    print(f"\n{'Group':<16}{'Trades':>7}{'Wins':>6}{'Win %':>7}{'Realized P&L':>15}")
-    for name, n, wins, total in report_groups(closed):
-        print(f"{name:<16}{n:>7}{wins:>6}{wins / n:>7.0%}{money(total, True):>15}")
+    print(f"\n{'Group':<16}{'Positions':>10}{'Wins':>6}{'Win %':>7}{'Realized P&L':>15}")
+    for name, n, wins, total in report_groups(trades):
+        print(f"{name:<16}{n:>10}{wins:>6}{wins / n:>7.0%}{money(total, True):>15}")
 
 
 def main(argv=None):

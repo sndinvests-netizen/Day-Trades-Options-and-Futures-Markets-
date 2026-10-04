@@ -38,7 +38,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text);
   font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-.wrap { max-width: 1280px; margin: 0 auto; padding: 18px 16px; }
+.wrap { max-width: 1480px; margin: 0 auto; padding: 18px 16px; }
 header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
 h1 { font-size: 19px; margin: 0; letter-spacing: -.01em; display: flex; align-items: center; gap: 9px; }
 h1::before { content: ""; width: 22px; height: 22px; border-radius: 7px;
@@ -124,6 +124,39 @@ dialog::backdrop { background: rgba(10,20,35,.45); backdrop-filter: blur(2px); }
 .formerr { color: var(--down); font-size: 13px; min-height: 18px; margin-top: 8px; }
 .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; }
 .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; margin-right: 4px; border: 1px solid var(--line); }
+
+/* ---- builder ---- */
+.legs th, .legs td { text-align: left; }
+.legs td { padding: 6px 8px; }
+.legs select, .legs input { padding: 5px 7px; }
+.legs input.qty { width: 64px; }
+.legs input.price { width: 92px; }
+.legs tr.buy td:first-child { box-shadow: inset 3px 0 0 var(--up); }
+.legs tr.sell td:first-child { box-shadow: inset 3px 0 0 var(--down); }
+.legs .num { text-align: right; font-variant-numeric: tabular-nums; }
+.sliders { display: flex; gap: 22px; flex-wrap: wrap; margin-bottom: 12px; }
+.sliders label { flex: 1; min-width: 200px; }
+.sliders b { color: var(--text); font-weight: 600; }
+input[type=range] { padding: 0; border: 0; background: none; box-shadow: none; accent-color: #5fa4e8; width: 100%; }
+.chart svg { width: 100%; height: auto; display: block; touch-action: none; }
+.chart text { font-size: 11px; fill: var(--muted); font-family: inherit; }
+.chart .tip text { fill: var(--text); font-size: 12px; }
+.heat td { text-align: center; font-size: 12px; padding: 4px 6px; border: 1px solid var(--panel); }
+.heat th { text-align: center; }
+.heat th.price, .heat td.price { text-align: right; position: sticky; left: 0; background: var(--panel); z-index: 1; }
+.heat tr.atspot td.price { color: var(--spot); font-weight: 700; }
+.tabs.mini { padding: 3px 3px 5px; border-radius: 10px; gap: 4px; }
+.tabs.mini button { padding: 3px 11px; font-size: 12px; border-radius: 7px; }
+.inline { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 20; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; box-shadow: 0 12px 34px rgba(0,0,0,.3);
+  display: flex; gap: 12px; align-items: center; max-width: calc(100vw - 32px); }
+tr.pos-head td { font-weight: 600; background: var(--well); }
+tr.pos-leg td { font-size: 12.5px; color: var(--muted); }
+tr.pos-leg td.contract { padding-left: 24px; }
+.closelegs { display: grid; grid-template-columns: 1fr 130px; gap: 8px 12px; align-items: center; margin: 10px 0; }
+.closelegs input { width: 100%; }
+.empty { padding: 26px 8px; text-align: center; }
 </style>
 </head>
 <body>
@@ -132,9 +165,10 @@ dialog::backdrop { background: rgba(10,20,35,.45); backdrop-filter: blur(2px); }
     <h1>Option Tracker</h1>
     <div class="tabs">
       <button id="tab-chain" class="on">Chain</button>
+      <button id="tab-builder">Builder</button>
       <button id="tab-trades">My Trades</button>
     </div>
-    <span class="note">Yahoo Finance data, delayed about 15 min. Greeks are calculated (Black-Scholes, 4% rate).</span>
+    <span class="note">Yahoo Finance data, delayed about 15 min. Greeks and projections use Black-Scholes (4% rate).</span>
   </header>
 
   <!-- ===== Chain ===== -->
@@ -161,7 +195,13 @@ dialog::backdrop { background: rgba(10,20,35,.45); backdrop-filter: blur(2px); }
       <div class="panel">
         <div class="row">
           <h2 id="chainTitle"></h2>
-          <span class="note">Click any call or put to log a trade on it.</span>
+          <div class="inline note">Clicking a contract
+            <div class="tabs mini" id="clickMode">
+              <button type="button" data-mode="builder" class="on">adds it to Builder</button>
+              <button type="button" data-mode="log">logs a trade</button>
+            </div>
+            <span id="clickHint">Bid = sell, anything else = buy.</span>
+          </div>
         </div>
         <div class="scroll"><table id="chain"></table></div>
         <div class="legend note">
@@ -173,6 +213,54 @@ dialog::backdrop { background: rgba(10,20,35,.45); backdrop-filter: blur(2px); }
       <div class="panel">
         <h2>Unusual activity this expiration</h2>
         <div class="scroll"><table id="unusual"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Builder ===== -->
+  <section id="view-builder" class="hidden">
+    <div class="panel">
+      <form class="controls" id="bLookup">
+        <label>Ticker <input id="bTicker" autocomplete="off" spellcheck="false" placeholder="TSLA" style="width:110px;text-transform:uppercase;font-weight:700"></label>
+        <button class="primary" type="submit">Load</button>
+        <label>Strategy <select id="bStrategy"></select></label>
+        <label>Expiration <select id="bExp"></select></label>
+        <span class="note" id="bSpot"></span>
+      </form>
+    </div>
+    <div id="bErr" class="err hidden"></div>
+    <div id="bBody" class="hidden">
+      <div class="panel">
+        <div class="row">
+          <h2>Legs</h2>
+          <div>
+            <button class="ghost" type="button" id="bAddLeg">+ Add leg</button>
+            <button class="ghost" type="button" id="bRefresh">Refresh prices</button>
+            <button class="primary" type="button" id="bSave">Save to My Trades</button>
+          </div>
+        </div>
+        <div class="scroll"><table class="legs" id="bLegs"></table></div>
+        <p class="note" id="bLegNote"></p>
+      </div>
+      <div id="bNoLegs" class="panel note empty hidden">Pick a strategy, add a leg, or click contracts on the Chain tab.</div>
+      <div id="bAnalysis">
+        <div class="tiles" id="bTiles"></div>
+        <div class="panel">
+          <div class="row"><h2>Profit / loss</h2>
+            <span class="note"><span style="color:var(--up)">━</span> at expiration &nbsp; <span style="color:#5fa4e8">╍</span> on the chosen date &nbsp; <span style="color:var(--spot)">│</span> stock price</span></div>
+          <div class="sliders">
+            <label>Date: <b id="bDateLbl"></b> <input type="range" id="bDate" min="0" max="0" step="1" value="0"></label>
+            <label>Implied volatility: <b id="bIvLbl"></b> <input type="range" id="bIv" min="-50" max="100" step="5" value="0"></label>
+            <label>Price range: <b id="bRangeLbl"></b> <input type="range" id="bRange" min="2" max="60" step="1" value="20"></label>
+          </div>
+          <div class="chart" id="bChart"></div>
+        </div>
+        <div class="panel">
+          <div class="row"><h2>Profit / loss by price and date</h2>
+            <div class="tabs mini" id="bUnit"><button type="button" data-u="$" class="on">$</button><button type="button" data-u="%">% of max risk</button></div></div>
+          <div class="scroll"><table class="heat" id="bHeat"></table></div>
+          <p class="note">Before expiration, values are Black-Scholes estimates using each leg's implied volatility (adjusted by the slider). Chance of profit assumes the stock moves randomly with the near-term at-the-money IV.</p>
+        </div>
       </div>
     </div>
   </section>
@@ -197,6 +285,8 @@ dialog::backdrop { background: rgba(10,20,35,.45); backdrop-filter: blur(2px); }
     </div>
   </section>
 </div>
+
+<div class="toast hidden" id="toast"><span id="toastMsg"></span><button class="primary small" type="button" id="toastGo">Open Builder</button></div>
 
 <dialog id="addDlg">
   <form id="addForm" method="dialog">
@@ -236,9 +326,41 @@ dialog::backdrop { background: rgba(10,20,35,.45); backdrop-filter: blur(2px); }
   </form>
 </dialog>
 
+<dialog id="saveDlg">
+  <form id="saveForm" method="dialog">
+    <h2>Save to My Trades</h2>
+    <p class="note" id="saveSummary"></p>
+    <div class="grid2">
+      <label>Strategy name <input name="strategy"></label>
+      <label>Fees ($ total) <input name="fees" type="number" step="any" min="0" value="0"></label>
+      <label>Opened <input name="opened" type="date"></label>
+      <label>Notes <input name="notes"></label>
+    </div>
+    <p class="note">Prices saved are the leg prices in the Builder. Edit them there first if your fills were different.</p>
+    <div class="formerr" id="saveErr"></div>
+    <div class="actions"><button class="ghost" type="button" data-close>Cancel</button><button class="primary" type="submit">Save</button></div>
+  </form>
+</dialog>
+
+<dialog id="closePosDlg">
+  <form id="closePosForm" method="dialog">
+    <h2 id="closePosTitle">Close position</h2>
+    <p class="note">Exit price per share for each leg, prefilled at the current mid. An option at 0 is recorded as expired.</p>
+    <div class="closelegs" id="closePosLegs"></div>
+    <button class="ghost small" type="button" id="closePosExpire">Options expired: set all to 0</button>
+    <div class="grid2" style="margin-top:12px">
+      <label>Fees ($ total) <input name="fees" type="number" step="any" min="0" value="0"></label>
+      <label>Closed on <input name="closed" type="date"></label>
+    </div>
+    <div class="formerr" id="closePosErr"></div>
+    <div class="actions"><button class="ghost" type="button" data-close>Cancel</button><button class="primary" type="submit">Save</button></div>
+  </form>
+</dialog>
+
 <script>
 const $ = (s, el = document) => el.querySelector(s);
 const WATCHLIST = ["SPY", "QQQ", "TSLA", "AAPL", "AMD", "INTC"];
+const DAY = 864e5, YEAR = 365 * DAY, RATE = 0.04;
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
@@ -249,8 +371,13 @@ const pct = (x, d = 1) => x == null ? "–" : (x * 100).toFixed(d) + "%";
 const int = x => x == null ? "–" : Number(x).toLocaleString();
 const usd = (x, cents = false) => x == null ? "unlimited" :
   (x < 0 ? "-$" : "$") + Math.abs(x).toLocaleString(undefined, { minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: cents ? 2 : 0 });
+const signedUsd = x => (x > 0 ? "+" : "") + usd(x);
+const kfmt = x => { const a = Math.abs(x), s = x < 0 ? "-" : x > 0 ? "+" : ""; return s + (a >= 1e4 ? (a / 1e3).toFixed(0) + "k" : a >= 1e3 ? (a / 1e3).toFixed(1) + "k" : a.toFixed(0)); };
 const signed = x => x == null ? "" : x > 0 ? "up" : x < 0 ? "down" : "";
 const today = () => new Date().toLocaleDateString("en-CA");
+const shortDate = ms => new Date(ms).toLocaleDateString([], { month: "short", day: "numeric" });
+const expMs = exp => Date.parse(exp + "T20:00:00Z");  // 4pm New York (daylight time; off by an hour in winter)
+const daysTo = exp => Math.round((Date.parse(exp + "T12:00:00") - Date.parse(today() + "T12:00:00")) / DAY);
 
 async function api(path, body) {
   const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
@@ -259,20 +386,114 @@ async function api(path, body) {
   return data;
 }
 
-/* ---------- tabs ---------- */
+/* ================= pricing engine (Black-Scholes) ================= */
+function erf(x) {  // Abramowitz-Stegun 7.1.26
+  const s = Math.sign(x); x = Math.abs(x);
+  const t = 1 / (1 + 0.3275911 * x);
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return s * y;
+}
+const ncdf = x => 0.5 * (1 + erf(x / Math.SQRT2));
+const npdf = x => Math.exp(-x * x / 2) / Math.sqrt(2 * Math.PI);
+const intrinsic = (type, S, K) => type === "call" ? Math.max(0, S - K) : Math.max(0, K - S);
+
+function bsPrice(type, S, K, T, iv) {
+  if (T <= 0 || !(iv > 0) || S <= 0) return intrinsic(type, S, K);
+  const st = iv * Math.sqrt(T), d1 = (Math.log(S / K) + (RATE + iv * iv / 2) * T) / st, d2 = d1 - st, disc = K * Math.exp(-RATE * T);
+  return type === "call" ? S * ncdf(d1) - disc * ncdf(d2) : disc * ncdf(-d2) - S * ncdf(-d1);
+}
+function bsGreeks(type, S, K, T, iv) {
+  if (T <= 0 || !(iv > 0)) return { delta: type === "call" ? (S > K ? 1 : 0) : (S < K ? -1 : 0), gamma: 0, theta: 0, vega: 0 };
+  const st = iv * Math.sqrt(T), d1 = (Math.log(S / K) + (RATE + iv * iv / 2) * T) / st, d2 = d1 - st, pdf = npdf(d1), disc = K * Math.exp(-RATE * T);
+  const decay = -S * pdf * iv / (2 * Math.sqrt(T));
+  return type === "call"
+    ? { delta: ncdf(d1), gamma: pdf / (S * st), theta: (decay - RATE * disc * ncdf(d2)) / 365, vega: S * pdf * Math.sqrt(T) / 100 }
+    : { delta: ncdf(d1) - 1, gamma: pdf / (S * st), theta: (decay + RATE * disc * ncdf(-d2)) / 365, vega: S * pdf * Math.sqrt(T) / 100 };
+}
+const legSign = l => l.side === "buy" ? 1 : -1;
+const legIv = (l, ivm) => (l.iv > 0.01 ? l.iv : 0.3) * ivm;
+
+function legValue(l, S, tMs, ivm) {
+  if (l.type === "stock") return S;
+  // US stock options are American: never worth less than exercising now.
+  return Math.max(intrinsic(l.type, S, l.strike), bsPrice(l.type, S, l.strike, (expMs(l.exp) - tMs) / YEAR, legIv(l, ivm)));
+}
+function pnlAt(legs, S, tMs, ivm = 1) {
+  let v = 0;
+  for (const l of legs) v += legSign(l) * l.qty * 100 * (legValue(l, S, tMs, ivm) - l.price);
+  return v;
+}
+function firstExpMs(legs) {
+  const t = legs.filter(l => l.type !== "stock").map(l => expMs(l.exp));
+  return t.length ? Math.min(...t) : Date.now();
+}
+
+/* Whole-position numbers at the first expiration: max profit/loss, breakevens, chance of profit, Greeks. */
+function analyze(legs, spot, sigma, ivm = 1) {
+  const tE = firstExpMs(legs), now = Date.now();
+  const net = legs.reduce((a, l) => a + legSign(l) * l.qty * 100 * l.price, 0);  // > 0 paid, < 0 received
+  // One expiration: everything is exact at expiration, so scan 0 to 4x the price.
+  // Several (calendars, diagonals): later legs are still priced by Black-Scholes, which
+  // misbehaves at extreme prices, so scan a realistic +/-5 expected moves instead.
+  const exps = new Set(legs.filter(l => l.type !== "stock").map(l => l.exp));
+  let lo = 0, hi = spot * 4;
+  if (exps.size > 1) {
+    const sd = (sigma > 0 ? sigma : 0.3) * ivm * Math.sqrt(Math.max((tE - now) / YEAR, 1 / 365));
+    lo = spot * Math.exp(-5 * sd); hi = spot * Math.exp(5 * sd);
+  }
+  const n = 2000, xs = [], ys = [];
+  for (let i = 0; i <= n; i++) { const S = lo + (hi - lo) * i / n; xs.push(S); ys.push(pnlAt(legs, S, tE, ivm)); }
+  for (const l of legs) if (l.type !== "stock" && l.strike > lo && l.strike < hi) { xs.push(l.strike); ys.push(pnlAt(legs, l.strike, tE, ivm)); }
+  let maxP = Math.max(...ys), maxL = Math.min(...ys);
+  const far1 = pnlAt(legs, spot * 10, tE, ivm), far2 = pnlAt(legs, spot * 20, tE, ivm);
+  const unlimP = far2 > far1 + 1, unlimL = far2 < far1 - 1;
+  if (exps.size === 1 || !exps.size) {
+    const v0 = pnlAt(legs, 0, tE, ivm);  // the stock going to zero counts too
+    maxP = Math.max(maxP, v0); maxL = Math.min(maxL, v0);
+  }
+  const bes = [];
+  for (let i = 1; i <= n; i++) {
+    const a = ys[i - 1], b = ys[i];
+    if ((a < 0 && b >= 0) || (a > 0 && b <= 0)) bes.push(xs[i - 1] + (xs[i] - xs[i - 1]) * (a / (a - b)));
+  }
+  let pop = null;
+  if (sigma > 0) {
+    const T = Math.max((tE - now) / YEAR, 1 / (365 * 24)), s = sigma * ivm * Math.sqrt(T), mu = Math.log(spot) + (RATE - sigma * sigma * ivm * ivm / 2) * T;
+    pop = 0;
+    const m = 600;
+    for (let i = 0; i < m; i++) {
+      const z0 = -6 + 12 * i / m, z1 = -6 + 12 * (i + 1) / m;
+      if (pnlAt(legs, Math.exp(mu + s * (z0 + z1) / 2), tE, ivm) > 0) pop += ncdf(z1) - ncdf(z0);
+    }
+  }
+  const g = { delta: 0, gamma: 0, theta: 0, vega: 0 };
+  for (const l of legs) {
+    const k = legSign(l) * l.qty * 100;
+    if (l.type === "stock") { g.delta += k; continue; }
+    const x = bsGreeks(l.type, spot, l.strike, (expMs(l.exp) - now) / YEAR, legIv(l, ivm));
+    for (const key in g) g[key] += k * x[key];
+  }
+  return { net, maxP: unlimP ? null : maxP, maxL: unlimL ? null : maxL, bes, pop, greeks: g,
+           risk: unlimL ? null : Math.max(0, -maxL) };
+}
+
+/* ================= tabs ================= */
+const TABS = ["chain", "builder", "trades"];
 function showTab(name) {
-  for (const t of ["chain", "trades"]) {
+  for (const t of TABS) {
     $("#tab-" + t).classList.toggle("on", t === name);
     $("#view-" + t).classList.toggle("hidden", t !== name);
   }
   store.set("tab", name);
   if (name === "trades") loadTrades();
+  if (name === "builder") openBuilder();
 }
-$("#tab-chain").onclick = () => showTab("chain");
-$("#tab-trades").onclick = () => showTab("trades");
+for (const t of TABS) $("#tab-" + t).onclick = () => showTab(t);
+const tabOn = name => !$("#view-" + name).classList.contains("hidden");
 
-/* ---------- chain ---------- */
+/* ================= chain ================= */
 let current = null, timer = null, reqSeq = 0, busy = false;
+let clickMode = store.get("clickMode", "builder");
 
 function renderChips() {
   const recent = store.get("recent", []);
@@ -309,10 +530,7 @@ async function loadChain(ticker, exp, quiet) {
 
 function renderChain() {
   const d = current, s = d.summary;
-  $("#exp").innerHTML = d.expirations.map(e => {
-    const days = Math.round((new Date(e + "T16:00:00") - new Date(today() + "T16:00:00")) / 864e5);
-    return `<option value="${e}" ${e === d.exp ? "selected" : ""}>${e} (${days}d)</option>`;
-  }).join("");
+  $("#exp").innerHTML = d.expirations.map(e => `<option value="${e}" ${e === d.exp ? "selected" : ""}>${e} (${daysTo(e)}d)</option>`).join("");
   $("#asof").textContent = "Updated " + new Date(d.as_of).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
   const pcNote = r => r == null ? "" : r > 1 ? "more puts" : "more calls";
   $("#tiles").innerHTML = [
@@ -358,7 +576,7 @@ function renderChain() {
     if (!spotDone && k >= d.spot) { html += spotRow(); spotDone = true; }
     const { call, put } = byStrike.get(k);
     const side = (r, list, kind) => list.map(c => r
-      ? `<td class="${kind[0]} ${r.itm ? "itm" : ""}" data-kind="${kind}" data-strike="${k}">${fmt(c, r)}</td>`
+      ? `<td class="${kind[0]} ${r.itm ? "itm" : ""}" data-kind="${kind}" data-strike="${k}" data-col="${c}">${fmt(c, r)}</td>`
       : "<td></td>").join("");
     html += `<tr>${side(call, callCols, "call")}<td class="strike">${f2(k)}</td>${side(put, putCols, "put")}</tr>`;
   }
@@ -373,12 +591,24 @@ function renderChain() {
     : `<tbody><tr><td class="left note">No contracts traded at least 2× their open interest (500+ contracts) for this expiration.</td></tr></tbody>`;
 }
 
+function setClickMode(m) {
+  clickMode = m;
+  store.set("clickMode", m);
+  for (const b of document.querySelectorAll("#clickMode button")) b.classList.toggle("on", b.dataset.mode === m);
+  $("#clickHint").textContent = m === "builder" ? "Bid = sell, anything else = buy." : "";
+}
+$("#clickMode").onclick = e => { if (e.target.dataset.mode) setClickMode(e.target.dataset.mode); };
+
 $("#chain").onclick = e => {
   const td = e.target.closest("td[data-kind]");
   if (!td || !current) return;
   const kind = td.dataset.kind, strike = +td.dataset.strike;
   const r = current[kind === "call" ? "calls" : "puts"].find(x => x.strike === strike);
-  openAdd({ ticker: current.ticker, type: kind, strike, exp: current.exp, premium: r ? r.mark.toFixed(2) : "" });
+  if (clickMode === "builder") {
+    addLegFromChain(current, kind, strike, td.dataset.col === "bid" ? "sell" : "buy");
+  } else {
+    openAdd({ ticker: current.ticker, type: kind, strike, exp: current.exp, premium: r ? r.mark.toFixed(2) : "" });
+  }
 };
 
 $("#lookup").onsubmit = e => { e.preventDefault(); loadChain($("#ticker").value); };
@@ -392,12 +622,456 @@ function setTimer() {
   const sec = +$("#refresh").value;
   if (sec) timer = setInterval(() => {
     if (document.hidden) return;
-    if (!$("#view-chain").classList.contains("hidden") && current && !busy) loadChain(current.ticker, current.exp, true);
-    else if (!$("#view-trades").classList.contains("hidden")) loadTrades(true);
+    if (tabOn("chain") && current && !busy) loadChain(current.ticker, current.exp, true);
+    else if (tabOn("trades")) loadTrades(true);
   }, sec * 1000);
 }
 
-/* ---------- trades ---------- */
+/* ================= builder ================= */
+// [side, type, strike steps from the money (0 = at the money), qty, "far" = later expiration]
+const TEMPLATES = {
+  "Long call": [["buy", "call", 0]],
+  "Long put": [["buy", "put", 0]],
+  "Covered call": [["buy", "stock"], ["sell", "call", 1]],
+  "Cash-secured put": [["sell", "put", -1]],
+  "Bull call spread": [["buy", "call", 0], ["sell", "call", 1]],
+  "Bear put spread": [["buy", "put", 0], ["sell", "put", -1]],
+  "Bull put spread (credit)": [["sell", "put", -1], ["buy", "put", -2]],
+  "Bear call spread (credit)": [["sell", "call", 1], ["buy", "call", 2]],
+  "Long straddle": [["buy", "call", 0], ["buy", "put", 0]],
+  "Short straddle": [["sell", "call", 0], ["sell", "put", 0]],
+  "Long strangle": [["buy", "call", 1], ["buy", "put", -1]],
+  "Short strangle": [["sell", "call", 1], ["sell", "put", -1]],
+  "Iron condor": [["buy", "put", -2], ["sell", "put", -1], ["sell", "call", 1], ["buy", "call", 2]],
+  "Iron butterfly": [["buy", "put", -1], ["sell", "put", 0], ["sell", "call", 0], ["buy", "call", 1]],
+  "Long call butterfly": [["buy", "call", -1], ["sell", "call", 0, 2], ["buy", "call", 1]],
+  "Collar": [["buy", "stock"], ["buy", "put", -1], ["sell", "call", 1]],
+  "Calendar call spread": [["sell", "call", 0], ["buy", "call", 0, 1, "far"]],
+  "Calendar put spread": [["sell", "put", 0], ["buy", "put", 0, 1, "far"]],
+  "Diagonal call spread": [["sell", "call", 1], ["buy", "call", 0, 1, "far"]],
+};
+const B = { ticker: null, spot: null, exps: [], chains: {}, legs: [], strategy: "Custom", exp: null,
+            day: 0, ivShift: 0, range: 0.2, unit: "$", seq: 0 };
+let legUid = 0;
+
+$("#bStrategy").innerHTML = ["Custom", ...Object.keys(TEMPLATES)].map(n => `<option>${esc(n)}</option>`).join("");
+
+async function getChain(exp) {
+  if (B.chains[exp]) return B.chains[exp];
+  const d = await api(`/api/chain?ticker=${encodeURIComponent(B.ticker)}&exp=${exp}`);
+  B.chains[d.exp] = d;
+  B.spot = d.spot;
+  return d;
+}
+const strikesFor = exp => {
+  const c = B.chains[exp];
+  return c ? [...new Set([...c.calls, ...c.puts].map(r => r.strike))].sort((a, b) => a - b) : [];
+};
+const nearestIdx = (arr, x) => arr.reduce((bi, v, i) => Math.abs(v - x) < Math.abs(arr[bi] - x) ? i : bi, 0);
+const atmIv = exp => (B.chains[exp] && B.chains[exp].summary.atm_iv) || 0.3;
+
+function fillFromChain(l) {
+  if (l.type === "stock") { if (!l.manual) l.price = B.spot; l.iv = 0; return; }
+  const c = B.chains[l.exp];
+  const r = c && c[l.type === "call" ? "calls" : "puts"].find(x => x.strike === l.strike);
+  l.iv = r && r.iv > 0.01 ? r.iv : atmIv(l.exp);
+  l.mark = r ? r.mark : null;
+  if (!l.manual && !l.tradeId) l.price = r ? +r.mark.toFixed(2) : 0;
+}
+
+async function setBuilderTicker(ticker, preferExp) {
+  ticker = ticker.trim().toUpperCase();
+  const seq = ++B.seq;
+  $("#bSpot").textContent = "Loading " + ticker + "…";
+  const d = await api(`/api/chain?ticker=${encodeURIComponent(ticker)}`);
+  if (seq !== B.seq) return false;
+  Object.assign(B, { ticker: d.ticker, spot: d.spot, exps: d.expirations, chains: { [d.exp]: d }, legs: [] });
+  resetIv();
+  // default to about a month out, like most strategy builders
+  B.exp = preferExp && d.expirations.includes(preferExp) ? preferExp
+        : (d.expirations.find(e => daysTo(e) >= 25) || d.expirations[d.expirations.length - 1]);
+  await getChain(B.exp);
+  $("#bTicker").value = B.ticker;
+  return true;
+}
+
+async function applyTemplate(name) {
+  B.strategy = name;
+  const tpl = TEMPLATES[name];
+  if (!tpl) { renderBuilder(); return; }
+  const near = B.exp;
+  let far = B.exps.find(e => daysTo(e) >= daysTo(near) + 28) || B.exps.filter(e => e > near).pop() || near;
+  await getChain(near);
+  if (tpl.some(t => t[4] === "far")) await getChain(far);
+  const ks = strikesFor(near), spot = B.spot;
+  const T = Math.max(daysTo(near), 1) / 365;
+  const step = Math.max(spot * atmIv(near) * Math.sqrt(T) * 0.5, spot * 0.005);
+  const strikeAt = (k, list) => {
+    if (k === 0) return list[nearestIdx(list, spot)];
+    const a = nearestIdx(list, spot);
+    let i = nearestIdx(list, spot + k * step);
+    i = k > 0 ? Math.max(i, a + k) : Math.min(i, a + k);
+    return list[Math.min(list.length - 1, Math.max(0, i))];
+  };
+  B.legs = tpl.map(([side, type, k = 0, qty = 1, which]) => {
+    const exp = which === "far" ? far : near;
+    const l = { uid: ++legUid, side, type, qty, exp, strike: type === "stock" ? 0 : strikeAt(k, strikesFor(exp)) };
+    fillFromChain(l);
+    return l;
+  });
+  B.day = 0;
+  autoRange();
+  renderBuilder();
+}
+
+let builderStarted = false;
+async function openBuilder() {
+  if (builderStarted) { if (B.legs.length) renderBuilder(); return; }
+  builderStarted = true;
+  const t = (current && current.ticker) || store.get("last", { ticker: "SPY" }).ticker;
+  try {
+    if (await setBuilderTicker(t)) await applyTemplate(store.get("bStrategy", "Bull call spread"));
+  } catch (err) { builderError(err); }
+}
+function builderError(err) {
+  $("#bErr").textContent = err.message;
+  $("#bErr").classList.remove("hidden");
+  $("#bSpot").textContent = "";
+}
+
+async function addLegFromChain(chain, type, strike, side) {
+  try {
+    if (B.ticker !== chain.ticker) {
+      Object.assign(B, { ticker: chain.ticker, spot: chain.spot, exps: chain.expirations, chains: {}, legs: [], exp: chain.exp, strategy: "Custom" });
+      $("#bTicker").value = chain.ticker;
+      builderStarted = true;
+    }
+    B.chains[chain.exp] = chain;
+    B.spot = chain.spot;
+    if (B.legs.some(l => l.tradeId)) B.legs = [];  // was showing a saved position; start fresh
+    const l = { uid: ++legUid, side, type, qty: 1, exp: chain.exp, strike };
+    fillFromChain(l);
+    B.legs.push(l);
+    B.strategy = "Custom";
+    if (B.legs.length === 1) autoRange();
+    toast(`${side === "buy" ? "Buy" : "Sell"} ${chain.ticker} ${f2(strike)} ${type} ${chain.exp} added to Builder (${B.legs.length} leg${B.legs.length > 1 ? "s" : ""}).`);
+  } catch (err) { toast(err.message); }
+}
+
+let toastTimer = null;
+function toast(msg) {
+  $("#toastMsg").textContent = msg;
+  $("#toast").classList.remove("hidden");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => $("#toast").classList.add("hidden"), 6000);
+}
+$("#toastGo").onclick = () => { $("#toast").classList.add("hidden"); showTab("builder"); };
+
+/* Chart range: about 2.5 expected moves to the first expiration, from 3% to 60%. */
+function autoRange() {
+  const opts = B.legs.filter(l => l.type !== "stock");
+  if (!opts.length) return;
+  const T = Math.max((firstExpMs(B.legs) - Date.now()) / YEAR, 2 / 365);
+  B.range = Math.min(0.6, Math.max(0.03, Math.round(2.5 * nearSigma(B.legs) * Math.sqrt(T) * 100) / 100));
+  $("#bRange").value = Math.round(B.range * 100);
+}
+
+function resetIv() { B.ivShift = 0; $("#bIv").value = 0; }
+
+function renderBuilder() {
+  $("#bErr").classList.add("hidden");
+  $("#bBody").classList.remove("hidden");
+  $("#bStrategy").value = TEMPLATES[B.strategy] ? B.strategy : "Custom";
+  $("#bExp").innerHTML = B.exps.map(e => `<option value="${e}" ${e === B.exp ? "selected" : ""}>${e} (${daysTo(e)}d)</option>`).join("");
+  $("#bSpot").textContent = `${B.ticker} ${f2(B.spot)}`;
+  renderLegs();
+  renderAnalysis();
+}
+
+function renderLegs() {
+  const fromTrades = B.legs.some(l => l.tradeId);
+  $("#bLegs").innerHTML = `<thead><tr><th>Side</th><th>Qty</th><th>Type</th><th>Expiration</th><th>Strike</th><th>Price</th><th class="num">Mid now</th><th class="num">IV</th><th class="num">Delta</th><th></th></tr></thead><tbody>` +
+    B.legs.map((l, i) => {
+      const stock = l.type === "stock";
+      const ks = stock ? [] : strikesFor(l.exp);
+      const g = stock ? { delta: 1 } : bsGreeks(l.type, B.spot, l.strike, (expMs(l.exp) - Date.now()) / YEAR, legIv(l, 1));
+      return `<tr class="${l.side}" data-i="${i}">
+        <td><select data-f="side"><option value="buy" ${l.side === "buy" ? "selected" : ""}>Buy</option><option value="sell" ${l.side === "sell" ? "selected" : ""}>Sell</option></select></td>
+        <td><input class="qty" data-f="qty" type="number" min="1" step="1" value="${l.qty}" title="${stock ? "lots of 100 shares" : "contracts"}"></td>
+        <td><select data-f="type">${["call", "put", "stock"].map(t => `<option value="${t}" ${l.type === t ? "selected" : ""}>${t === "stock" ? "Stock (100 sh)" : t[0].toUpperCase() + t.slice(1)}</option>`).join("")}</select></td>
+        <td>${stock ? '<span class="note">–</span>' : `<select data-f="exp">${B.exps.map(e => `<option value="${e}" ${e === l.exp ? "selected" : ""}>${e}</option>`).join("")}</select>`}</td>
+        <td>${stock ? '<span class="note">–</span>' : `<select data-f="strike">${(ks.includes(l.strike) ? ks : [l.strike, ...ks].sort((a, b) => a - b)).map(k => `<option value="${k}" ${k === l.strike ? "selected" : ""}>${f2(k)}</option>`).join("")}</select>`}</td>
+        <td><input class="price" data-f="price" type="number" step="0.01" min="0" value="${f2(l.price)}"></td>
+        <td class="num">${stock ? f2(B.spot) : f2(l.mark)}</td>
+        <td class="num">${stock ? "–" : pct(l.iv, 0)}</td>
+        <td class="num">${f2(g.delta * legSign(l))}</td>
+        <td><button class="ghost small" type="button" data-del="${i}" title="Remove leg">✕</button></td></tr>`;
+    }).join("") + "</tbody>";
+  $("#bLegNote").textContent = fromTrades
+    ? "Showing a saved position from My Trades at its entry prices. Changes here aren't saved back; click a contract on the Chain tab to start a new idea."
+    : "Price is what you pay or receive per share; it starts at the current mid. Edit it to match your fill.";
+  $("#bSave").disabled = fromTrades || !B.legs.length;
+  $("#bSave").style.opacity = $("#bSave").disabled ? .5 : 1;
+}
+
+$("#bLegs").addEventListener("change", async e => {
+  const f = e.target.dataset.f, tr = e.target.closest("tr[data-i]");
+  if (!f || !tr) return;
+  const l = B.legs[+tr.dataset.i], v = e.target.value;
+  if (f === "side") l.side = v;
+  else if (f === "qty") l.qty = Math.max(1, Math.round(+v || 1));
+  else if (f === "price") { l.price = Math.max(0, +v || 0); l.manual = true; }
+  else {
+    l.manual = false;
+    if (f === "type") {
+      l.type = v;
+      if (v !== "stock" && !l.exp) l.exp = B.exp;
+    }
+    if (f === "exp") l.exp = v;
+    if (f === "strike") l.strike = +v;
+    if (l.type !== "stock") {
+      try { await getChain(l.exp); } catch (err) { toast(err.message); }
+      const ks = strikesFor(l.exp);
+      if (ks.length && !ks.includes(l.strike)) l.strike = ks[nearestIdx(ks, l.strike || B.spot)];
+    }
+    fillFromChain(l);
+  }
+  B.strategy = "Custom";
+  renderBuilder();
+});
+$("#bLegs").addEventListener("click", e => {
+  const i = e.target.dataset.del;
+  if (i == null) return;
+  B.legs.splice(+i, 1);
+  B.strategy = "Custom";
+  renderBuilder();
+});
+$("#bAddLeg").onclick = () => {
+  const ks = strikesFor(B.exp);
+  const l = { uid: ++legUid, side: "buy", type: "call", qty: 1, exp: B.exp, strike: ks[nearestIdx(ks, B.spot)] };
+  if (B.legs.some(x => x.tradeId)) B.legs = [];
+  fillFromChain(l);
+  B.legs.push(l);
+  B.strategy = "Custom";
+  renderBuilder();
+};
+$("#bRefresh").onclick = async () => {
+  const exps = [...new Set(B.legs.filter(l => l.type !== "stock").map(l => l.exp).concat(B.exp))];
+  B.chains = {};
+  try {
+    for (const e of exps) await getChain(e);
+    for (const l of B.legs) { l.manual = false; fillFromChain(l); }
+    renderBuilder();
+  } catch (err) { builderError(err); }
+};
+$("#bLookup").onsubmit = async e => {
+  e.preventDefault();
+  const t = $("#bTicker").value.trim();
+  if (!t) return;
+  try {
+    if (await setBuilderTicker(t)) await applyTemplate(TEMPLATES[B.strategy] ? B.strategy : "Bull call spread");
+  } catch (err) { builderError(err); }
+};
+$("#bStrategy").onchange = async () => {
+  const n = $("#bStrategy").value;
+  store.set("bStrategy", n);
+  if (n === "Custom") { B.strategy = n; return; }
+  try { await applyTemplate(n); } catch (err) { builderError(err); }
+};
+$("#bExp").onchange = async () => {
+  B.exp = $("#bExp").value;
+  try {
+    if (TEMPLATES[B.strategy] && !B.legs.some(l => l.tradeId)) await applyTemplate(B.strategy);
+    else { await getChain(B.exp); renderBuilder(); }
+  } catch (err) { builderError(err); }
+};
+$("#bDate").oninput = () => { B.day = +$("#bDate").value; renderAnalysis(false); };
+$("#bIv").oninput = () => { B.ivShift = +$("#bIv").value / 100; renderAnalysis(); };
+$("#bRange").oninput = () => { B.range = +$("#bRange").value / 100; renderAnalysis(false); };
+$("#bUnit").onclick = e => {
+  if (!e.target.dataset.u) return;
+  B.unit = e.target.dataset.u;
+  for (const b of document.querySelectorAll("#bUnit button")) b.classList.toggle("on", b.dataset.u === B.unit);
+  renderAnalysis(false);
+};
+
+const nearSigma = legs => {
+  const opts = legs.filter(l => l.type !== "stock");
+  if (!opts.length) return 0.3;
+  const first = opts.reduce((a, l) => expMs(l.exp) < expMs(a.exp) ? l : a);
+  return B.chains[first.exp] ? atmIv(first.exp) : legIv(first, 1);
+};
+
+let lastAnalysis = null;
+function renderAnalysis(recalc = true) {
+  const legs = B.legs;
+  const has = legs.some(l => l.type !== "stock");
+  $("#bNoLegs").classList.toggle("hidden", has);
+  $("#bAnalysis").classList.toggle("hidden", !has);
+  if (!has) return;
+  const ivm = 1 + B.ivShift;
+  const tE = firstExpMs(legs), now = Date.now();
+  const maxDay = Math.max(0, Math.ceil((tE - now) / DAY) - 1);
+  B.day = Math.min(B.day, maxDay);
+  $("#bDate").max = maxDay;
+  $("#bDate").value = B.day;
+  const dateMs = B.day >= maxDay ? tE : now + B.day * DAY;
+  $("#bDateLbl").textContent = B.day === 0 && maxDay > 0 ? "Today" : B.day >= maxDay ? `Expiration (${shortDate(tE)})` : `${shortDate(dateMs)} (${Math.ceil((tE - dateMs) / DAY)}d to expiration)`;
+  $("#bIvLbl").textContent = B.ivShift === 0 ? "as quoted" : `${B.ivShift > 0 ? "+" : ""}${Math.round(B.ivShift * 100)}%`;
+  $("#bRangeLbl").textContent = `±${Math.round(B.range * 100)}%`;
+
+  if (recalc || !lastAnalysis) lastAnalysis = analyze(legs, B.spot, nearSigma(legs), ivm);
+  const a = lastAnalysis, g = a.greeks;
+  const netLbl = a.net >= 0 ? "Net debit" : "Net credit";
+  $("#bTiles").innerHTML = [
+    [netLbl, usd(Math.abs(a.net)), a.net >= 0 ? "you pay" : "you receive"],
+    ["Max profit", `<span class="up">${a.maxP == null ? "Unlimited" : usd(a.maxP)}</span>`, "at expiration"],
+    ["Max loss", `<span class="down">${a.maxL == null ? "Unlimited" : usd(a.maxL)}</span>`, "at expiration"],
+    ["Breakeven" + (a.bes.length > 1 ? "s" : ""), a.bes.length ? a.bes.slice(0, 3).map(b => f2(b)).join(" / ") : "–",
+      a.bes.length ? a.bes.slice(0, 3).map(b => pct((b - B.spot) / B.spot)).join(" / ") + " from price" : "never breaks even"],
+    ["Chance of profit", a.pop == null ? "–" : pct(a.pop, 0), "at first expiration"],
+    ["Buying power", a.risk == null ? "Margin" : usd(a.risk), a.risk == null ? "undefined risk, set by broker" : "estimate: max loss"],
+    ["Delta", (g.delta >= 0 ? "+" : "") + g.delta.toFixed(0), `shares equiv. · gamma ${g.gamma.toFixed(2)}`],
+    ["Theta / day", signedUsd(Math.round(g.theta)), `vega ${signedUsd(Math.round(g.vega))} per IV pt`],
+  ].map(([k, v, s]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
+  renderChart(tE, dateMs, B.day < maxDay, ivm, a);
+  renderHeat(tE, maxDay, ivm, a);
+}
+
+function niceTicks(lo, hi, n = 6) {
+  const span = hi - lo;
+  if (!(span > 0)) return [lo];
+  const raw = span / n, mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw);
+  const out = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(10));
+  return out;
+}
+
+function renderChart(tE, dateMs, showDate, ivm, a) {
+  const W = 880, H = 340, m = { l: 66, r: 16, t: 14, b: 34 };
+  const lo = B.spot * (1 - B.range), hi = B.spot * (1 + B.range), N = 260;
+  const xs = Array.from({ length: N + 1 }, (_, i) => lo + (hi - lo) * i / N);
+  const ye = xs.map(S => pnlAt(B.legs, S, tE, ivm));
+  const yd = showDate ? xs.map(S => pnlAt(B.legs, S, dateMs, ivm)) : null;
+  let mn = Math.min(0, ...ye, ...(yd || [])), mx = Math.max(0, ...ye, ...(yd || []));
+  const pad = (mx - mn) * 0.08 || 50; mn -= pad; mx += pad;
+  const X = S => m.l + (S - lo) / (hi - lo) * (W - m.l - m.r), Y = v => m.t + (mx - v) / (mx - mn) * (H - m.t - m.b);
+  const line = ys => "M" + xs.map((S, i) => `${X(S).toFixed(1)},${Y(ys[i]).toFixed(1)}`).join("L");
+  const area = (ys, f) => `M${X(lo)},${Y(0)}` + xs.map((S, i) => `L${X(S).toFixed(1)},${Y(f(ys[i], 0)).toFixed(1)}`).join("") + `L${X(hi)},${Y(0)}Z`;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" id="bSvg">`;
+  for (const v of niceTicks(mn, mx, 6)) svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${m.l - 8}" y="${Y(v) + 4}" text-anchor="end">${kfmt(v)}</text>`;
+  for (const v of niceTicks(lo, hi, 8)) svg += `<line x1="${X(v)}" x2="${X(v)}" y1="${m.t}" y2="${H - m.b}" stroke="var(--line)" stroke-dasharray="2 4"/><text x="${X(v)}" y="${H - m.b + 18}" text-anchor="middle">${v >= 1000 ? v.toFixed(0) : +v.toFixed(2)}</text>`;
+  svg += `<path d="${area(ye, Math.max)}" fill="var(--up)" opacity=".16"/><path d="${area(ye, Math.min)}" fill="var(--down)" opacity=".16"/>`;
+  svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--muted)" stroke-width="1"/>`;
+  svg += `<path d="${line(ye)}" fill="none" stroke="var(--up)" stroke-width="2.4"/>`;
+  if (yd) svg += `<path d="${line(yd)}" fill="none" stroke="#5fa4e8" stroke-width="2" stroke-dasharray="6 4"/>`;
+  svg += `<line x1="${X(B.spot)}" x2="${X(B.spot)}" y1="${m.t}" y2="${H - m.b}" stroke="var(--spot)" stroke-width="1.5"/>`;
+  svg += `<text x="${X(B.spot) + 4}" y="${m.t + 11}" style="fill:var(--spot)">${f2(B.spot)}</text>`;
+  for (const b of a.bes) if (b > lo && b < hi) svg += `<circle cx="${X(b)}" cy="${Y(0)}" r="4" fill="var(--panel)" stroke="var(--text)" stroke-width="1.5"/><text x="${X(b)}" y="${Y(0) + 17}" text-anchor="middle" style="fill:var(--text)">${f2(b)}</text>`;
+  svg += `<g id="bHover" style="display:none"><line id="bHl" y1="${m.t}" y2="${H - m.b}" stroke="var(--muted)" stroke-dasharray="3 3"/>
+    <circle id="bHe" r="4" fill="var(--up)"/><circle id="bHd" r="4" fill="#5fa4e8"/>
+    <g class="tip"><rect id="bTipBg" rx="8" fill="var(--panel)" stroke="var(--line)"/><text id="bTip"></text></g></g>`;
+  svg += `<rect x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent" id="bHit"/></svg>`;
+  $("#bChart").innerHTML = svg;
+
+  const hit = $("#bHit"), svgEl = $("#bSvg");
+  const move = ev => {
+    const rect = svgEl.getBoundingClientRect();
+    const px = (ev.clientX - rect.left) / rect.width * W;
+    const S = Math.min(hi, Math.max(lo, lo + (px - m.l) / (W - m.l - m.r) * (hi - lo)));
+    const ve = pnlAt(B.legs, S, tE, ivm), vd = yd ? pnlAt(B.legs, S, dateMs, ivm) : null;
+    $("#bHover").style.display = "";
+    $("#bHl").setAttribute("x1", X(S)); $("#bHl").setAttribute("x2", X(S));
+    $("#bHe").setAttribute("cx", X(S)); $("#bHe").setAttribute("cy", Y(ve));
+    $("#bHd").style.display = yd ? "" : "none";
+    if (yd) { $("#bHd").setAttribute("cx", X(S)); $("#bHd").setAttribute("cy", Y(vd)); }
+    const lines = [`Stock ${f2(S)} (${pct((S - B.spot) / B.spot)})`, `At expiration: ${signedUsd(Math.round(ve))}`];
+    if (yd) lines.push(`On ${shortDate(dateMs)}: ${signedUsd(Math.round(vd))}`);
+    const tw = 190, th = 14 + lines.length * 17;
+    const tx = X(S) + 12 + tw > W - m.r ? X(S) - 12 - tw : X(S) + 12, ty = m.t + 6;
+    const bg = $("#bTipBg");
+    bg.setAttribute("x", tx); bg.setAttribute("y", ty); bg.setAttribute("width", tw); bg.setAttribute("height", th);
+    $("#bTip").innerHTML = lines.map((t, i) => `<tspan x="${tx + 10}" y="${ty + 20 + i * 17}">${esc(t)}</tspan>`).join("");
+  };
+  hit.addEventListener("pointermove", move);
+  hit.addEventListener("pointerdown", move);
+  hit.addEventListener("pointerleave", () => { $("#bHover").style.display = "none"; });
+}
+
+function renderHeat(tE, maxDay, ivm, a) {
+  const now = Date.now();
+  let days = maxDay <= 8 ? Array.from({ length: maxDay + 1 }, (_, i) => i)
+           : [...new Set(Array.from({ length: 9 }, (_, i) => Math.round(i * maxDay / 8)))];
+  const colMs = d => d >= maxDay ? tE : now + d * DAY;
+  const lo = B.spot * (1 - B.range), hi = B.spot * (1 + B.range), rows = 25;
+  const prices = Array.from({ length: rows }, (_, i) => hi - (hi - lo) * i / (rows - 1));
+  const spotRow = nearestIdx(prices, B.spot);
+  const vals = prices.map(S => days.map(d => pnlAt(B.legs, S, colMs(d), ivm)));
+  const maxAbs = Math.max(1, ...vals.flat().map(Math.abs));
+  const risk = a.risk || Math.abs(a.net) || null;
+  const show = v => B.unit === "%" && risk ? (v / risk * 100).toFixed(0) + "%" : kfmt(v);
+  let html = `<thead><tr><th class="price">Price</th>${days.map(d => `<th>${d >= maxDay ? "Exp " + shortDate(tE) : d === 0 ? "Today" : shortDate(colMs(d))}</th>`).join("")}</tr></thead><tbody>`;
+  prices.forEach((S, r) => {
+    html += `<tr class="${r === spotRow ? "atspot" : ""}"><td class="price">${f2(S)} <span class="note">${pct((S - B.spot) / B.spot, 0)}</span></td>` +
+      vals[r].map(v => {
+        const t = Math.min(1, Math.abs(v) / maxAbs), alpha = (0.1 + 0.6 * Math.sqrt(t)).toFixed(2);
+        const bg = v >= 0 ? `rgba(31,170,120,${alpha})` : `rgba(214,72,72,${alpha})`;
+        return `<td style="background:${bg}">${show(v)}</td>`;
+      }).join("") + "</tr>";
+  });
+  $("#bHeat").innerHTML = html + "</tbody>";
+}
+
+/* save the Builder's legs as one position */
+$("#bSave").onclick = () => {
+  if ($("#bSave").disabled) return;
+  const f = $("#saveForm");
+  f.reset();
+  f.elements.strategy.value = B.strategy === "Custom" ? (B.legs.length > 1 ? "Custom" : "") : B.strategy;
+  f.elements.opened.value = today();
+  $("#saveSummary").innerHTML = `${esc(B.ticker)}: ` + B.legs.map(l => `${l.side === "buy" ? "Buy" : "Sell"} ${l.qty} ${l.type === "stock" ? "x 100 sh" : f2(l.strike) + " " + l.type + " " + l.exp} @ ${f2(l.price)}`).map(esc).join(" · ");
+  $("#saveErr").textContent = "";
+  $("#saveDlg").showModal();
+};
+$("#saveForm").onsubmit = async e => {
+  e.preventDefault();
+  const v = Object.fromEntries(new FormData(e.target));
+  const body = { ticker: B.ticker, strategy: v.strategy, fees: v.fees, opened: v.opened, notes: v.notes,
+    legs: B.legs.map(l => ({ type: l.type, side: l.side, strike: l.type === "stock" ? null : l.strike, exp: l.type === "stock" ? null : l.exp, premium: l.price, contracts: l.qty })) };
+  try {
+    await api("/api/positions", body);
+    $("#saveDlg").close();
+    showTab("trades");
+  } catch (err) { $("#saveErr").textContent = err.message; }
+};
+
+/* open a saved position in the Builder at its entry prices */
+async function openInBuilder(legRows) {
+  const first = legRows[0];
+  try {
+    const opts = legRows.filter(t => t.type !== "stock");
+    if (B.ticker !== first.ticker) {
+      if (!(await setBuilderTicker(first.ticker, opts.length ? opts[0].exp : null))) return;
+    } else if (opts.length) B.exp = opts[0].exp;
+    builderStarted = true;
+    for (const t of opts) if (B.exps.includes(t.exp)) await getChain(t.exp);
+    B.legs = legRows.map(t => {
+      const l = { uid: ++legUid, side: t.side, type: t.type, qty: t.contracts, exp: t.exp, strike: t.strike, price: t.premium, tradeId: t.id };
+      fillFromChain(l);
+      if (!(l.iv > 0.01) && t.live && t.live.iv > 0.01) l.iv = t.live.iv;
+      return l;
+    });
+    B.strategy = first.strategy || "Custom";
+    B.day = 0;
+    autoRange();
+    resetIv();
+    showTab("builder");
+    renderBuilder();
+  } catch (err) { builderError(err); showTab("builder"); }
+}
+
+/* ================= trades ================= */
 let tradeData = null;
 
 async function loadTrades(quiet) {
@@ -412,48 +1086,87 @@ async function loadTrades(quiet) {
   }
 }
 
+function groupPositions(rows) {
+  const map = new Map();
+  for (const t of rows) {
+    const key = t.group ? "g" + t.group : "t" + t.id;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(t);
+  }
+  return [...map.values()];
+}
+const legsForEngine = rows => rows.map(t => ({ side: t.side, type: t.type, qty: t.contracts, exp: t.exp, strike: t.strike,
+  price: t.premium, iv: t.live && t.live.iv > 0.01 ? t.live.iv : 0.3 }));
+
 function renderTrades() {
   const d = tradeData;
   const unreal = d.open.reduce((a, t) => a + (t.live ? t.live.unrealized : 0), 0);
   const realized = d.closed.reduce((a, t) => a + t.realized, 0);
+  const positions = groupPositions(d.open);
   $("#tradeTiles").innerHTML = [
-    ["Open trades", d.open.length, ""],
+    ["Open positions", positions.length, d.open.length + " legs"],
     ["Unrealized P&L", `<span class="${signed(unreal)}">${usd(unreal, true)}</span>`, "at mid price"],
-    ["Realized P&L", `<span class="${signed(realized)}">${usd(realized, true)}</span>`, d.closed.length + " closed"],
-    ["Cash securing short puts", usd(d.collateral), ""],
+    ["Realized P&L", `<span class="${signed(realized)}">${usd(realized, true)}</span>`, d.closed.length + " closed legs"],
+    ["Cash securing short puts", usd(d.collateral), "single short puts"],
     ["Paid for long options", usd(d.long_cost), ""],
   ].map(([k, v, s]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
 
-  if (!d.open.length) {
-    $("#openGroups").innerHTML = '<p class="note">No open trades. Use “Log a trade”, or click a contract on the Chain tab.</p>';
+  const head = `<thead><tr><th class="left">#</th><th class="left">Position</th><th class="left">Side</th><th>Qty</th><th>Entry</th><th>Stock</th>
+    <th>Bid / Ask</th><th>Mark</th><th>Unrealized</th><th>Position delta</th><th>DTE</th><th>Breakeven</th>
+    <th>Max profit</th><th>Max loss</th><th class="left">Alerts</th><th></th></tr></thead>`;
+  const legCells = t => {
+    const q = t.live;
+    return `<td class="left">${t.side === "buy" ? "Long" : "Short"}</td><td>${t.contracts}</td><td>${f2(t.premium)}</td>
+      <td>${q ? f2(q.spot) : "–"}</td><td>${q && t.type !== "stock" ? f2(q.bid) + " / " + f2(q.ask) : "–"}</td><td>${q ? f2(q.mark) : "–"}</td>
+      <td class="${q ? signed(q.unrealized) : ""}">${q ? usd(q.unrealized, true) + (t.type === "stock" ? "" : ` (${(q.unrealized_pct * 100).toFixed(0)}%)`) : "–"}</td>
+      <td>${q && q.position_delta != null ? (q.position_delta > 0 ? "+" : "") + q.position_delta.toFixed(0) + " sh" : "–"}</td>
+      <td>${t.dte == null ? "–" : t.dte}</td>`;
+  };
+  const alertsOf = rows => rows.flatMap(t => [t.live && t.live.warning && (rows.length > 1 ? `${t.label}: ` : "") + t.live.warning,
+      t.dte != null && t.dte <= 7 && "expires within a week", t.live_error && "no quote: " + t.live_error]).filter(Boolean);
+  const alertHtml = list => [...new Set(list)].map(a => `<span class="warn">${esc(a)}</span>`).join(" ");
+  const posKey = p => p[0].group ? "g" + p[0].group : "t" + p[0].id;
+
+  if (!positions.length) {
+    $("#openGroups").innerHTML = '<p class="note">No open trades. Use “Log a trade”, save a position from the Builder, or click a contract on the Chain tab.</p>';
   } else {
     $("#openGroups").innerHTML = ["Hop", "Skip", "Leap"].map(cat => {
-      const rows = d.open.filter(t => t.category === cat);
-      if (!rows.length) return "";
+      const ps = positions.filter(p => p[0].category === cat);
+      if (!ps.length) return "";
       const sub = { Hop: "90 days or less at open", Skip: "91–360 days at open", Leap: "over 360 days at open" }[cat];
-      return `<h3>${cat} <span class="note" style="text-transform:none;letter-spacing:0">${sub}</span></h3><div class="scroll"><table>
-        <thead><tr><th class="left">#</th><th class="left">Contract</th><th class="left">Side</th><th>Qty</th><th>Entry</th><th>Stock</th>
-        <th>Bid / Ask</th><th>Mark</th><th>Unrealized</th><th>Position delta</th><th>DTE</th><th>Breakeven</th>
-        <th>Max profit</th><th>Max loss</th><th class="left">Alerts</th><th></th></tr></thead><tbody>` +
-        rows.map(t => {
-          const q = t.live, s = t.stats;
-          const alerts = [q && q.warning, t.dte <= 7 && "expires within a week", t.live_error && "no quote: " + t.live_error].filter(Boolean)
-            .map(a => `<span class="warn">${esc(a)}</span>`).join(" ");
-          return `<tr><td class="left">${t.id}</td>
-            <td class="left"><b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp}${t.notes ? `<div class="note">${esc(t.notes)}</div>` : ""}</td>
-            <td class="left">${t.side === "buy" ? "Long" : "Short"}</td><td>${t.contracts}</td><td>${f2(t.premium)}</td>
-            <td>${q ? f2(q.spot) : "–"}</td><td>${q ? f2(q.bid) + " / " + f2(q.ask) : "–"}</td><td>${q ? f2(q.mark) : "–"}</td>
-            <td class="${q ? signed(q.unrealized) : ""}">${q ? usd(q.unrealized, true) + ` (${(q.unrealized_pct * 100).toFixed(0)}%)` : "–"}</td>
-            <td>${q && q.position_delta != null ? (q.position_delta > 0 ? "+" : "") + q.position_delta.toFixed(0) + " sh" : "–"}</td>
-            <td>${t.dte}</td><td>${f2(s.breakeven)}</td><td>${usd(s.max_profit)}</td><td>${usd(s.max_loss)}</td>
-            <td class="left">${alerts}${s.annualized != null ? `<div class="note">${pct(s.annualized)} annualized</div>` : ""}</td>
-            <td><button class="ghost small" data-close-id="${t.id}">Close</button></td></tr>`;
+      return `<h3>${cat} <span class="note" style="text-transform:none;letter-spacing:0">${sub}</span></h3><div class="scroll"><table>${head}<tbody>` +
+        ps.map(p => {
+          const buttons = `<button class="ghost small" data-builder="${posKey(p)}">Builder</button> <button class="ghost small" data-close-key="${posKey(p)}">Close</button>`;
+          if (p.length === 1) {
+            const t = p[0], s = t.stats;
+            return `<tr><td class="left">${t.id}</td>
+              <td class="left"><b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp || ""}${t.notes ? `<div class="note">${esc(t.notes)}</div>` : ""}</td>
+              ${legCells(t)}<td>${f2(s.breakeven)}</td><td>${usd(s.max_profit)}</td><td>${usd(s.max_loss)}</td>
+              <td class="left">${alertHtml(alertsOf(p))}${s.annualized != null ? `<div class="note">${pct(s.annualized)} annualized</div>` : ""}</td>
+              <td style="white-space:nowrap">${buttons}</td></tr>`;
+          }
+          const spot = (p.find(t => t.live) || {}).live?.spot;
+          const a = spot ? analyze(legsForEngine(p), spot, 0) : null;
+          const net = p.reduce((s, t) => s + (t.side === "buy" ? 1 : -1) * t.premium * t.contracts * 100, 0);
+          const now = p.reduce((s, t) => s + (t.live ? (t.side === "buy" ? 1 : -1) * t.live.mark * t.contracts * 100 : 0), 0);
+          const un = p.reduce((s, t) => s + (t.live ? t.live.unrealized : 0), 0);
+          const delta = p.reduce((s, t) => s + (t.live && t.live.position_delta != null ? t.live.position_delta : 0), 0);
+          const dtes = p.map(t => t.dte).filter(x => x != null);
+          const headRow = `<tr class="pos-head"><td class="left">P${p[0].group}</td>
+            <td class="left"><b>${esc(p[0].ticker)}</b> ${esc(p[0].strategy)} <span class="note">· ${p.length} legs${p[0].notes ? " · " + esc(p[0].notes) : ""}</span></td>
+            <td class="left">${net >= 0 ? "Debit" : "Credit"}</td><td></td><td>${usd(Math.abs(net))}</td><td>${spot ? f2(spot) : "–"}</td><td></td>
+            <td>${usd(Math.abs(now))}</td><td class="${signed(un)}">${usd(un, true)}</td>
+            <td>${(delta > 0 ? "+" : "") + delta.toFixed(0)} sh</td><td>${dtes.length ? Math.min(...dtes) : "–"}</td>
+            <td>${a && a.bes.length ? a.bes.slice(0, 2).map(f2).join(" / ") : "–"}</td>
+            <td>${a ? (a.maxP == null ? "unlimited" : usd(a.maxP)) : "–"}</td><td>${a ? (a.maxL == null ? "unlimited" : usd(-a.maxL)) : "–"}</td>
+            <td class="left">${alertHtml(alertsOf(p))}</td><td style="white-space:nowrap">${buttons}</td></tr>`;
+          return headRow + p.map(t => `<tr class="pos-leg"><td class="left">${t.id}</td><td class="left contract">${esc(t.label)} ${t.exp || ""}</td>${legCells(t)}<td colspan="5"></td><td></td></tr>`).join("");
         }).join("") + "</tbody></table></div>";
     }).join("");
   }
 
   $("#report").innerHTML = d.report.length
-    ? `<thead><tr><th class="left">Group</th><th>Trades</th><th>Wins</th><th>Win rate</th><th>Realized P&L</th></tr></thead><tbody>` +
+    ? `<thead><tr><th class="left">Group</th><th>Positions</th><th>Wins</th><th>Win rate</th><th>Realized P&L</th></tr></thead><tbody>` +
       d.report.map(r => `<tr${r.group === "TOTAL" ? ' style="font-weight:600"' : ""}><td class="left">${esc(r.group)}</td><td>${r.trades}</td><td>${r.wins}</td>
         <td>${pct(r.wins / r.trades, 0)}</td><td class="${signed(r.realized)}">${usd(r.realized, true)}</td></tr>`).join("") + "</tbody>"
     : '<tbody><tr><td class="left note">Results appear once you close a trade.</td></tr></tbody>';
@@ -461,18 +1174,27 @@ function renderTrades() {
   $("#closed").innerHTML = d.closed.length
     ? `<thead><tr><th class="left">#</th><th class="left">Contract</th><th class="left">Side</th><th>Qty</th><th class="left">Group</th><th>Opened</th><th>Closed</th>
         <th class="left">How</th><th>Entry</th><th>Exit</th><th>Realized</th></tr></thead><tbody>` +
-      [...d.closed].reverse().map(t => `<tr><td class="left">${t.id}</td><td class="left"><b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp}</td>
+      [...d.closed].reverse().map(t => `<tr><td class="left">${t.id}</td><td class="left"><b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp || ""}${t.group ? ` <span class="note">${esc(t.strategy)} P${t.group}</span>` : ""}</td>
         <td class="left">${t.side === "buy" ? "Long" : "Short"}</td><td>${t.contracts}</td><td class="left">${t.category}</td><td>${t.opened}</td><td>${t.closed}</td>
         <td class="left">${t.status}</td><td>${f2(t.premium)}</td><td>${f2(t.exit_premium)}</td>
         <td class="${signed(t.realized)}">${usd(t.realized, true)}</td></tr>`).join("") + "</tbody>"
     : '<tbody><tr><td class="left note">No closed trades yet.</td></tr></tbody>';
 }
 
+const positionByKey = key => groupPositions(tradeData.open).find(p => (p[0].group ? "g" + p[0].group : "t" + p[0].id) === key);
 $("#reloadTrades").onclick = () => loadTrades();
 $("#newTrade").onclick = () => openAdd({});
-$("#openGroups").onclick = e => { const id = e.target.dataset.closeId; if (id) openClose(+id); };
+$("#openGroups").onclick = e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.dataset.builder) openInBuilder(positionByKey(b.dataset.builder));
+  if (b.dataset.closeKey) {
+    const p = positionByKey(b.dataset.closeKey);
+    if (p.length === 1) openClose(p[0].id); else openClosePosition(p);
+  }
+};
 
-/* ---------- dialogs ---------- */
+/* ================= dialogs ================= */
 for (const b of document.querySelectorAll("[data-close]")) b.onclick = () => b.closest("dialog").close();
 
 function openAdd(v) {
@@ -526,16 +1248,42 @@ $("#closeForm").onsubmit = async e => {
   } catch (err) { $("#closeErr").textContent = err.message; }
 };
 
-/* ---------- start ---------- */
+let closingLegs = [];
+function openClosePosition(p) {
+  closingLegs = p;
+  const f = $("#closePosForm");
+  f.reset();
+  f.elements.closed.value = today();
+  $("#closePosTitle").textContent = `Close ${p[0].ticker} ${p[0].strategy} (P${p[0].group})`;
+  $("#closePosLegs").innerHTML = p.map(t => `<span>${t.side === "buy" ? "Long" : "Short"} ${t.contracts} ${esc(t.label)} ${t.exp || ""} <span class="note">entry ${f2(t.premium)}</span></span>
+    <input type="number" step="any" min="0" data-leg="${t.id}" data-stock="${t.type === "stock" ? 1 : ""}" value="${t.live ? t.live.mark.toFixed(2) : ""}">`).join("");
+  $("#closePosErr").textContent = "";
+  $("#closePosDlg").showModal();
+}
+$("#closePosExpire").onclick = () => { for (const i of document.querySelectorAll("#closePosLegs input")) if (!i.dataset.stock) i.value = "0"; };
+$("#closePosForm").onsubmit = async e => {
+  e.preventDefault();
+  const f = e.target;
+  const legs = [...document.querySelectorAll("#closePosLegs input")].map(i => ({ id: +i.dataset.leg, premium: i.value }));
+  try {
+    await api("/api/positions/close", { legs, fees: f.elements.fees.value, closed: f.elements.closed.value });
+    $("#closePosDlg").close();
+    loadTrades();
+  } catch (err) { $("#closePosErr").textContent = err.message; }
+};
+
+/* ================= start ================= */
 $("#range").value = store.get("range", "20");
 $("#moreGreeks").checked = store.get("more", false);
 $("#refresh").value = store.get("refresh", "120");
+setClickMode(clickMode);
 renderChips();
 setTimer();
 const last = store.get("last", { ticker: "SPY" });
 $("#ticker").value = last.ticker;
 loadChain(last.ticker, last.exp);
-if (store.get("tab", "chain") === "trades") showTab("trades");
+const startTab = store.get("tab", "chain");
+if (startTab !== "chain") showTab(startTab);
 </script>
 </body>
 </html>

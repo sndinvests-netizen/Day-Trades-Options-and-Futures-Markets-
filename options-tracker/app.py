@@ -32,7 +32,7 @@ def positions():
     for t in trades:
         row = dict(t, type=tracker.kind(t), label=tracker.label(t), stats=tracker.stats(t))
         if t["status"] == "open":
-            row["dte"] = tracker.dte(t["exp"])
+            row["dte"] = tracker.dte(t["exp"]) if t["exp"] else None
             try:
                 row["live"] = tracker.live(t)
             except QuoteError as e:
@@ -41,10 +41,10 @@ def positions():
         else:
             closed.append(row)
     report = [{"group": n, "trades": c, "wins": w, "realized": r}
-              for n, c, w, r in tracker.report_groups(closed)]
+              for n, c, w, r in tracker.report_groups(trades)]
+    collateral, long_cost = tracker.open_totals(trades)
     return {"open": open_, "closed": closed, "report": report,
-            "collateral": sum(r["stats"].get("collateral", 0) for r in open_ if r["side"] == "sell"),
-            "long_cost": sum(r["stats"]["max_loss"] for r in open_ if r["side"] == "buy")}
+            "collateral": collateral, "long_cost": long_cost}
 
 
 def num(body, key, cast=float, default=None):
@@ -125,10 +125,34 @@ class Handler(BaseHTTPRequestHandler):
                 tracker.save(DB, trades)
             return t
 
+        def add_position():
+            legs = [{"type": l.get("type"), "side": l.get("side"), "strike": num(l, "strike"),
+                     "exp": l.get("exp") or None, "premium": num(l, "premium"),
+                     "contracts": num(l, "contracts", int, 1)} for l in body.get("legs") or []]
+            with db_lock:
+                trades = tracker.load(DB)
+                out = tracker.add_position(trades, str(body.get("ticker", "")), legs, str(body.get("strategy", "")),
+                                           num(body, "fees", float, 0.0), body.get("opened") or None,
+                                           body.get("notes", ""))
+                tracker.save(DB, trades)
+            return out
+
+        def close_position():
+            legs = [{"id": num(l, "id", int), "premium": num(l, "premium")} for l in body.get("legs") or []]
+            with db_lock:
+                trades = tracker.load(DB)
+                out = tracker.close_position(trades, legs, num(body, "fees", float, 0.0), body.get("closed") or None)
+                tracker.save(DB, trades)
+            return out
+
         if path == "/api/trades":
             self.guard(add)
         elif path == "/api/trades/close":
             self.guard(close)
+        elif path == "/api/positions":
+            self.guard(add_position)
+        elif path == "/api/positions/close":
+            self.guard(close_position)
         else:
             self.send(404, {"error": "not found"})
 
