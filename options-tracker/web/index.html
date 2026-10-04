@@ -109,6 +109,18 @@ button.danger.primary:hover { filter: brightness(1.06); background: linear-gradi
 .tile .v { font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
 .tile .s { font-size: 12px; color: var(--muted); }
 .scroll { overflow-x: auto; border-radius: 10px; }
+.scroll::-webkit-scrollbar { height: 12px; }   /* always-visible scrollbars (macOS hides them by default) */
+.scroll::-webkit-scrollbar-track { background: var(--well); border-radius: 6px; }
+.scroll::-webkit-scrollbar-thumb { background: var(--btn-border); border-radius: 6px; border: 2px solid var(--well); }
+.scroll::-webkit-scrollbar-thumb:hover { background: var(--pri-edge); }
+@supports (-moz-appearance: none) { .scroll { scrollbar-color: var(--btn-border) var(--well); } }
+.scroll-top { overflow-x: auto; overflow-y: hidden; margin-bottom: 4px; }   /* mirror bar above wide tables */
+.scroll-top > div { height: 1px; }
+.scroll-top::-webkit-scrollbar { height: 12px; }
+.scroll-top::-webkit-scrollbar-track { background: var(--well); border-radius: 6px; }
+.scroll-top::-webkit-scrollbar-thumb { background: var(--btn-border); border-radius: 6px; border: 2px solid var(--well); }
+.scroll-top::-webkit-scrollbar-thumb:hover { background: var(--pri-edge); }
+@supports (-moz-appearance: none) { .scroll-top { scrollbar-color: var(--btn-border) var(--well); } }
 table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
 th, td { padding: 5px 9px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
 th { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; position: sticky; top: 0; background: var(--panel); }
@@ -1428,6 +1440,46 @@ function profitTarget(rows) {
   return null;
 }
 const targetDot = pt => pt && pt.hit ? `<span class="target-dot" title="${esc(pt.text)}"></span>` : "";
+/* Estimated ROI for cash-secured puts and covered calls (premium after fees):
+   CSP = premium / cash securing it (strike x 100); covered call = premium / what the shares cost,
+   plus an "if called" return that adds the gain up to the strike. Annualized over the days from
+   open to expiration. "Now" = what closing today would return on the same base. */
+function estRoi(rows) {
+  const opts = rows.filter(t => t.type !== "stock"), stock = rows.filter(t => t.type === "stock");
+  if (opts.length !== 1 || opts[0].side !== "sell" || opts.some(t => t.type === "stock")) return null;
+  const o = opts[0], n = o.contracts, fees = rows.reduce((a, t) => a + (t.fees || 0), 0);
+  const credit = o.premium * 100 * n - fees;
+  const days = Math.max(1, o.dte_at_open), yr = r => r * 365 / days;
+  const nowNet = o.live ? credit - o.live.mark * 100 * n : null;
+  if (o.type === "put" && !stock.length) {
+    const base = o.strike * 100 * n;
+    return { kind: "Cash-secured put", roi: credit / base, ann: yr(credit / base), now: nowNet == null ? null : nowNet / base,
+             basis: `on ${usd(base)} cash secured` };
+  }
+  if (o.type === "call") {
+    const long = stock.filter(t => t.side === "buy");
+    let cost, est = false;
+    if (long.length) cost = long.reduce((a, t) => a + t.premium * 100 * t.contracts, 0) / long.reduce((a, t) => a + t.contracts, 0);
+    else if (!stock.length && o.live) { cost = o.live.spot * 100; est = true; }   // shares held outside the tracker: use today's price
+    else return null;
+    const base = cost * n, called = credit + (o.strike * 100 - cost) * n;
+    return { kind: "Covered call", roi: credit / base, ann: yr(credit / base), calledRoi: called / base, calledAnn: yr(called / base),
+             now: nowNet == null ? null : nowNet / base,
+             basis: est ? `estimate vs today's share price ${f2(cost / 100)}` : `on ${usd(base)} of shares` };
+  }
+  return null;
+}
+function roiCell(rows) {
+  const r = estRoi(rows);
+  if (!r) return '<td class="left note">–</td>';
+  const p1 = x => (x * 100).toFixed(x !== 0 && Math.abs(x) < 0.1 ? 2 : 1) + "%";
+  const main = r.calledRoi == null
+    ? `<b class="up">${p1(r.roi)}</b> <span class="note">· ${p1(r.ann)}/yr</span>`
+    : `<b class="up">${p1(r.roi)}</b> <span class="note">static · ${p1(r.ann)}/yr</span><br><b class="up">${p1(r.calledRoi)}</b> <span class="note">if called · ${p1(r.calledAnn)}/yr</span>`;
+  const now = r.now == null ? "" : `<div class="note">now <span class="${signed(r.now)}">${p1(r.now)}</span> if closed today</div>`;
+  return `<td class="left" title="${esc(r.kind + ", " + r.basis)}">${main}${now}<div class="note">${esc(r.basis)}</div></td>`;
+}
+
 const targetNote = pt => pt && pt.hit ? `<div><span class="hit">${esc(pt.text)}</span></div>` : "";
 
 function renderTrades() {
@@ -1445,7 +1497,7 @@ function renderTrades() {
     ["Paid for long options", usd(d.long_cost), ""],
   ].map(([k, v, s]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
 
-  const head = `<thead><tr><th class="left">#</th><th class="left">Position</th><th></th><th class="left">Side</th><th>Qty</th><th>Entry</th><th>Stock</th>
+  const head = `<thead><tr><th class="left">#</th><th class="left">Position</th><th></th><th class="left" title="Cash-secured puts and covered calls: return if it expires worthless (premium after fees), annualized">Est. ROI</th><th class="left">Side</th><th>Qty</th><th>Entry</th><th>Stock</th>
     <th>Bid / Ask</th><th>Mark</th><th>Unrealized</th><th>Position delta</th><th>DTE</th><th>Breakeven</th>
     <th>Max profit</th><th>Max loss</th><th class="left">Alerts</th></tr></thead>`;
   const legCells = t => {
@@ -1468,16 +1520,16 @@ function renderTrades() {
       const ps = positions.filter(p => p[0].category === cat);
       if (!ps.length) return "";
       const sub = { Hop: "90 days or less at open", Skip: "91–360 days at open", Leap: "over 360 days at open" }[cat];
-      return `<h3>${cat} <span class="note" style="text-transform:none;letter-spacing:0">${sub}</span></h3><div class="scroll"><table>${head}<tbody>` +
+      return `<h3>${cat} <span class="note" style="text-transform:none;letter-spacing:0">${sub}</span></h3><div class="scroll-top"><div></div></div><div class="scroll"><table>${head}<tbody>` +
         ps.map(p => {
           const buttons = `<button class="ghost small" data-builder="${posKey(p)}">Builder</button> <button class="ghost small" data-close-key="${posKey(p)}">Close</button> <button class="ghost small danger" data-del-id="${p[0].id}" title="Delete a trade logged by mistake">Delete</button>`;
           if (p.length === 1) {
             const t = p[0], s = t.stats;
             return `<tr><td class="left">${t.id}</td>
               <td class="left">${targetDot(profitTarget(p))}<b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp || ""}${t.notes ? `<div class="note">${esc(t.notes)}</div>` : ""}${targetNote(profitTarget(p))}</td>
-              <td style="white-space:nowrap">${buttons}</td>
+              <td style="white-space:nowrap">${buttons}</td>${roiCell(p)}
               ${legCells(t)}<td>${f2(s.breakeven)}</td><td>${usd(s.max_profit)}</td><td>${usd(s.max_loss)}</td>
-              <td class="left">${alertHtml(alertsOf(p))}${s.annualized != null ? `<div class="note">${pct(s.annualized)} annualized</div>` : ""}</td>
+              <td class="left">${alertHtml(alertsOf(p))}</td>
 </tr>`;
           }
           const spot = (p.find(t => t.live) || {}).live?.spot;
@@ -1489,14 +1541,14 @@ function renderTrades() {
           const dtes = p.map(t => t.dte).filter(x => x != null);
           const headRow = `<tr class="pos-head"><td class="left">P${p[0].group}</td>
             <td class="left">${targetDot(profitTarget(p))}<b>${esc(p[0].ticker)}</b> ${esc(p[0].strategy)} <span class="note">· ${p.length} legs${p[0].notes ? " · " + esc(p[0].notes) : ""}</span>${targetNote(profitTarget(p))}</td>
-            <td style="white-space:nowrap">${buttons}</td>
+            <td style="white-space:nowrap">${buttons}</td>${roiCell(p)}
             <td class="left">${net >= 0 ? "Debit" : "Credit"}</td><td></td><td>${usd(Math.abs(net))}</td><td>${spot ? f2(spot) : "–"}</td><td></td>
             <td>${usd(Math.abs(now))}</td><td class="${signed(un)}">${usd(un, true)}</td>
             <td>${(delta > 0 ? "+" : "") + delta.toFixed(0)} sh</td><td>${dtes.length ? Math.min(...dtes) : "–"}</td>
             <td>${a && a.bes.length ? a.bes.slice(0, 2).map(f2).join(" / ") : "–"}</td>
             <td>${a ? (a.maxP == null ? "unlimited" : usd(a.maxP)) : "–"}</td><td>${a ? (a.maxL == null ? "unlimited" : usd(-a.maxL)) : "–"}</td>
             <td class="left">${alertHtml(alertsOf(p))}</td></tr>`;
-          return headRow + p.map(t => `<tr class="pos-leg"><td class="left">${t.id}</td><td class="left contract">${esc(t.label)} ${t.exp || ""}</td><td></td>${legCells(t)}<td colspan="4"></td></tr>`).join("");
+          return headRow + p.map(t => `<tr class="pos-leg"><td class="left">${t.id}</td><td class="left contract">${esc(t.label)} ${t.exp || ""}</td><td></td><td></td>${legCells(t)}<td colspan="4"></td></tr>`).join("");
         }).join("") + "</tbody></table></div>";
     }).join("");
   }
@@ -1517,6 +1569,19 @@ function renderTrades() {
         <td><button class="ghost small danger" data-del-id="${t.id}" title="Delete a trade logged by mistake">Delete</button></td></tr>`).join("") + "</tbody>"
     : '<tbody><tr><td class="left note">No closed trades yet.</td></tr></tbody>';
   renderPremium();
+  syncTopBars($("#openGroups"));
+}
+/* Wide open-position tables get a second scrollbar above them, kept in step with the bottom one,
+   so you can slide sideways without scrolling down to the end of the table. */
+function syncTopBars(root) {
+  root.querySelectorAll(".scroll-top").forEach(top => {
+    const box = top.nextElementSibling, table = box.querySelector("table");
+    const size = () => { top.firstElementChild.style.width = table.scrollWidth + "px"; top.style.display = table.scrollWidth > box.clientWidth + 1 ? "" : "none"; };
+    size();
+    const link = (a, b) => a.addEventListener("scroll", () => { if (b.scrollLeft !== a.scrollLeft) b.scrollLeft = a.scrollLeft; });
+    link(top, box); link(box, top);
+    new ResizeObserver(size).observe(box);
+  });
 }
 
 function renderPremium() {
