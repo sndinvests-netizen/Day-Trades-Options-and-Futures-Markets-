@@ -1442,18 +1442,18 @@ function profitTarget(rows) {
 const targetDot = pt => pt && pt.hit ? `<span class="target-dot" title="${esc(pt.text)}"></span>` : "";
 /* Estimated ROI for cash-secured puts and covered calls (premium after fees):
    CSP = premium / cash securing it (strike x 100); covered call = premium / what the shares cost,
-   plus an "if called" return that adds the gain up to the strike. Annualized over the days from
-   open to expiration. "Now" = what closing today would return on the same base. */
+   plus an "if called" return that adds the gain up to the strike. Monthly = return spread over the days
+   from open to expiration, scaled to an average month (30.44 days). "Now" = what closing today would return on the same base. */
 function estRoi(rows) {
   const opts = rows.filter(t => t.type !== "stock"), stock = rows.filter(t => t.type === "stock");
   if (opts.length !== 1 || opts[0].side !== "sell" || opts.some(t => t.type === "stock")) return null;
   const o = opts[0], n = o.contracts, fees = rows.reduce((a, t) => a + (t.fees || 0), 0);
   const credit = o.premium * 100 * n - fees;
-  const days = Math.max(1, o.dte_at_open), yr = r => r * 365 / days;
+  const days = Math.max(1, o.dte_at_open), mo = r => r * 30.4375 / days;
   const nowNet = o.live ? credit - o.live.mark * 100 * n : null;
   if (o.type === "put" && !stock.length) {
     const base = o.strike * 100 * n;
-    return { kind: "Cash-secured put", roi: credit / base, ann: yr(credit / base), now: nowNet == null ? null : nowNet / base,
+    return { kind: "Cash-secured put", roi: credit / base, mon: mo(credit / base), now: nowNet == null ? null : nowNet / base,
              basis: `on ${usd(base)} cash secured` };
   }
   if (o.type === "call") {
@@ -1463,7 +1463,7 @@ function estRoi(rows) {
     else if (!stock.length && o.live) { cost = o.live.spot * 100; est = true; }   // shares held outside the tracker: use today's price
     else return null;
     const base = cost * n, called = credit + (o.strike * 100 - cost) * n;
-    return { kind: "Covered call", roi: credit / base, ann: yr(credit / base), calledRoi: called / base, calledAnn: yr(called / base),
+    return { kind: "Covered call", roi: credit / base, mon: mo(credit / base), calledRoi: called / base, calledMon: mo(called / base),
              now: nowNet == null ? null : nowNet / base,
              basis: est ? `estimate vs today's share price ${f2(cost / 100)}` : `on ${usd(base)} of shares` };
   }
@@ -1474,8 +1474,8 @@ function roiCell(rows) {
   if (!r) return '<td class="left note">–</td>';
   const p1 = x => (x * 100).toFixed(x !== 0 && Math.abs(x) < 0.1 ? 2 : 1) + "%";
   const main = r.calledRoi == null
-    ? `<b class="up">${p1(r.roi)}</b> <span class="note">· ${p1(r.ann)}/yr</span>`
-    : `<b class="up">${p1(r.roi)}</b> <span class="note">static · ${p1(r.ann)}/yr</span><br><b class="up">${p1(r.calledRoi)}</b> <span class="note">if called · ${p1(r.calledAnn)}/yr</span>`;
+    ? `<b class="up">${p1(r.roi)}</b> <span class="note">· ${p1(r.mon)}/mo</span>`
+    : `<b class="up">${p1(r.roi)}</b> <span class="note">static · ${p1(r.mon)}/mo</span><br><b class="up">${p1(r.calledRoi)}</b> <span class="note">if called · ${p1(r.calledMon)}/mo</span>`;
   const now = r.now == null ? "" : `<div class="note">now <span class="${signed(r.now)}">${p1(r.now)}</span> if closed today</div>`;
   return `<td class="left" title="${esc(r.kind + ", " + r.basis)}">${main}${now}<div class="note">${esc(r.basis)}</div></td>`;
 }
@@ -1497,7 +1497,7 @@ function renderTrades() {
     ["Paid for long options", usd(d.long_cost), ""],
   ].map(([k, v, s]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
 
-  const head = `<thead><tr><th class="left">#</th><th class="left">Position</th><th></th><th class="left" title="Cash-secured puts and covered calls: return if it expires worthless (premium after fees), annualized">Est. ROI</th><th class="left">Side</th><th>Qty</th><th>Entry</th><th>Stock</th>
+  const head = `<thead><tr><th class="left">#</th><th class="left">Position</th><th></th><th class="left" title="Cash-secured puts and covered calls: return if it expires worthless (premium after fees), and that return per month">Est. ROI</th><th class="left">Side</th><th>Qty</th><th>Entry</th><th>Stock</th>
     <th>Bid / Ask</th><th>Mark</th><th>Unrealized</th><th>Position delta</th><th>DTE</th><th>Breakeven</th>
     <th>Max profit</th><th>Max loss</th><th class="left">Alerts</th></tr></thead>`;
   const legCells = t => {
