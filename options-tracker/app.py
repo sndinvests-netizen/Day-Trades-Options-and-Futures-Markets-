@@ -80,7 +80,17 @@ class Handler(BaseHTTPRequestHandler):
             traceback.print_exc()
             self.send(500, {"error": f"{type(e).__name__}: {e}"})
 
+    def local_host(self):
+        # Refuse requests addressed to any other host name (DNS-rebinding protection).
+        host = (self.headers.get("Host") or "").rsplit(":", 1)[0]
+        if host in ("127.0.0.1", "localhost"):
+            return True
+        self.send(403, {"error": "forbidden"})
+        return False
+
     def do_GET(self):
+        if not self.local_host():
+            return
         url = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         if url.path == "/":
@@ -100,6 +110,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send(404, {"error": "not found"})
 
     def do_POST(self):
+        if not self.local_host():
+            return
         # Only accept requests from this app's own page.
         origin = self.headers.get("Origin")
         if origin and origin != f"http://{self.headers.get('Host')}":

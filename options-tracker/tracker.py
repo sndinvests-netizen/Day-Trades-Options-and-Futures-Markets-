@@ -322,7 +322,9 @@ def describe(t, show_live=False):
     if "annualized" in s:
         info += f"  annualized {s['annualized']:.1%}"
     lines.append(info)
-    if days is not None and days <= 7:
+    if days is not None and days < 0:
+        lines.append("      ! past expiration: close it as expired or assigned")
+    elif days is not None and days <= 7:
         lines.append("      ! expires within a week")
     if show_live:
         try:

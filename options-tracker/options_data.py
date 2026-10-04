@@ -101,8 +101,14 @@ def max_pain(calls, puts):
 
 # ---------- Yahoo ----------
 
+def yahoo_symbol(ticker):
+    """Yahoo spells class shares with a dash: BRK.B -> BRK-B."""
+    return ticker.upper().strip().replace(".", "-")
+
+
 def expirations(ticker):
     yf = _yf()
+    ticker = yahoo_symbol(ticker)
 
     def fetch():
         try:
@@ -117,6 +123,7 @@ def expirations(ticker):
 
 def spot_price(ticker):
     yf = _yf()
+    ticker = yahoo_symbol(ticker)
 
     def fetch():
         try:
@@ -129,6 +136,7 @@ def spot_price(ticker):
 def chain_rows(ticker, exp):
     """{'call': [...], 'put': [...]}: strike, bid, ask, last, mark, volume, oi, iv."""
     yf = _yf()
+    ticker = yahoo_symbol(ticker)
 
     def fetch():
         if exp not in expirations(ticker):
@@ -161,7 +169,7 @@ def quote(ticker, exp, strike, kind="put"):
 
 def chain(ticker, exp=None):
     """Full chain for one expiration with Greeks, flags and summary numbers."""
-    ticker = ticker.upper().strip()
+    ticker = yahoo_symbol(ticker)
     exps = expirations(ticker)
     exp = exp if exp in exps else exps[0]
     spot = spot_price(ticker)
