@@ -196,6 +196,15 @@ tr.pos-leg td.contract { padding-left: 24px; }
 .closelegs { display: grid; grid-template-columns: 1fr 130px; gap: 8px 12px; align-items: center; margin: 10px 0; }
 .closelegs input { width: 100%; }
 .empty { padding: 26px 8px; text-align: center; }
+/* green glowing dot: position has reached the 50% profit target */
+.target-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 7px; vertical-align: 0;
+  background: #3fe0a0; box-shadow: 0 0 6px 2px rgba(63,224,160,.75); animation: targetGlow 1.8s ease-in-out infinite; }
+@keyframes targetGlow {
+  0%, 100% { box-shadow: 0 0 4px 1px rgba(63,224,160,.55); }
+  50%      { box-shadow: 0 0 12px 4px rgba(63,224,160,.95); }
+}
+@media (prefers-reduced-motion: reduce) { .target-dot { animation: none; } }
+.hit { background: rgba(63,197,151,.16); color: var(--up); border-radius: 6px; padding: 1px 7px; font-size: 12px; font-weight: 600; }
 /* P/L $ / P/L % slide toggle */
 .unit-toggle { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: var(--muted); padding-bottom: 6px; }
 .unit-toggle .sel { color: var(--text); }
@@ -1384,13 +1393,38 @@ function groupPositions(rows) {
 const legsForEngine = rows => rows.map(t => ({ side: t.side, type: t.type, qty: t.contracts, exp: t.exp, strike: t.strike,
   price: t.premium, iv: t.live && t.live.iv > 0.01 ? t.live.iv : 0.3 }));
 
+/* 50% profit target, on the option legs only (a covered call's shares don't count):
+   sold/credit positions hit it when buying back costs 50% or less of the premium collected;
+   bought/debit positions when they're worth 50% or more above what was paid. */
+const TARGET = 0.5;
+function profitTarget(rows) {
+  const opts = rows.filter(t => t.type !== "stock");
+  if (!opts.length || opts.some(t => !t.live)) return null;
+  const amt = (t, price) => (t.side === "sell" ? 1 : -1) * price * t.contracts * 100;
+  const entry = opts.reduce((a, t) => a + amt(t, t.premium), 0);    // > 0 credit received, < 0 debit paid
+  const now = opts.reduce((a, t) => a + amt(t, t.live.mark), 0);    // > 0 cost to buy back, < 0 value to sell
+  if (entry > 0) {
+    const captured = (entry - now) / entry;
+    return { hit: captured >= TARGET, text: `50% target hit: ${pct(captured, 0)} of the premium captured` };
+  }
+  if (entry < 0) {
+    const gain = (entry - now) / -entry;
+    return { hit: gain >= TARGET, text: `50% target hit: up ${pct(gain, 0)} on what you paid` };
+  }
+  return null;
+}
+const targetDot = pt => pt && pt.hit ? `<span class="target-dot" title="${esc(pt.text)}"></span>` : "";
+const targetNote = pt => pt && pt.hit ? `<div><span class="hit">${esc(pt.text)}</span></div>` : "";
+
 function renderTrades() {
   const d = tradeData;
   const unreal = d.open.reduce((a, t) => a + (t.live ? t.live.unrealized : 0), 0);
   const realized = d.closed.reduce((a, t) => a + t.realized, 0);
   const positions = groupPositions(d.open);
+  const atTarget = positions.filter(p => (profitTarget(p) || {}).hit).length;
   $("#tradeTiles").innerHTML = [
     ["Open positions", positions.length, d.open.length + " legs"],
+    ["At 50% profit target", atTarget ? `<span class="target-dot"></span>${atTarget}` : "0", atTarget ? "ready to take profits?" : "none yet"],
     ["Unrealized P&L", `<span class="${signed(unreal)}">${usd(unreal, true)}</span>`, "at mid price"],
     ["Realized P&L", `<span class="${signed(realized)}">${usd(realized, true)}</span>`, d.closed.length + " closed legs"],
     ["Cash securing short puts", usd(d.collateral), "single short puts"],
@@ -1426,7 +1460,7 @@ function renderTrades() {
           if (p.length === 1) {
             const t = p[0], s = t.stats;
             return `<tr><td class="left">${t.id}</td>
-              <td class="left"><b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp || ""}${t.notes ? `<div class="note">${esc(t.notes)}</div>` : ""}</td>
+              <td class="left">${targetDot(profitTarget(p))}<b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp || ""}${t.notes ? `<div class="note">${esc(t.notes)}</div>` : ""}${targetNote(profitTarget(p))}</td>
               <td style="white-space:nowrap">${buttons}</td>
               ${legCells(t)}<td>${f2(s.breakeven)}</td><td>${usd(s.max_profit)}</td><td>${usd(s.max_loss)}</td>
               <td class="left">${alertHtml(alertsOf(p))}${s.annualized != null ? `<div class="note">${pct(s.annualized)} annualized</div>` : ""}</td>
@@ -1440,7 +1474,7 @@ function renderTrades() {
           const delta = p.reduce((s, t) => s + (t.live && t.live.position_delta != null ? t.live.position_delta : 0), 0);
           const dtes = p.map(t => t.dte).filter(x => x != null);
           const headRow = `<tr class="pos-head"><td class="left">P${p[0].group}</td>
-            <td class="left"><b>${esc(p[0].ticker)}</b> ${esc(p[0].strategy)} <span class="note">· ${p.length} legs${p[0].notes ? " · " + esc(p[0].notes) : ""}</span></td>
+            <td class="left">${targetDot(profitTarget(p))}<b>${esc(p[0].ticker)}</b> ${esc(p[0].strategy)} <span class="note">· ${p.length} legs${p[0].notes ? " · " + esc(p[0].notes) : ""}</span>${targetNote(profitTarget(p))}</td>
             <td style="white-space:nowrap">${buttons}</td>
             <td class="left">${net >= 0 ? "Debit" : "Credit"}</td><td></td><td>${usd(Math.abs(net))}</td><td>${spot ? f2(spot) : "–"}</td><td></td>
             <td>${usd(Math.abs(now))}</td><td class="${signed(un)}">${usd(un, true)}</td>
