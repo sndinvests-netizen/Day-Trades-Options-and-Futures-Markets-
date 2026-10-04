@@ -870,13 +870,52 @@ async function addLegFromChain(chain, type, strike, side) {
 }
 
 let toastTimer = null;
-function toast(msg) {
+function toast(msg, withBuilderButton = true) {
+  $("#toastGo").classList.toggle("hidden", !withBuilderButton);
   $("#toastMsg").textContent = msg;
   $("#toast").classList.remove("hidden");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => $("#toast").classList.add("hidden"), 6000);
 }
 $("#toastGo").onclick = () => { $("#toast").classList.add("hidden"); showTab("builder"); };
+
+/* ---- confetti for a winning close ---- */
+function celebrate(realized) {
+  toast(`🎉 Winner! Closed for ${signedUsd(Math.round(realized))}.`, false);
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const cv = document.createElement("canvas");
+  cv.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:50";
+  document.body.appendChild(cv);
+  const dpr = window.devicePixelRatio || 1, W = innerWidth, H = innerHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const ctx = cv.getContext("2d");
+  ctx.scale(dpr, dpr);
+  const colors = ["#9fd0ff", "#5fa4e8", "#1aa7e6", "#f2c14e", "#e0a526", "#3fc597", "#ffffff"];
+  const bits = [];
+  for (const [x0, dir] of [[0.15, 1], [0.85, -1]]) {   // two bursts from the lower corners
+    for (let i = 0; i < 90; i++) {
+      const a = (-60 - Math.random() * 40) * Math.PI / 180, v = 9 + Math.random() * 9;
+      bits.push({ x: W * x0, y: H * 0.85, vx: Math.abs(Math.cos(a)) * v * dir, vy: Math.sin(a) * v,
+        w: 6 + Math.random() * 6, h: 4 + Math.random() * 4, r: Math.random() * 6, vr: (Math.random() - 0.5) * 0.4,
+        c: colors[(Math.random() * colors.length) | 0] });
+    }
+  }
+  const start = performance.now(), life = 2600;
+  setTimeout(() => cv.remove(), life + 400);  // also clean up if the tab is in the background (no animation frames)
+  (function frame(now) {
+    const t = now - start;
+    ctx.clearRect(0, 0, W, H);
+    ctx.globalAlpha = Math.max(0, 1 - Math.max(0, t - life + 700) / 700);
+    for (const b of bits) {
+      b.vy += 0.32; b.vx *= 0.99; b.vy *= 0.99;
+      b.x += b.vx; b.y += b.vy; b.r += b.vr;
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.r);
+      ctx.fillStyle = b.c; ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h * Math.abs(Math.cos(b.r * 2)) + 1);
+      ctx.restore();
+    }
+    if (t < life) requestAnimationFrame(frame); else cv.remove();
+  })(start);
+}
 
 /* Chart range: about 2.5 expected moves to the first expiration, from 3% to 60%. */
 function autoRange() {
@@ -1563,7 +1602,8 @@ $("#closeForm").onsubmit = async e => {
   const body = { id: closingId, fees: v.fees, closed: v.closed, expired: v.how === "expired", assigned: v.how === "assigned" };
   if (v.how !== "expired") body.premium = v.premium;
   try {
-    await api("/api/trades/close", body);
+    const t = await api("/api/trades/close", body);
+    if (t.realized > 0) celebrate(t.realized);
     $("#closeDlg").close();
     loadTrades();
   } catch (err) { $("#closeErr").textContent = err.message; }
@@ -1587,7 +1627,9 @@ $("#closePosForm").onsubmit = async e => {
   const f = e.target;
   const legs = [...document.querySelectorAll("#closePosLegs input")].map(i => ({ id: +i.dataset.leg, premium: i.value }));
   try {
-    await api("/api/positions/close", { legs, fees: f.elements.fees.value, closed: f.elements.closed.value });
+    const out = await api("/api/positions/close", { legs, fees: f.elements.fees.value, closed: f.elements.closed.value });
+    const realized = out.reduce((a, t) => a + t.realized, 0);
+    if (realized > 0) celebrate(realized);
     $("#closePosDlg").close();
     loadTrades();
   } catch (err) { $("#closePosErr").textContent = err.message; }
