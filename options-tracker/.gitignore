@@ -1,0 +1,4 @@
+trades.json
+__pycache__/
+*.pyc
+.venv/

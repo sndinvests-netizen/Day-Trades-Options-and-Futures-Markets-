@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Option Tracker</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --text: #16191d; --muted: #646b75; --line: #e2e5ea;
+  --accent: #2f5bd3; --accent-text: #ffffff; --itm: #eef3ff; --spot: #f2a20c;
+  --up: #12805c; --down: #c23b3b; --warn-bg: #fff4e0; --warn: #8a5300; --flag: #7a3fd1;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1216; --panel: #171b21; --text: #e7eaee; --muted: #9098a3; --line: #2a3038;
+    --accent: #6d8ff0; --accent-text: #0f1216; --itm: #1b2333; --spot: #f2b33d;
+    --up: #3fc597; --down: #f07272; --warn-bg: #3a2c12; --warn: #f5c46b; --flag: #b48cf5;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1216; --panel: #171b21; --text: #e7eaee; --muted: #9098a3; --line: #2a3038;
+  --accent: #6d8ff0; --accent-text: #0f1216; --itm: #1b2333; --spot: #f2b33d;
+  --up: #3fc597; --down: #f07272; --warn-bg: #3a2c12; --warn: #f5c46b; --flag: #b48cf5;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+.wrap { max-width: 1280px; margin: 0 auto; padding: 16px; }
+header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+h1 { font-size: 18px; margin: 0; }
+.tabs { display: flex; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 3px; }
+.tabs button { border: 0; background: none; color: var(--muted); padding: 6px 14px; border-radius: 6px; cursor: pointer; font: inherit; }
+.tabs button.on { background: var(--accent); color: var(--accent-text); }
+.note { color: var(--muted); font-size: 12px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+.controls { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
+label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+input, select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+input#ticker { width: 110px; text-transform: uppercase; font-weight: 600; }
+button.primary, button.ghost { font: inherit; border-radius: 6px; padding: 6px 14px; cursor: pointer; }
+button.primary { background: var(--accent); color: var(--accent-text); border: 1px solid var(--accent); }
+button.ghost { background: none; color: var(--text); border: 1px solid var(--line); }
+button.small { padding: 2px 8px; font-size: 12px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.chip { border: 1px solid var(--line); background: var(--bg); color: var(--text); border-radius: 999px; padding: 2px 10px; cursor: pointer; font: inherit; font-size: 12px; }
+.check { flex-direction: row; align-items: center; gap: 6px; padding-bottom: 7px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.tile .k { font-size: 12px; color: var(--muted); }
+.tile .v { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tile .s { font-size: 12px; color: var(--muted); }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { padding: 4px 8px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+th { font-size: 12px; color: var(--muted); font-weight: 500; position: sticky; top: 0; background: var(--panel); }
+th.side { text-align: center; color: var(--text); font-weight: 600; }
+td.strike, th.strike { text-align: center; font-weight: 600; background: var(--bg); }
+#chain td.itm { background: var(--itm); }
+#chain tbody tr:hover td { outline: 1px solid var(--line); }
+#chain td.c, #chain td.p { cursor: pointer; }
+tr.spotrow td { background: none !important; border-bottom: 2px solid var(--spot); padding: 0; height: 0; }
+tr.spotrow td.strike { color: var(--spot); font-size: 12px; padding: 1px 6px; }
+.flag { color: var(--flag); font-weight: 700; }
+.up { color: var(--up); } .down { color: var(--down); }
+.left { text-align: left; }
+.warn { background: var(--warn-bg); color: var(--warn); border-radius: 4px; padding: 1px 6px; font-size: 12px; }
+.err { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; }
+h2 { font-size: 15px; margin: 0 0 10px; }
+h3 { font-size: 13px; margin: 14px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.hidden { display: none !important; }
+dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); padding: 18px; width: min(460px, calc(100vw - 32px)); }
+dialog::backdrop { background: rgba(0,0,0,.4); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.grid2 label input, .grid2 label select { width: 100%; }
+.actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.formerr { color: var(--down); font-size: 13px; min-height: 18px; margin-top: 8px; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Option Tracker</h1>
+    <div class="tabs">
+      <button id="tab-chain" class="on">Chain</button>
+      <button id="tab-trades">My Trades</button>
+    </div>
+    <span class="note">Yahoo Finance data, delayed about 15 min. Greeks are calculated (Black-Scholes, 4% rate).</span>
+  </header>
+
+  <!-- ===== Chain ===== -->
+  <section id="view-chain">
+    <div class="panel">
+      <form class="controls" id="lookup">
+        <label>Ticker <input id="ticker" autocomplete="off" spellcheck="false" placeholder="TSLA"></label>
+        <button class="primary" type="submit">Load</button>
+        <label>Expiration <select id="exp"></select></label>
+        <label>Strikes <select id="range">
+          <option value="10">10 each side</option><option value="20" selected>20 each side</option>
+          <option value="40">40 each side</option><option value="0">All</option></select></label>
+        <label>Auto-refresh <select id="refresh">
+          <option value="0">Off</option><option value="60">1 min</option>
+          <option value="120" selected>2 min</option><option value="300">5 min</option></select></label>
+        <label class="check"><input type="checkbox" id="moreGreeks"> Gamma / Theta / Vega</label>
+        <span class="note" id="asof"></span>
+      </form>
+      <div class="chips" id="chips"></div>
+    </div>
+    <div id="chainErr" class="err hidden"></div>
+    <div id="chainBody" class="hidden">
+      <div class="tiles" id="tiles"></div>
+      <div class="panel">
+        <div class="row">
+          <h2 id="chainTitle"></h2>
+          <span class="note">Click any call or put to log a trade on it.</span>
+        </div>
+        <div class="scroll"><table id="chain"></table></div>
+        <div class="legend note">
+          <span><span class="sw" style="background:var(--itm)"></span>In the money</span>
+          <span><span class="sw" style="background:var(--spot)"></span>Stock price</span>
+          <span><span class="flag">●</span> Unusual: volume at least 2× open interest (500+ contracts)</span>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Unusual activity this expiration</h2>
+        <div class="scroll"><table id="unusual"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Trades ===== -->
+  <section id="view-trades" class="hidden">
+    <div id="tradesErr" class="err hidden"></div>
+    <div class="tiles" id="tradeTiles"></div>
+    <div class="panel">
+      <div class="row">
+        <h2>Open positions</h2>
+        <div><button class="ghost" id="reloadTrades">Refresh quotes</button>
+          <button class="primary" id="newTrade">Log a trade</button></div>
+      </div>
+      <div id="openGroups"></div>
+    </div>
+    <div class="panel">
+      <h2>Results</h2>
+      <div class="scroll"><table id="report"></table></div>
+      <h3>Closed trades</h3>
+      <div class="scroll"><table id="closed"></table></div>
+    </div>
+  </section>
+</div>
+
+<dialog id="addDlg">
+  <form id="addForm" method="dialog">
+    <h2>Log a trade</h2>
+    <div class="grid2">
+      <label>Ticker <input name="ticker" required style="text-transform:uppercase"></label>
+      <label>Type <select name="type"><option value="put">Put</option><option value="call">Call</option></select></label>
+      <label>Side <select name="side"><option value="buy">Bought (long)</option><option value="sell">Sold (short)</option></select></label>
+      <label>Contracts <input name="contracts" type="number" min="1" step="1" value="1"></label>
+      <label>Strike <input name="strike" type="number" step="any" required></label>
+      <label>Expiration <input name="exp" type="date" required></label>
+      <label>Price per share <input name="premium" type="number" step="any" min="0" required></label>
+      <label>Fees ($ total) <input name="fees" type="number" step="any" min="0" value="0"></label>
+      <label>Opened <input name="opened" type="date"></label>
+      <label>Notes <input name="notes"></label>
+    </div>
+    <div class="formerr" id="addErr"></div>
+    <div class="actions"><button class="ghost" type="button" data-close>Cancel</button><button class="primary" type="submit">Save</button></div>
+  </form>
+</dialog>
+
+<dialog id="closeDlg">
+  <form id="closeForm" method="dialog">
+    <h2 id="closeTitle">Close trade</h2>
+    <div class="grid2">
+      <label>How <select name="how">
+        <option value="closed">Bought / sold to close</option>
+        <option value="expired">Expired worthless</option>
+        <option value="assigned">Assigned / exercised</option></select></label>
+      <label id="closePriceLbl">Exit price per share <input name="premium" type="number" step="any" min="0"></label>
+      <label>Fees ($ total) <input name="fees" type="number" step="any" min="0" value="0"></label>
+      <label>Closed on <input name="closed" type="date"></label>
+    </div>
+    <p class="note" id="closeHint"></p>
+    <div class="formerr" id="closeErr"></div>
+    <div class="actions"><button class="ghost" type="button" data-close>Cancel</button><button class="primary" type="submit">Save</button></div>
+  </form>
+</dialog>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const WATCHLIST = ["SPY", "QQQ", "TSLA", "AAPL", "AMD", "INTC"];
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const f2 = x => x == null || isNaN(x) ? "–" : Number(x).toFixed(2);
+const pct = (x, d = 1) => x == null ? "–" : (x * 100).toFixed(d) + "%";
+const int = x => x == null ? "–" : Number(x).toLocaleString();
+const usd = (x, cents = false) => x == null ? "unlimited" :
+  (x < 0 ? "-$" : "$") + Math.abs(x).toLocaleString(undefined, { minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: cents ? 2 : 0 });
+const signed = x => x == null ? "" : x > 0 ? "up" : x < 0 ? "down" : "";
+const today = () => new Date().toLocaleDateString("en-CA");
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  const data = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+  return data;
+}
+
+/* ---------- tabs ---------- */
+function showTab(name) {
+  for (const t of ["chain", "trades"]) {
+    $("#tab-" + t).classList.toggle("on", t === name);
+    $("#view-" + t).classList.toggle("hidden", t !== name);
+  }
+  store.set("tab", name);
+  if (name === "trades") loadTrades();
+}
+$("#tab-chain").onclick = () => showTab("chain");
+$("#tab-trades").onclick = () => showTab("trades");
+
+/* ---------- chain ---------- */
+let current = null, timer = null, reqSeq = 0, busy = false;
+
+function renderChips() {
+  const recent = store.get("recent", []);
+  const all = [...new Set([...recent, ...WATCHLIST])].slice(0, 12);
+  $("#chips").innerHTML = all.map(t => `<button type="button" class="chip" data-t="${esc(t)}">${esc(t)}</button>`).join("");
+}
+$("#chips").onclick = e => { const t = e.target.dataset.t; if (t) { $("#ticker").value = t; loadChain(t); } };
+
+async function loadChain(ticker, exp, quiet) {
+  ticker = (ticker || "").trim().toUpperCase();
+  if (!ticker) return;
+  const seq = ++reqSeq;  // a newer request makes this one stale
+  busy = true;
+  if (!quiet) $("#asof").textContent = "Loading " + ticker + "…";
+  try {
+    const d = await api(`/api/chain?ticker=${encodeURIComponent(ticker)}` + (exp ? `&exp=${exp}` : ""));
+    if (seq !== reqSeq) return;
+    current = d;
+    $("#chainErr").classList.add("hidden");
+    $("#chainBody").classList.remove("hidden");
+    store.set("recent", [d.ticker, ...store.get("recent", []).filter(t => t !== d.ticker)].slice(0, 8));
+    store.set("last", { ticker: d.ticker, exp: d.exp });
+    renderChips();
+    renderChain();
+  } catch (err) {
+    if (seq !== reqSeq) return;
+    $("#chainErr").textContent = err.message;
+    $("#chainErr").classList.remove("hidden");
+    if (!quiet) $("#asof").textContent = "";
+  } finally {
+    if (seq === reqSeq) busy = false;
+  }
+}
+
+function renderChain() {
+  const d = current, s = d.summary;
+  $("#exp").innerHTML = d.expirations.map(e => {
+    const days = Math.round((new Date(e + "T16:00:00") - new Date(today() + "T16:00:00")) / 864e5);
+    return `<option value="${e}" ${e === d.exp ? "selected" : ""}>${e} (${days}d)</option>`;
+  }).join("");
+  $("#asof").textContent = "Updated " + new Date(d.as_of).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+  const pcNote = r => r == null ? "" : r > 1 ? "more puts" : "more calls";
+  $("#tiles").innerHTML = [
+    ["Price", f2(d.spot), d.ticker],
+    ["Expiration", d.exp, d.dte + " days"],
+    ["ATM implied vol", pct(s.atm_iv), "at the strike nearest price"],
+    ["Put/Call volume", f2(s.pc_volume), `${int(s.put_volume)} P / ${int(s.call_volume)} C · ${pcNote(s.pc_volume)}`],
+    ["Put/Call open int.", f2(s.pc_oi), `${int(s.put_oi)} P / ${int(s.call_oi)} C`],
+    ["Max pain", s.max_pain == null ? "–" : f2(s.max_pain), s.max_pain == null ? "" : `${pct((s.max_pain - d.spot) / d.spot)} from price`],
+  ].map(([k, v, sub]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${esc(sub)}</div></div>`).join("");
+  $("#chainTitle").textContent = `${d.ticker} ${d.exp}`;
+
+  const more = $("#moreGreeks").checked;
+  const cols = ["delta", ...(more ? ["gamma", "theta", "vega"] : []), "iv", "oi", "volume", "last", "bid", "ask"];
+  const names = { delta: "Delta", gamma: "Gamma", theta: "Theta", vega: "Vega", iv: "IV", oi: "Open int.", volume: "Volume", last: "Last", bid: "Bid", ask: "Ask" };
+  const fmt = (c, r) => {
+    const v = r[c];
+    if (v == null) return "–";
+    if (c === "iv") return v < 0.01 ? "–" : pct(v, 0);
+    if (c === "oi") return int(v);
+    if (c === "volume") return (r.unusual ? '<span class="flag">●</span> ' : "") + int(v);
+    if (c === "gamma") return v.toFixed(4);
+    if (c === "theta" || c === "vega") return v.toFixed(3);
+    return f2(v);
+  };
+  const callCols = cols, putCols = [...cols].reverse();
+  const byStrike = new Map();
+  for (const r of d.calls) byStrike.set(r.strike, { call: r });
+  for (const r of d.puts) byStrike.set(r.strike, { ...(byStrike.get(r.strike) || {}), put: r });
+  let strikes = [...byStrike.keys()].sort((a, b) => a - b);
+  const n = +$("#range").value;
+  if (n) {
+    const i = strikes.findIndex(k => k >= d.spot);
+    const mid = i < 0 ? strikes.length : i;
+    strikes = strikes.slice(Math.max(0, mid - n), mid + n);
+  }
+  let html = `<thead><tr><th class="side" colspan="${cols.length}">Calls</th><th class="strike"></th><th class="side" colspan="${cols.length}">Puts</th></tr>
+    <tr>${callCols.map(c => `<th>${names[c]}</th>`).join("")}<th class="strike">Strike</th>${putCols.map(c => `<th>${names[c]}</th>`).join("")}</tr></thead><tbody>`;
+  let spotDone = false;
+  const spotRow = () => `<tr class="spotrow"><td colspan="${cols.length}"></td><td class="strike">▲ ${f2(d.spot)}</td><td colspan="${cols.length}"></td></tr>`;
+  for (const k of strikes) {
+    if (!spotDone && k >= d.spot) { html += spotRow(); spotDone = true; }
+    const { call, put } = byStrike.get(k);
+    const side = (r, list, kind) => list.map(c => r
+      ? `<td class="${kind[0]} ${r.itm ? "itm" : ""}" data-kind="${kind}" data-strike="${k}">${fmt(c, r)}</td>`
+      : "<td></td>").join("");
+    html += `<tr>${side(call, callCols, "call")}<td class="strike">${f2(k)}</td>${side(put, putCols, "put")}</tr>`;
+  }
+  if (!spotDone) html += spotRow();
+  $("#chain").innerHTML = html + "</tbody>";
+
+  $("#unusual").innerHTML = d.unusual.length
+    ? `<thead><tr><th class="left">Contract</th><th>Volume</th><th>Open int.</th><th>Vol / OI</th><th>Last</th><th>IV</th><th>Delta</th></tr></thead><tbody>` +
+      d.unusual.map(r => `<tr><td class="left">${f2(r.strike)} ${r.kind === "call" ? "Call" : "Put"}${r.itm ? ' <span class="note">ITM</span>' : ""}</td>
+        <td>${int(r.volume)}</td><td>${int(r.oi)}</td><td>${r.oi ? (r.volume / r.oi).toFixed(1) + "x" : "new"}</td>
+        <td>${f2(r.last)}</td><td>${pct(r.iv, 0)}</td><td>${f2(r.delta)}</td></tr>`).join("") + "</tbody>"
+    : `<tbody><tr><td class="left note">No contracts traded at least 2× their open interest (500+ contracts) for this expiration.</td></tr></tbody>`;
+}
+
+$("#chain").onclick = e => {
+  const td = e.target.closest("td[data-kind]");
+  if (!td || !current) return;
+  const kind = td.dataset.kind, strike = +td.dataset.strike;
+  const r = current[kind === "call" ? "calls" : "puts"].find(x => x.strike === strike);
+  openAdd({ ticker: current.ticker, type: kind, strike, exp: current.exp, premium: r ? r.mark.toFixed(2) : "" });
+};
+
+$("#lookup").onsubmit = e => { e.preventDefault(); loadChain($("#ticker").value); };
+$("#exp").onchange = () => current && loadChain(current.ticker, $("#exp").value);
+$("#range").onchange = () => { store.set("range", $("#range").value); current && renderChain(); };
+$("#moreGreeks").onchange = () => { store.set("more", $("#moreGreeks").checked); current && renderChain(); };
+$("#refresh").onchange = () => { store.set("refresh", $("#refresh").value); setTimer(); };
+
+function setTimer() {
+  clearInterval(timer);
+  const sec = +$("#refresh").value;
+  if (sec) timer = setInterval(() => {
+    if (document.hidden) return;
+    if (!$("#view-chain").classList.contains("hidden") && current && !busy) loadChain(current.ticker, current.exp, true);
+    else if (!$("#view-trades").classList.contains("hidden")) loadTrades(true);
+  }, sec * 1000);
+}
+
+/* ---------- trades ---------- */
+let tradeData = null;
+
+async function loadTrades(quiet) {
+  if (!quiet) $("#openGroups").innerHTML = '<p class="note">Loading quotes…</p>';
+  try {
+    tradeData = await api("/api/positions");
+    $("#tradesErr").classList.add("hidden");
+    renderTrades();
+  } catch (err) {
+    $("#tradesErr").textContent = err.message;
+    $("#tradesErr").classList.remove("hidden");
+  }
+}
+
+function renderTrades() {
+  const d = tradeData;
+  const unreal = d.open.reduce((a, t) => a + (t.live ? t.live.unrealized : 0), 0);
+  const realized = d.closed.reduce((a, t) => a + t.realized, 0);
+  $("#tradeTiles").innerHTML = [
+    ["Open trades", d.open.length, ""],
+    ["Unrealized P&L", `<span class="${signed(unreal)}">${usd(unreal, true)}</span>`, "at mid price"],
+    ["Realized P&L", `<span class="${signed(realized)}">${usd(realized, true)}</span>`, d.closed.length + " closed"],
+    ["Cash securing short puts", usd(d.collateral), ""],
+    ["Paid for long options", usd(d.long_cost), ""],
+  ].map(([k, v, s]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
+
+  if (!d.open.length) {
+    $("#openGroups").innerHTML = '<p class="note">No open trades. Use “Log a trade”, or click a contract on the Chain tab.</p>';
+  } else {
+    $("#openGroups").innerHTML = ["Hop", "Skip", "Leap"].map(cat => {
+      const rows = d.open.filter(t => t.category === cat);
+      if (!rows.length) return "";
+      const sub = { Hop: "90 days or less at open", Skip: "91–360 days at open", Leap: "over 360 days at open" }[cat];
+      return `<h3>${cat} <span class="note" style="text-transform:none;letter-spacing:0">${sub}</span></h3><div class="scroll"><table>
+        <thead><tr><th class="left">#</th><th class="left">Contract</th><th class="left">Side</th><th>Qty</th><th>Entry</th><th>Stock</th>
+        <th>Bid / Ask</th><th>Mark</th><th>Unrealized</th><th>Position delta</th><th>DTE</th><th>Breakeven</th>
+        <th>Max profit</th><th>Max loss</th><th class="left">Alerts</th><th></th></tr></thead><tbody>` +
+        rows.map(t => {
+          const q = t.live, s = t.stats;
+          const alerts = [q && q.warning, t.dte <= 7 && "expires within a week", t.live_error && "no quote: " + t.live_error].filter(Boolean)
+            .map(a => `<span class="warn">${esc(a)}</span>`).join(" ");
+          return `<tr><td class="left">${t.id}</td>
+            <td class="left"><b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp}${t.notes ? `<div class="note">${esc(t.notes)}</div>` : ""}</td>
+            <td class="left">${t.side === "buy" ? "Long" : "Short"}</td><td>${t.contracts}</td><td>${f2(t.premium)}</td>
+            <td>${q ? f2(q.spot) : "–"}</td><td>${q ? f2(q.bid) + " / " + f2(q.ask) : "–"}</td><td>${q ? f2(q.mark) : "–"}</td>
+            <td class="${q ? signed(q.unrealized) : ""}">${q ? usd(q.unrealized, true) + ` (${(q.unrealized_pct * 100).toFixed(0)}%)` : "–"}</td>
+            <td>${q && q.position_delta != null ? (q.position_delta > 0 ? "+" : "") + q.position_delta.toFixed(0) + " sh" : "–"}</td>
+            <td>${t.dte}</td><td>${f2(s.breakeven)}</td><td>${usd(s.max_profit)}</td><td>${usd(s.max_loss)}</td>
+            <td class="left">${alerts}${s.annualized != null ? `<div class="note">${pct(s.annualized)} annualized</div>` : ""}</td>
+            <td><button class="ghost small" data-close-id="${t.id}">Close</button></td></tr>`;
+        }).join("") + "</tbody></table></div>";
+    }).join("");
+  }
+
+  $("#report").innerHTML = d.report.length
+    ? `<thead><tr><th class="left">Group</th><th>Trades</th><th>Wins</th><th>Win rate</th><th>Realized P&L</th></tr></thead><tbody>` +
+      d.report.map(r => `<tr${r.group === "TOTAL" ? ' style="font-weight:600"' : ""}><td class="left">${esc(r.group)}</td><td>${r.trades}</td><td>${r.wins}</td>
+        <td>${pct(r.wins / r.trades, 0)}</td><td class="${signed(r.realized)}">${usd(r.realized, true)}</td></tr>`).join("") + "</tbody>"
+    : '<tbody><tr><td class="left note">Results appear once you close a trade.</td></tr></tbody>';
+
+  $("#closed").innerHTML = d.closed.length
+    ? `<thead><tr><th class="left">#</th><th class="left">Contract</th><th class="left">Side</th><th>Qty</th><th class="left">Group</th><th>Opened</th><th>Closed</th>
+        <th class="left">How</th><th>Entry</th><th>Exit</th><th>Realized</th></tr></thead><tbody>` +
+      [...d.closed].reverse().map(t => `<tr><td class="left">${t.id}</td><td class="left"><b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp}</td>
+        <td class="left">${t.side === "buy" ? "Long" : "Short"}</td><td>${t.contracts}</td><td class="left">${t.category}</td><td>${t.opened}</td><td>${t.closed}</td>
+        <td class="left">${t.status}</td><td>${f2(t.premium)}</td><td>${f2(t.exit_premium)}</td>
+        <td class="${signed(t.realized)}">${usd(t.realized, true)}</td></tr>`).join("") + "</tbody>"
+    : '<tbody><tr><td class="left note">No closed trades yet.</td></tr></tbody>';
+}
+
+$("#reloadTrades").onclick = () => loadTrades();
+$("#newTrade").onclick = () => openAdd({});
+$("#openGroups").onclick = e => { const id = e.target.dataset.closeId; if (id) openClose(+id); };
+
+/* ---------- dialogs ---------- */
+for (const b of document.querySelectorAll("[data-close]")) b.onclick = () => b.closest("dialog").close();
+
+function openAdd(v) {
+  const f = $("#addForm");
+  f.reset();
+  for (const [k, val] of Object.entries(v)) if (f.elements[k]) f.elements[k].value = val;
+  f.elements.opened.value = today();
+  $("#addErr").textContent = "";
+  $("#addDlg").showModal();
+}
+$("#addForm").onsubmit = async e => {
+  e.preventDefault();
+  const body = Object.fromEntries(new FormData(e.target));
+  try {
+    await api("/api/trades", body);
+    $("#addDlg").close();
+    showTab("trades");
+  } catch (err) { $("#addErr").textContent = err.message; }
+};
+
+let closingId = null;
+function openClose(id) {
+  const t = tradeData.open.find(x => x.id === id);
+  closingId = id;
+  const f = $("#closeForm");
+  f.reset();
+  f.elements.closed.value = today();
+  if (t.live) f.elements.premium.value = t.live.mark.toFixed(2);
+  $("#closeTitle").textContent = `Close #${t.id}: ${t.ticker} ${t.label} ${t.exp}`;
+  updateCloseForm();
+  $("#closeErr").textContent = "";
+  $("#closeDlg").showModal();
+}
+function updateCloseForm() {
+  const how = $("#closeForm").elements.how.value;
+  $("#closePriceLbl").classList.toggle("hidden", how === "expired");
+  $("#closePriceLbl").firstChild.textContent = how === "assigned" ? "Intrinsic value per share " : "Exit price per share ";
+  $("#closeHint").textContent = how === "assigned"
+    ? "Intrinsic value: for a put, strike minus stock price; for a call, stock price minus strike." : "";
+}
+$("#closeForm").elements.how.onchange = updateCloseForm;
+$("#closeForm").onsubmit = async e => {
+  e.preventDefault();
+  const v = Object.fromEntries(new FormData(e.target));
+  const body = { id: closingId, fees: v.fees, closed: v.closed, expired: v.how === "expired", assigned: v.how === "assigned" };
+  if (v.how !== "expired") body.premium = v.premium;
+  try {
+    await api("/api/trades/close", body);
+    $("#closeDlg").close();
+    loadTrades();
+  } catch (err) { $("#closeErr").textContent = err.message; }
+};
+
+/* ---------- start ---------- */
+$("#range").value = store.get("range", "20");
+$("#moreGreeks").checked = store.get("more", false);
+$("#refresh").value = store.get("refresh", "120");
+renderChips();
+setTimer();
+const last = store.get("last", { ticker: "SPY" });
+$("#ticker").value = last.ticker;
+loadChain(last.ticker, last.exp);
+if (store.get("tab", "chain") === "trades") showTab("trades");
+</script>
+</body>
+</html>
