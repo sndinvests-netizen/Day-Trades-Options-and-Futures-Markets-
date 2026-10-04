@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Option Tracker</title>
+<title>Sound Investment Solutions Option Tracker</title>
+<link rel="icon" type="image/png" href="/favicon.png">
 <style>
 :root {
   --bg: #eef3f9; --panel: #ffffff; --text: #16202b; --muted: #5f6b7a; --line: #dde5ef;
@@ -40,10 +41,13 @@ body { margin: 0; background: var(--bg); color: var(--text);
   font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 .wrap { max-width: 1480px; margin: 0 auto; padding: 18px 16px; }
 header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
-h1 { font-size: 19px; margin: 0; letter-spacing: -.01em; display: flex; align-items: center; gap: 9px; }
-h1::before { content: ""; width: 22px; height: 22px; border-radius: 7px;
-  background: linear-gradient(180deg, var(--pri-top), var(--pri-bot)); border: 1px solid var(--pri-border);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.8), 0 2px 0 var(--pri-edge); }
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand .badge { background: linear-gradient(180deg, #ffffff, #e9f3fd); border: 1px solid var(--btn-border); border-radius: 12px;
+  padding: 5px 9px; box-shadow: inset 0 1px 0 #fff, 0 2px 0 var(--btn-edge), 0 4px 10px var(--btn-drop); display: flex; }
+.brand .badge img { height: 40px; width: auto; display: block; }
+h1 { margin: 0; line-height: 1.1; letter-spacing: -.01em; }
+h1 .co { display: block; font-size: 13px; font-weight: 700; color: #1aa7e6; letter-spacing: .02em; }
+h1 .app { display: block; font-size: 20px; font-weight: 700; }
 .note { color: var(--muted); font-size: 12px; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow); }
 .controls { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
@@ -162,7 +166,10 @@ tr.pos-leg td.contract { padding-left: 24px; }
 <body>
 <div class="wrap">
   <header>
-    <h1>Option Tracker</h1>
+    <div class="brand">
+      <span class="badge"><img src="/sis-mark.png" alt="Sound Investment Solutions logo"></span>
+      <h1><span class="co">Sound Investment Solutions</span><span class="app">Option Tracker</span></h1>
+    </div>
     <div class="tabs">
       <button id="tab-chain" class="on">Chain</button>
       <button id="tab-builder">Builder</button>

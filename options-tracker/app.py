@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Option tracker in the browser: any ticker's option chain plus your logged trades.
+"""Sound Investment Solutions Option Tracker in the browser: any ticker's option chain plus your logged trades.
 
   python3 app.py            # opens http://127.0.0.1:8765
   python3 app.py --port 9000 --no-browser
@@ -22,6 +22,7 @@ from options_data import QuoteError, chain
 HERE = os.path.dirname(os.path.abspath(__file__))
 INDEX = os.path.join(HERE, "web", "index.html")
 DB = tracker.DEFAULT_DB
+STATIC = {"/sis-mark.png": "image/png", "/favicon.png": "image/png"}
 db_lock = threading.Lock()
 
 
@@ -85,6 +86,9 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/":
             with open(INDEX, "rb") as f:
                 self.send(200, f.read(), "text/html; charset=utf-8")
+        elif url.path in STATIC:
+            with open(os.path.join(HERE, "web", url.path.lstrip("/")), "rb") as f:
+                self.send(200, f.read(), STATIC[url.path])
         elif url.path == "/api/chain":
             ticker = q.get("ticker", "").strip()
             if not ticker:
@@ -167,7 +171,7 @@ def main():
     DB = args.db
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     url = f"http://127.0.0.1:{args.port}"
-    print(f"Option tracker running at {url}  (Ctrl+C to stop)")
+    print(f"Sound Investment Solutions Option Tracker running at {url}  (Ctrl+C to stop)")
     if not args.no_browser:
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()
     try:

@@ -1,4 +1,4 @@
-# Option Tracker
+# Sound Investment Solutions Option Tracker
 
 Look up **any ticker's option chain**, **build and test strategies** (in the style of OptionStrat), and **track the positions you open**, grouped as Hop, Skip or Leap. Prices come from Yahoo Finance (free, may be delayed about 15 minutes).
 
