@@ -57,6 +57,13 @@ h1 { margin: 0; line-height: 1.1; letter-spacing: -.01em; }
 h1 .co { display: block; font-size: 13px; font-weight: 700; color: #1aa7e6; letter-spacing: .02em; }
 h1 .app { display: block; font-size: 20px; font-weight: 700; }
 .note { color: var(--muted); font-size: 12px; }
+/* market status dot: green glow during regular NYSE hours, red otherwise */
+.mkt-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-left: 8px; vertical-align: -1px; }
+.mkt-dot.live { background: #22c55e; animation: mktGlowLive 2s ease-in-out infinite; }
+.mkt-dot.closed { background: #ef4444; animation: mktGlowClosed 2s ease-in-out infinite; }
+@keyframes mktGlowLive { 0%, 100% { box-shadow: 0 0 3px 1px rgba(34,197,94,.55); } 50% { box-shadow: 0 0 10px 4px rgba(34,197,94,.85); } }
+@keyframes mktGlowClosed { 0%, 100% { box-shadow: 0 0 3px 1px rgba(239,68,68,.55); } 50% { box-shadow: 0 0 10px 4px rgba(239,68,68,.85); } }
+@media (prefers-reduced-motion: reduce) { .mkt-dot.live { animation: none; box-shadow: 0 0 8px 3px rgba(34,197,94,.7); } .mkt-dot.closed { animation: none; box-shadow: 0 0 8px 3px rgba(239,68,68,.7); } }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow); }
 .controls { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
 label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 500; }
@@ -248,7 +255,7 @@ tr.pos-leg td.contract { padding-left: 24px; }
       <button id="tab-builder">Builder</button>
       <button id="tab-trades">My Trades</button>
     </div>
-    <span class="note">Yahoo Finance data, delayed about 15 min. Greeks and projections use Black-Scholes (4% rate).</span>
+    <span class="note">Yahoo Finance data, delayed about 15 min. Greeks and projections use Black-Scholes (4% rate).<span id="mkt-dot" class="mkt-dot closed" role="img" aria-label="Market closed" title="Market closed"></span></span>
   </header>
 
   <!-- ===== Chain ===== -->
@@ -1762,6 +1769,37 @@ $("#ticker").value = last.ticker;
 loadChain(last.ticker, last.exp);
 const startTab = store.get("tab", "chain");
 if (startTab !== "chain") showTab(startTab);
+</script>
+<script>
+// Market status dot: live during regular NYSE hours (9:30-4:00 ET, 1:00 on early-close days), closed otherwise.
+(function () {
+  const HOLIDAYS = new Set([
+    "2026-01-01","2026-01-19","2026-02-16","2026-04-03","2026-05-25","2026-06-19","2026-07-03",
+    "2026-09-07","2026-11-26","2026-12-25",
+    "2027-01-01","2027-01-18","2027-02-15","2027-03-26","2027-05-31","2027-06-18","2027-07-05",
+    "2027-09-06","2027-11-25","2027-12-24"]);
+  const EARLY_CLOSE = new Set(["2026-11-27","2026-12-24","2027-11-26"]);
+  const fmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit", weekday: "short", hour: "2-digit", minute: "2-digit" });
+  function marketLive(now) {
+    const p = Object.fromEntries(fmt.formatToParts(now).map(x => [x.type, x.value]));
+    const day = `${p.year}-${p.month}-${p.day}`;
+    if (p.weekday === "Sat" || p.weekday === "Sun" || HOLIDAYS.has(day)) return false;
+    const mins = (+p.hour % 24) * 60 + +p.minute;
+    return mins >= 570 && mins < (EARLY_CLOSE.has(day) ? 780 : 960);
+  }
+  function update() {
+    const dot = document.getElementById("mkt-dot");
+    if (!dot) return;
+    const live = marketLive(new Date());
+    const label = live ? "Market open" : "Market closed";
+    dot.className = "mkt-dot " + (live ? "live" : "closed");
+    dot.title = label;
+    dot.setAttribute("aria-label", label);
+  }
+  update();
+  setInterval(update, 30000);
+})();
 </script>
 </body>
 </html>
