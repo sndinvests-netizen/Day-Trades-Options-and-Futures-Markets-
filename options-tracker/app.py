@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, urlparse
 
 import tracker
 from fees import order_fees
-from options_data import QuoteError, chain
+from options_data import QuoteError, chain, news
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 INDEX = os.path.join(HERE, "web", "index.html")
@@ -47,6 +47,16 @@ def positions():
     collateral, long_cost = tracker.open_totals(trades)
     return {"open": open_, "closed": closed, "report": report, "premium": tracker.premium_report(trades),
             "collateral": collateral, "long_cost": long_cost}
+
+
+def news_feed(extra):
+    """Headlines for every ticker you hold open plus any asked for (e.g. the chain you're viewing)."""
+    with db_lock:
+        trades = tracker.load(DB)
+    held = sorted({t["ticker"] for t in trades if t["status"] == "open"})
+    asked = [x.strip().upper() for x in extra.split(",") if x.strip()][:5]
+    tickers = list(dict.fromkeys(asked + held))
+    return {"tickers": tickers, "held": held, "stories": news(tickers)[:60]}
 
 
 def num(body, key, cast=float, default=None):
@@ -107,6 +117,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(lambda: chain(ticker, q.get("exp")))
         elif url.path == "/api/positions":
             self.guard(positions)
+        elif url.path == "/api/news":
+            self.guard(lambda: news_feed(q.get("tickers", "")))
         else:
             self.send(404, {"error": "not found"})
 

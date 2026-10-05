@@ -12,8 +12,12 @@ from zoneinfo import ZoneInfo
 RISK_FREE_RATE = 0.04
 ET = ZoneInfo("America/New_York")
 CACHE_SECONDS = 30            # don't ask Yahoo for the same thing more than twice a minute
+NEWS_CACHE_SECONDS = 300      # headlines are re-fetched at most every 5 minutes per ticker
+NEWS_PER_TICKER = 10
 UNUSUAL_MIN_VOLUME = 500      # unusual = at least this many contracts traded ...
 UNUSUAL_VOL_OI = 2            # ... and at least this multiple of open interest
+IV_FLOOR = 0.03               # Yahoo IV below this is a placeholder, not a real number
+FALLBACK_IV = 0.5             # last resort when nothing better is available
 
 
 class QuoteError(Exception):
@@ -31,9 +35,9 @@ def _yf():
 _cache = {}
 
 
-def _cached(key, fn):
+def _cached(key, fn, ttl=CACHE_SECONDS):
     hit = _cache.get(key)
-    if hit and time.time() - hit[0] < CACHE_SECONDS:
+    if hit and time.time() - hit[0] < ttl:
         return hit[1]
     value = fn()
     _cache[key] = (time.time(), value)
@@ -87,6 +91,19 @@ def greeks(kind, spot, strike, t, iv, r=RISK_FREE_RATE):
             "theta": theta / 365, "vega": spot * pdf * math.sqrt(t) / 100}
 
 
+def bs_price(kind, spot, strike, t, iv, r=RISK_FREE_RATE):
+    """Black-Scholes value per share of one contract."""
+    if t <= 0 or not iv or iv <= 0:
+        return max(0.0, spot - strike) if kind == "call" else max(0.0, strike - spot)
+    st = iv * math.sqrt(t)
+    d1 = (math.log(spot / strike) + (r + iv * iv / 2) * t) / st
+    d2 = d1 - st
+    disc = strike * math.exp(-r * t)
+    if kind == "call":
+        return spot * norm_cdf(d1) - disc * norm_cdf(d2)
+    return disc * norm_cdf(-d2) - spot * norm_cdf(-d1)
+
+
 def max_pain(calls, puts):
     """Strike where option holders' total payout at expiration is smallest."""
     strikes = sorted({r["strike"] for r in calls + puts})
@@ -133,8 +150,58 @@ def spot_price(ticker):
     return _cached(("spot", ticker), fetch)
 
 
+def historical_vol(ticker):
+    """Annualized 30-trading-day close-to-close volatility, or None."""
+    yf = _yf()
+    ticker = yahoo_symbol(ticker)
+
+    def fetch():
+        try:
+            closes = [c for c in yf.Ticker(ticker).history(period="3mo")["Close"].tolist() if c > 0][-31:]
+        except Exception:
+            return None
+        rets = [math.log(b / a) for a, b in zip(closes, closes[1:])]
+        if len(rets) < 10:
+            return None
+        mean = sum(rets) / len(rets)
+        return math.sqrt(sum((x - mean) ** 2 for x in rets) / (len(rets) - 1) * 252)
+    return _cached(("hv", ticker), fetch)
+
+
+def _fill_missing(ticker, exp, out):
+    """Yahoo sends 0 bid / 0 ask (and placeholder IVs) for contracts with no live quote,
+    e.g. before the delayed feed catches up after the open or on thinly traded strikes.
+    Rather than pass off the last trade, which can be days old, price those contracts
+    with Black-Scholes and flag them as estimates (est=True).
+
+    IV for an unquoted contract comes from the nearest quoted strike in the same
+    expiration, then the stock's 30-day historical volatility, then FALLBACK_IV.
+    """
+    good = sorted((r["strike"], r["iv"]) for rows in out.values() for r in rows if r["quoted"] and r["iv"] >= IV_FLOOR)
+    hv = None
+    spot = None
+    t = years_to_expiry(exp)
+    for kind, rows in out.items():
+        for r in rows:
+            r["est"] = r["iv_est"] = False
+            if r["quoted"] and r["iv"] >= IV_FLOOR:
+                continue
+            if good:
+                r["iv"] = min(good, key=lambda g: abs(g[0] - r["strike"]))[1]
+            else:
+                if hv is None:
+                    hv = historical_vol(ticker) or FALLBACK_IV
+                r["iv"] = hv
+            r["iv_est"] = True
+            if not r["quoted"]:
+                spot = spot or spot_price(ticker)
+                r["mark"] = bs_price(kind, spot, r["strike"], t, r["iv"])
+                r["est"] = True
+
+
 def chain_rows(ticker, exp):
-    """{'call': [...], 'put': [...]}: strike, bid, ask, last, mark, volume, oi, iv."""
+    """{'call': [...], 'put': [...]}: strike, bid, ask, last, last_trade, mark, volume, oi, iv,
+    quoted (has a live ask), est (mark is a Black-Scholes estimate), iv_est (IV is borrowed)."""
     yf = _yf()
     ticker = yahoo_symbol(ticker)
 
@@ -150,11 +217,14 @@ def chain_rows(ticker, exp):
             rows = []
             for r in df.to_dict("records"):
                 bid, ask, last = _num(r.get("bid")), _num(r.get("ask")), _num(r.get("lastPrice"))
+                lt = r.get("lastTradeDate")
                 rows.append({"strike": _num(r.get("strike")), "bid": bid, "ask": ask, "last": last,
-                             "mark": (bid + ask) / 2 if bid > 0 and ask > 0 else last,
+                             "last_trade": lt.isoformat() if hasattr(lt, "isoformat") and lt == lt else None,
+                             "quoted": ask > 0, "mark": (bid + ask) / 2 if ask > 0 else last,
                              "volume": int(_num(r.get("volume"))), "oi": int(_num(r.get("openInterest"))),
                              "iv": _num(r.get("impliedVolatility"))})
             out[kind] = rows
+        _fill_missing(ticker, exp, out)
         return out
     return _cached(("chain", ticker, exp), fetch)
 
@@ -165,6 +235,32 @@ def quote(ticker, exp, strike, kind="put"):
     if row is None:
         raise QuoteError(f"{ticker} {exp} {strike:g}{kind[0].upper()} not found in chain")
     return dict(row, spot=spot_price(ticker))
+
+
+def news(tickers):
+    """Recent Yahoo Finance headlines for these tickers, newest first, one entry per story:
+    title, publisher, link, time (unix seconds), tickers (which of yours it mentions)."""
+    yf = _yf()
+    wanted = [yahoo_symbol(t) for t in tickers if t.strip()]
+    stories = {}
+    for t in dict.fromkeys(wanted):
+        def fetch(t=t):
+            try:
+                return yf.Search(t, news_count=NEWS_PER_TICKER, max_results=1).news or []
+            except Exception:
+                return []
+        for n in _cached(("news", t), fetch, NEWS_CACHE_SECONDS):
+            related = n.get("relatedTickers") or []
+            if related and t not in related:
+                continue
+            key = n.get("uuid") or n.get("link")
+            s = stories.setdefault(key, {"title": n.get("title", ""), "publisher": n.get("publisher", ""),
+                                         "link": n.get("link", ""), "time": n.get("providerPublishTime", 0),
+                                         "tickers": []})
+            if t not in s["tickers"]:
+                s["tickers"].append(t)
+    return sorted((s for s in stories.values() if s["title"] and s["link"].startswith("http")),
+                  key=lambda s: s["time"], reverse=True)
 
 
 def chain(ticker, exp=None):

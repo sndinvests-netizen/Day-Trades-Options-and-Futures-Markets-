@@ -420,7 +420,7 @@ def describe(t, show_live=False):
             lines.append(f"      (no live quote: {e})")
             return "\n".join(lines)
         lines.append(f"      stock {q['spot']:.2f}  bid/ask {q['bid']:.2f}/{q['ask']:.2f}  "
-                     f"mark {q['mark']:.2f}  IV {q['iv']:.0%}"
+                     f"mark {q['mark']:.2f}{' (est.: no live bid/ask)' if q.get('est') else ''}  IV {q['iv']:.0%}"
                      + (f"  delta {q['delta']:+.2f} (position {q['position_delta']:+.0f} sh)"
                         if q["delta"] is not None else ""))
         lines.append(f"      unrealized P&L {money(q['unrealized'], True)} ({q['unrealized_pct']:+.0%})")

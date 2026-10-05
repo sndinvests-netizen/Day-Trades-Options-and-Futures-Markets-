@@ -108,6 +108,29 @@ button.danger.primary:hover { filter: brightness(1.06); background: linear-gradi
   background: linear-gradient(180deg, var(--pri-bot), var(--pri-top)); border-color: var(--pri-border);
   box-shadow: inset 0 2px 5px rgba(13,59,102,.3), 0 0 0 transparent; }
 
+/* layout: tracker on the left, news on the right (stacks below on narrow screens) */
+.wrap.with-news { max-width: 1860px; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+.wrap.with-news .layout { grid-template-columns: minmax(0, 1fr) 340px; }
+@media (max-width: 1100px) { .wrap.with-news .layout { grid-template-columns: minmax(0, 1fr); } }
+.news { position: sticky; top: 14px; max-height: calc(100vh - 28px); display: flex; flex-direction: column; margin-bottom: 0; }
+@media (max-width: 1100px) { .news { position: static; max-height: 70vh; } }
+.news-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.news-head h2 { margin: 0; font-size: 15px; }
+.news .chips { margin-top: 10px; }
+.chip.on { color: #072c50; background: linear-gradient(180deg, var(--pri-bot), var(--pri-top)); border-color: var(--pri-border);
+  box-shadow: inset 0 2px 4px rgba(13,59,102,.28); }
+.news-list { list-style: none; margin: 10px -4px 0; padding: 0 4px; overflow-y: auto; flex: 1; }
+.news-list li { padding: 9px 0; border-top: 1px solid var(--line); }
+.news-list li:first-child { border-top: 0; }
+.news-list a { color: var(--text); text-decoration: none; font-weight: 600; line-height: 1.3; }
+.news-list a:hover { text-decoration: underline; }
+.news-list .meta { margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.news-list .tk { font-size: 11px; font-weight: 700; color: var(--text); background: var(--hover); border-radius: 5px; padding: 0 5px; }
+.news-list .fresh { color: var(--up); font-weight: 600; }
+.news-open { display: none; }
+.wrap:not(.with-news) .news-open { display: inline-flex; }
+
 .check { flex-direction: row; align-items: center; gap: 7px; padding-bottom: 8px; cursor: pointer; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 11px 14px 12px; box-shadow: var(--shadow);
@@ -143,6 +166,7 @@ tr.spotrow td.strike { color: var(--spot); font-size: 12px; padding: 1px 6px; }
 .flag { color: var(--flag); font-weight: 700; }
 .up { color: var(--up); } .down { color: var(--down); }
 .left { text-align: left; }
+.est { color: var(--warn); font-size: 10px; font-weight: 600; margin-left: 3px; cursor: help; }
 .warn { background: var(--warn-bg); color: var(--warn); border-radius: 6px; padding: 1px 7px; font-size: 12px; }
 .err { background: var(--warn-bg); color: var(--warn); border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; }
 h2 { font-size: 15px; margin: 0 0 10px; }
@@ -259,7 +283,11 @@ tr.pos-leg td.contract { padding-left: 24px; }
       <button id="tab-trades">My Trades</button>
     </div>
     <span class="note">Yahoo Finance data, delayed about 15 min. Greeks and projections use Black-Scholes (4% rate).<span id="mkt-dot" class="mkt-dot closed" role="img" aria-label="Market closed" title="Market closed"></span></span>
+    <button class="ghost small news-open" type="button" id="newsShow" title="Show the news panel">Show news</button>
   </header>
+
+  <div class="layout">
+  <main>
 
   <!-- ===== Chain ===== -->
   <section id="view-chain">
@@ -395,6 +423,20 @@ tr.pos-leg td.contract { padding-left: 24px; }
       <div class="scroll"><table id="closed"></table></div>
     </div>
   </section>
+  </main>
+
+  <!-- ===== News (Yahoo Finance headlines for open positions + the chain you're viewing) ===== -->
+  <aside class="panel news" id="newsPanel" aria-label="News">
+    <div class="news-head">
+      <h2>News</h2>
+      <span><button class="ghost small" type="button" id="newsRefresh">Refresh</button>
+        <button class="ghost small" type="button" id="newsHide" title="Hide the news panel">Hide</button></span>
+    </div>
+    <div class="note" id="newsAsof">Yahoo Finance headlines for your open positions and the chain you're viewing.</div>
+    <div class="chips" id="newsChips"></div>
+    <ul class="news-list" id="newsList"><li class="note">Loading headlines…</li></ul>
+  </aside>
+  </div>
 </div>
 
 <div class="toast hidden" id="toast"><span id="toastMsg"></span><button class="primary small" type="button" id="toastGo">Open Builder</button></div>
@@ -624,6 +666,60 @@ function analyze(legs, spot, sigma, ivm = 1) {
            risk: unlimL ? null : Math.max(0, -maxL) };
 }
 
+/* ================= news ================= */
+const NEWS_EVERY = 5 * 60 * 1000;
+let newsData = null, newsFilter = store.get("newsFilter", "all"), newsKey = "", newsAt = 0;
+const ago = sec => {
+  const m = Math.max(0, Math.round((Date.now() / 1000 - sec) / 60));
+  return m < 1 ? "just now" : m < 60 ? m + "m ago" : m < 1440 ? Math.round(m / 60) + "h ago" : Math.round(m / 1440) + "d ago";
+};
+function newsShown(on) {
+  $(".wrap").classList.toggle("with-news", on);
+  $("#newsPanel").classList.toggle("hidden", !on);
+  store.set("news", on);
+  if (on) loadNews();
+}
+async function loadNews() {
+  if ($("#newsPanel").classList.contains("hidden")) return;
+  const want = current ? current.ticker : "";
+  newsKey = want; newsAt = Date.now();
+  try {
+    const r = await fetch("/api/news?tickers=" + encodeURIComponent(want));
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.status);
+    newsData = d;
+    renderNews();
+  } catch (e) {
+    $("#newsList").innerHTML = `<li class="note">Couldn't load headlines: ${esc(e.message)}</li>`;
+  }
+}
+function renderNews() {
+  const d = newsData;
+  if (!d) return;
+  if (newsFilter !== "all" && !d.tickers.includes(newsFilter)) newsFilter = "all";
+  $("#newsChips").innerHTML = ["all", ...d.tickers].map(t => `<button type="button" class="chip${t === newsFilter ? " on" : ""}" data-news="${esc(t)}"
+    title="${t === "all" ? "Every ticker" : d.held.includes(t) ? "You hold this" : "On the Chain tab"}">${t === "all" ? "All" : esc(t)}</button>`).join("");
+  const list = d.stories.filter(s => newsFilter === "all" || s.tickers.includes(newsFilter));
+  $("#newsList").innerHTML = list.length ? list.map(s => `<li><a href="${esc(s.link)}" target="_blank" rel="noopener noreferrer">${esc(s.title)}</a>
+      <div class="meta note">${s.tickers.map(t => `<span class="tk">${esc(t)}</span>`).join("")}<span>${esc(s.publisher)}</span>
+      <span class="${Date.now() / 1000 - s.time < 3600 ? "fresh" : ""}" title="${new Date(s.time * 1000).toLocaleString()}">${ago(s.time)}</span></div></li>`).join("")
+    : '<li class="note">No recent headlines.</li>';
+  $("#newsAsof").textContent = "Yahoo Finance headlines · updated " + new Date(newsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+$("#newsChips").onclick = e => {
+  const b = e.target.closest("[data-news]");
+  if (!b) return;
+  newsFilter = b.dataset.news; store.set("newsFilter", newsFilter); renderNews();
+};
+$("#newsRefresh").onclick = loadNews;
+$("#newsHide").onclick = () => newsShown(false);
+$("#newsShow").onclick = () => newsShown(true);
+// refresh every 5 minutes, or sooner when you load a different ticker on the Chain tab
+setInterval(() => {
+  if (document.hidden || $("#newsPanel").classList.contains("hidden")) return;
+  if (Date.now() - newsAt > NEWS_EVERY || (current ? current.ticker : "") !== newsKey) loadNews();
+}, 5000);
+
 /* ================= tabs ================= */
 const TABS = ["chain", "builder", "trades"];
 function showTab(name) {
@@ -659,6 +755,7 @@ async function loadChain(ticker, exp, quiet) {
     const d = await api(`/api/chain?ticker=${encodeURIComponent(ticker)}` + (exp ? `&exp=${exp}` : ""));
     if (seq !== reqSeq) return;
     current = d;
+    if (d.ticker !== newsKey) loadNews();
     $("#chainErr").classList.add("hidden");
     $("#chainBody").classList.remove("hidden");
     store.set("recent", [d.ticker, ...store.get("recent", []).filter(t => t !== d.ticker)].slice(0, 8));
@@ -696,7 +793,8 @@ function renderChain() {
   const fmt = (c, r) => {
     const v = r[c];
     if (v == null) return "–";
-    if (c === "iv") return v < 0.01 ? "–" : pct(v, 0);
+    if (c === "iv") return v < 0.01 ? "–" : pct(v, 0) + (r.iv_est ? estTag("IV borrowed from a nearby quoted strike or the stock's 30-day volatility: Yahoo has no usable IV for this contract") : "");
+    if (c === "mark" && r.est) return f2(v) + estTag(estWhy(r));
     if (c === "oi") return int(v);
     if (c === "volume") return (r.unusual ? '<span class="flag">●</span> ' : "") + int(v);
     if (c === "delta") return Math.abs(v) < 0.005 ? "0.00" : f2(v);
@@ -763,6 +861,13 @@ $("#exp").onchange = () => current && loadChain(current.ticker, $("#exp").value)
 $("#range").onchange = () => { store.set("range", $("#range").value); current && renderChain(); };
 $("#moreGreeks").onchange = () => { store.set("more", $("#moreGreeks").checked); current && renderChain(); };
 $("#refresh").onchange = () => { store.set("refresh", $("#refresh").value); setTimer(); };
+
+/* Contracts Yahoo sends with no bid/ask get a Black-Scholes estimate instead of the old last trade. */
+const estTag = why => `<span class="est" title="${esc(why)}">est</span>`;
+const lastTradeText = q => q.last_trade
+  ? new Date(q.last_trade).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+  : "unknown";
+const estWhy = q => `No live bid/ask from Yahoo, so this is a Black-Scholes estimate at ${pct(q.iv, 0)} IV. Last trade ${f2(q.last)} on ${lastTradeText(q)}.`;
 
 function setTimer() {
   clearInterval(timer);
@@ -1530,13 +1635,14 @@ function renderTrades() {
   const legCells = t => {
     const q = t.live;
     return `<td class="left">${t.side === "buy" ? "Long" : "Short"}</td><td>${t.contracts}</td><td>${f2(t.premium)}</td>
-      <td>${q ? f2(q.spot) : "–"}</td><td>${q && t.type !== "stock" ? f2(q.bid) + " / " + f2(q.ask) : "–"}</td><td>${q ? f2(q.mark) : "–"}</td>
+      <td>${q ? f2(q.spot) : "–"}</td><td>${q && t.type !== "stock" ? (q.quoted === false ? '<span class="note">no quote</span>' : f2(q.bid) + " / " + f2(q.ask)) : "–"}</td><td>${q ? f2(q.mark) + (q.est ? estTag(estWhy(q)) : "") : "–"}</td>
       <td class="${q ? signed(q.unrealized) : ""}">${q ? usd(q.unrealized, true) + (t.type === "stock" ? "" : ` (${(q.unrealized_pct * 100).toFixed(0)}%)`) : "–"}</td>
       <td>${q && q.position_delta != null ? (q.position_delta > 0 ? "+" : "") + q.position_delta.toFixed(0) + " sh" : "–"}</td>
       <td>${t.dte == null ? "–" : t.dte}</td>`;
   };
   const alertsOf = rows => rows.flatMap(t => [t.live && t.live.warning && (rows.length > 1 ? `${t.label}: ` : "") + t.live.warning,
-      t.dte != null && (t.dte < 0 ? "past expiration: close it" : t.dte <= 7 && "expires within a week"), t.live_error && "no quote: " + t.live_error]).filter(Boolean);
+      t.dte != null && (t.dte < 0 ? "past expiration: close it" : t.dte <= 7 && "expires within a week"), t.live_error && "no quote: " + t.live_error,
+      t.live && t.live.est && (rows.length > 1 ? `${t.label}: ` : "") + `no live bid/ask, mark estimated (last trade ${f2(t.live.last)} ${lastTradeText(t.live)})`]).filter(Boolean);
   const alertHtml = list => [...new Set(list)].map(a => `<span class="warn">${esc(a)}</span>`).join(" ");
   const posKey = p => p[0].group ? "g" + p[0].group : "t" + p[0].id;
 
@@ -1888,6 +1994,7 @@ $("#ticker").value = last.ticker;
 loadChain(last.ticker, last.exp);
 const startTab = store.get("tab", "chain");
 if (startTab !== "chain") showTab(startTab);
+newsShown(store.get("news", true));
 </script>
 <script>
 // Market status dot: live during regular NYSE hours (9:30-4:00 ET, 1:00 on early-close days), closed otherwise.
