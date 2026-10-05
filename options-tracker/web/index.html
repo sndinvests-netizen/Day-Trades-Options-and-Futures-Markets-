@@ -235,6 +235,26 @@ input[type=range].glow:focus-visible { outline: 3px solid rgba(111,174,233,.5); 
 .tabs.mini { padding: 3px 3px 5px; border-radius: 10px; gap: 4px; }
 .tabs.mini button { padding: 3px 11px; font-size: 12px; border-radius: 7px; }
 .inline { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+/* VIX badge in the header, and the pop-up when VIX crosses one of your levels */
+.vix-badge { display: inline-flex; align-items: center; gap: 8px; padding: 5px 11px; border-radius: 10px; cursor: pointer;
+  background: var(--well); border: 1px solid var(--line); box-shadow: var(--well-shadow); color: var(--text); font: inherit; }
+.vix-badge:hover { border-color: var(--btn-border); }
+.vix-badge .v { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
+.vix-badge .zone { font-size: 11px; font-weight: 700; border-radius: 6px; padding: 1px 7px; color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.35); }
+.vix-badge .next { font-size: 11px; color: var(--muted); }
+.vix-alerts { position: fixed; top: 16px; right: 16px; z-index: 30; display: flex; flex-direction: column; gap: 10px; width: min(360px, calc(100vw - 32px)); }
+.vix-alert { background: var(--panel); border: 1px solid var(--line); border-left: 6px solid var(--c); border-radius: 12px; padding: 12px 14px;
+  box-shadow: 0 0 0 1px var(--c), 0 14px 36px rgba(0,0,0,.35); animation: vixIn .25s ease-out; }
+.vix-alert h3 { margin: 0 0 4px; font-size: 15px; color: var(--c); }
+.vix-alert p { margin: 0 0 8px; }
+@keyframes vixIn { from { transform: translateY(-8px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .vix-alert { animation: none; } }
+#vixDlg { width: min(900px, calc(100vw - 32px)); max-width: none; }
+#vixDlg table { width: 100%; }
+#vixDlg table input { width: 100%; }
+#vixDlg td { padding: 4px; vertical-align: middle; }
+#vixDlg .swatch { width: 34px; padding: 0; height: 28px; }
+
 .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 20; background: var(--panel);
   border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; box-shadow: 0 12px 34px rgba(0,0,0,.3);
   display: flex; gap: 12px; align-items: center; max-width: calc(100vw - 32px); }
@@ -283,6 +303,9 @@ tr.pos-leg td.contract { padding-left: 24px; }
       <button id="tab-trades">My Trades</button>
     </div>
     <span class="note">Yahoo Finance data, delayed about 15 min. Greeks and projections use Black-Scholes (4% rate).<span id="mkt-dot" class="mkt-dot closed" role="img" aria-label="Market closed" title="Market closed"></span></span>
+    <button type="button" class="vix-badge" id="vixBadge" title="VIX and your levels. Click to edit levels and alerts.">
+      <span class="note">VIX</span><span class="v" id="vixVal">–</span><span id="vixChg" class="note"></span>
+      <span class="zone" id="vixZone" hidden></span><span class="next" id="vixNext"></span></button>
     <button class="ghost small news-open" type="button" id="newsShow" title="Show the news panel">Show news</button>
   </header>
 
@@ -438,6 +461,32 @@ tr.pos-leg td.contract { padding-left: 24px; }
   </aside>
   </div>
 </div>
+
+<div class="vix-alerts" id="vixAlerts" aria-live="assertive"></div>
+
+<dialog id="vixDlg">
+  <form method="dialog" id="vixForm">
+    <h2 style="margin-top:0">VIX levels and alerts</h2>
+    <p class="note" style="margin-top:0">A pop-up appears in the tracker when VIX crosses a level in the direction you set. It fires once per cross and re-arms after VIX moves back.
+      VIX is <b id="vixDlgNow">–</b> (Yahoo ^VIX, checked every minute while the tracker is open).</p>
+    <div class="scroll"><table>
+      <thead><tr><th class="left">Level</th><th class="left">Alert when VIX</th><th class="left">Label</th><th class="left">What to do</th><th></th><th></th></tr></thead>
+      <tbody id="vixRows"></tbody>
+    </table></div>
+    <div class="inline" style="margin-top:10px">
+      <button class="ghost small" type="button" id="vixAdd">Add level</button>
+      <button class="ghost small" type="button" id="vixTest">Test pop-up</button>
+      <button class="ghost small" type="button" id="vixNotify">Desktop notifications</button>
+      <span class="note" id="vixNotifyNote"></span>
+    </div>
+    <h3 style="margin-bottom:4px">Recent alerts</h3>
+    <div class="note" id="vixLog">None yet.</div>
+    <div class="inline" style="justify-content:flex-end;margin-top:14px">
+      <button class="ghost" type="button" data-close>Cancel</button>
+      <button class="primary" type="button" id="vixSave">Save levels</button>
+    </div>
+  </form>
+</dialog>
 
 <div class="toast hidden" id="toast"><span id="toastMsg"></span><button class="primary small" type="button" id="toastGo">Open Builder</button></div>
 
@@ -719,6 +768,120 @@ setInterval(() => {
   if (document.hidden || $("#newsPanel").classList.contains("hidden")) return;
   if (Date.now() - newsAt > NEWS_EVERY || (current ? current.ticker : "") !== newsKey) loadNews();
 }, 5000);
+
+/* ================= VIX ================= */
+// Your VIX levels live in vix_levels.json on this computer. Every minute the tracker checks ^VIX and
+// pops up an alert when it crosses a level in that level's direction (once per cross).
+const VIX_EVERY = 60 * 1000;
+let vixData = null;
+const vixSorted = () => [...(vixData ? vixData.levels : [])].sort((a, b) => a.price - b.price);
+function vixZone(v) {
+  const ls = vixSorted();
+  const up = ls.filter(l => l.dir === "up" && v >= l.price).pop();
+  if (up) return up;
+  return ls.filter(l => l.dir === "down" && v <= l.price)[0] || null;
+}
+function renderVix() {
+  const d = vixData;
+  if (!d) return;
+  $("#vixVal").textContent = d.level.toFixed(2);
+  const ch = $("#vixChg");
+  ch.textContent = (d.change >= 0 ? "▲ " : "▼ ") + Math.abs(d.change).toFixed(2);
+  ch.className = d.change >= 0 ? "down" : "up";   // rising VIX = falling market, so it shows red
+  const z = vixZone(d.level), zone = $("#vixZone");
+  zone.hidden = !z;
+  if (z) { zone.textContent = z.label; zone.style.background = z.color; }
+  const ls = vixSorted();
+  const above = ls.find(l => l.price > d.level), below = [...ls].reverse().find(l => l.price < d.level);
+  $("#vixNext").textContent = [above && `↑ ${above.price.toFixed(2)} ${above.label}`, below && `↓ ${below.price.toFixed(2)} ${below.label}`].filter(Boolean).join(" · ");
+  $("#vixBadge").title = (z ? `${z.label}: ${z.note}\n\n` : "") + "Click to edit your VIX levels and alerts.";
+  $("#vixDlgNow").textContent = d.level.toFixed(2);
+}
+function vixPopup(l, level, test) {
+  const box = document.createElement("div");
+  box.className = "vix-alert";
+  box.style.setProperty("--c", l.color || "#6faee9");
+  const verb = l.dir === "down" ? "fell to" : "rose to";
+  box.innerHTML = `<h3>${test ? "Test · " : ""}VIX ${verb} ${level.toFixed(2)}: ${esc(l.label)}</h3>
+    <p>${esc(l.note || "")}</p><div class="inline" style="justify-content:space-between">
+    <span class="note">Level ${l.price.toFixed(2)} · ${new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+    <button class="ghost small" type="button">Dismiss</button></div>`;
+  box.querySelector("button").onclick = () => box.remove();
+  $("#vixAlerts").prepend(box);
+  try {   // short chime
+    const a = new (window.AudioContext || window.webkitAudioContext)(), o = a.createOscillator(), g = a.createGain();
+    o.frequency.value = 880; g.gain.setValueAtTime(0.15, a.currentTime); g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.8);
+    o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime + 0.8);
+  } catch {}
+  if (!test && "Notification" in window && Notification.permission === "granted") {
+    try { new Notification(`VIX ${verb} ${level.toFixed(2)}: ${l.label}`, { body: l.note || "", tag: "vix-" + l.price }); } catch {}
+  }
+  if (!test) {
+    const log = store.get("vixLog", []);
+    log.unshift({ t: Date.now(), price: l.price, label: l.label, level, dir: l.dir });
+    store.set("vixLog", log.slice(0, 20));
+  }
+}
+async function loadVix() {
+  try {
+    const d = await api("/api/vix");
+    // compare with the last reading (kept across reloads for up to a day) to catch crosses
+    const last = store.get("vixLast", null);
+    const prev = last && Date.now() - last.t < 86400000 ? last.v : null;
+    vixData = d;
+    if (prev != null) {
+      for (const l of d.levels) {
+        const crossed = l.dir === "down" ? prev > l.price && d.level <= l.price : prev < l.price && d.level >= l.price;
+        if (crossed) vixPopup(l, d.level);
+      }
+    }
+    store.set("vixLast", { v: d.level, t: Date.now() });
+    renderVix();
+  } catch (e) {
+    $("#vixVal").textContent = "–";
+    $("#vixNext").textContent = "no VIX quote";
+  }
+}
+function vixRow(l = { price: "", dir: "up", label: "", note: "", color: "#6faee9" }) {
+  return `<tr><td><input type="number" step="0.01" min="0" data-k="price" value="${l.price}" style="width:80px"></td>
+    <td><select data-k="dir"><option value="up"${l.dir === "up" ? " selected" : ""}>rises through</option><option value="down"${l.dir === "down" ? " selected" : ""}>falls through</option></select></td>
+    <td><input data-k="label" value="${esc(l.label)}" style="width:150px"></td>
+    <td style="width:45%"><input data-k="note" value="${esc(l.note)}" style="min-width:220px"></td>
+    <td><input type="color" class="swatch" data-k="color" value="${esc(l.color)}"></td>
+    <td><button class="ghost small danger" type="button" data-vix-del>Remove</button></td></tr>`;
+}
+function openVixDlg() {
+  $("#vixRows").innerHTML = vixSorted().map(vixRow).join("");
+  const log = store.get("vixLog", []);
+  $("#vixLog").innerHTML = log.length ? log.map(x => `${new Date(x.t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · VIX ${x.dir === "down" ? "fell" : "rose"} to ${x.level.toFixed(2)} · ${esc(x.label)} (${x.price.toFixed(2)})`).join("<br>") : "None yet.";
+  vixNotifyNote();
+  $("#vixDlg").showModal();
+}
+function vixNotifyNote() {
+  const p = "Notification" in window ? Notification.permission : "unsupported";
+  $("#vixNotifyNote").textContent = p === "granted" ? "Desktop notifications on: alerts also show when this tab is in the background."
+    : p === "denied" ? "Desktop notifications are blocked in your browser settings." : "Optional: also show alerts as Mac notifications.";
+  $("#vixNotify").hidden = p === "granted" || p === "unsupported";
+}
+$("#vixBadge").onclick = openVixDlg;
+$("#vixAdd").onclick = () => $("#vixRows").insertAdjacentHTML("beforeend", vixRow());
+$("#vixRows").onclick = e => { if (e.target.closest("[data-vix-del]")) e.target.closest("tr").remove(); };
+$("#vixTest").onclick = () => { const z = (vixData && vixZone(vixData.level)) || vixSorted()[0]; if (z) vixPopup(z, vixData ? vixData.level : z.price, true); };
+$("#vixNotify").onclick = async () => { try { await Notification.requestPermission(); } catch {} vixNotifyNote(); };
+$("#vixSave").onclick = async () => {
+  const levels = [...$("#vixRows").querySelectorAll("tr")].map(tr => Object.fromEntries([...tr.querySelectorAll("[data-k]")].map(i => [i.dataset.k, i.value])))
+    .filter(l => l.price !== "");
+  try {
+    const r = await fetch("/api/vix/levels", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ levels }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.status);
+    if (vixData) vixData.levels = d.levels;
+    renderVix();
+    $("#vixDlg").close();
+    toast("VIX levels saved", false);
+  } catch (e) { toast("Couldn't save VIX levels: " + e.message, false); }
+};
+setInterval(loadVix, VIX_EVERY);
 
 /* ================= tabs ================= */
 const TABS = ["chain", "builder", "trades"];
@@ -1995,6 +2158,7 @@ loadChain(last.ticker, last.exp);
 const startTab = store.get("tab", "chain");
 if (startTab !== "chain") showTab(startTab);
 newsShown(store.get("news", true));
+loadVix();
 </script>
 <script>
 // Market status dot: live during regular NYSE hours (9:30-4:00 ET, 1:00 on early-close days), closed otherwise.

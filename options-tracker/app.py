@@ -18,11 +18,26 @@ from urllib.parse import parse_qs, urlparse
 
 import tracker
 from fees import order_fees
-from options_data import QuoteError, chain, news
+from options_data import QuoteError, chain, news, vix
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 INDEX = os.path.join(HERE, "web", "index.html")
 DB = tracker.DEFAULT_DB
+VIX_LEVELS = os.path.join(HERE, "vix_levels.json")   # your VIX levels and what to do at each (kept out of git)
+# Starting levels, copied from the lines on the CBOE:VIX chart. "up" alerts when VIX rises through
+# the level, "down" when it falls through it.
+DEFAULT_VIX_LEVELS = [
+    {"price": 13.37, "dir": "down", "label": "Cash Up", "color": "#1848CC",
+     "note": "Volatility is low and markets are complacent. Take profits and raise cash."},
+    {"price": 20.03, "dir": "up", "label": "Caution", "color": "#E6C200",
+     "note": "Fear is building. Tighten stops, trim risk, and get your buy list ready."},
+    {"price": 30.01, "dir": "up", "label": "Fear: start buying", "color": "#FF9800",
+     "note": "Start scaling into quality names with your cash."},
+    {"price": 40.17, "dir": "up", "label": "Buy Everything!", "color": "#F23645",
+     "note": "Buy everything."},
+    {"price": 59.86, "dir": "up", "label": "Extreme panic", "color": "#9C27B0",
+     "note": "Crisis-level fear, historically near major market bottoms. Deploy remaining cash."},
+]
 STATIC = {"/sis-mark.png": "image/png", "/favicon.png": "image/png"}
 db_lock = threading.Lock()
 
@@ -57,6 +72,33 @@ def news_feed(extra):
     asked = [x.strip().upper() for x in extra.split(",") if x.strip()][:5]
     tickers = list(dict.fromkeys(asked + held))
     return {"tickers": tickers, "held": held, "stories": news(tickers)[:60]}
+
+
+def vix_levels():
+    try:
+        with open(VIX_LEVELS) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return DEFAULT_VIX_LEVELS
+
+
+def save_vix_levels(levels):
+    out = []
+    for l in levels or []:
+        try:
+            price = float(l.get("price"))
+        except (TypeError, ValueError):
+            raise tracker.TradeError("Each VIX level needs a number")
+        if price <= 0:
+            raise tracker.TradeError("VIX levels must be above 0")
+        out.append({"price": round(price, 2), "dir": "down" if l.get("dir") == "down" else "up",
+                    "label": str(l.get("label", "")).strip()[:60] or f"VIX {price:g}",
+                    "note": str(l.get("note", "")).strip()[:300],
+                    "color": str(l.get("color", "#6faee9"))[:20]})
+    out.sort(key=lambda l: l["price"])
+    with open(VIX_LEVELS, "w") as f:
+        json.dump(out, f, indent=2)
+    return out
 
 
 def num(body, key, cast=float, default=None):
@@ -117,6 +159,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(lambda: chain(ticker, q.get("exp")))
         elif url.path == "/api/positions":
             self.guard(positions)
+        elif url.path == "/api/vix":
+            self.guard(lambda: dict(vix(), levels=vix_levels()))
         elif url.path == "/api/news":
             self.guard(lambda: news_feed(q.get("tickers", "")))
         else:
@@ -198,6 +242,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(close)
         elif path == "/api/positions":
             self.guard(add_position)
+        elif path == "/api/vix/levels":
+            self.guard(lambda: {"levels": save_vix_levels(body.get("levels"))})
         elif path == "/api/positions/close":
             self.guard(close_position)
         else:

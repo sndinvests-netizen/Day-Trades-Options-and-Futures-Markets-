@@ -150,6 +150,21 @@ def spot_price(ticker):
     return _cached(("spot", ticker), fetch)
 
 
+def vix():
+    """The CBOE Volatility Index from Yahoo (^VIX): level, previous close and change."""
+    yf = _yf()
+
+    def fetch():
+        try:
+            fi = yf.Ticker("^VIX").fast_info
+            return float(fi["last_price"]), float(fi["previous_close"])
+        except Exception as e:
+            raise QuoteError(f"VIX: no quote ({e})")
+    level, prev = _cached(("vix",), fetch)
+    return {"level": level, "prev_close": prev, "change": level - prev,
+            "as_of": datetime.now(ET).isoformat(timespec="seconds")}
+
+
 def historical_vol(ticker):
     """Annualized 30-trading-day close-to-close volatility, or None."""
     yf = _yf()
