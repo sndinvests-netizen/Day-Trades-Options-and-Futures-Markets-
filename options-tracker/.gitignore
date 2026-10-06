@@ -5,3 +5,4 @@ __pycache__/
 trades.json.bak
 vix_levels.json
 econ_cache.json
+fng_cache.json
