@@ -19,10 +19,12 @@ Unlimited plan, already logged in in their Chrome). You gather and summarize dat
   any repo file. Reports go to chat (or a local file outside the repo if the user asks).
 
 ## Data sources: which to use
-1. **Alpha Spread MCP connector** (`mcp__alphaspread__*` tools, server `https://www.alphaspread.com/mcp`) — use
-   first for anything per-company: intrinsic value (base/bear/bull), DCF model and assumptions, relative valuation
-   multiples, valuation history, analyst price targets and ratings. If its tools aren't available or say
-   authentication is needed, tell the user to run `/mcp` and sign in to Alpha Spread, then fall back to Chrome.
+1. **Alpha Spread MCP connector** (the user's claude.ai connector "Alpha Spread", tools named
+   `mcp__claude_ai_Alpha_Spread__*`; server `https://www.alphaspread.com/mcp`). If the tools are deferred, load them
+   with ToolSearch (query "Alpha Spread"). Use first for anything per-company: intrinsic value (base/bear/bull), DCF
+   model and assumptions, relative valuation multiples, valuation history, analyst price targets and ratings. If its
+   tools aren't available or say authentication is needed, tell the user to run `/mcp` and sign in to
+   "claude.ai Alpha Spread", then fall back to Chrome.
 2. **Chrome** (`mcp__claude-in-chrome__*`) — required for things the connector doesn't provide: **watchlists,
    portfolios, investment journal, price targets**, idea lists, financial statements, profitability/solvency scores,
    insider trading, dividends.
@@ -32,8 +34,14 @@ Unlimited plan, already logged in in their Chrome). You gather and summarize dat
   javascript_tool, get_page_text, computer, find, tabs_close_mcp). Call `tabs_context_mcp` first, work in a **new
   tab**, close it when done.
 - Pages are JavaScript-rendered: after navigating, wait ~3 s (`await new Promise(r=>setTimeout(r,3000))` in
-  javascript_tool) before reading. `get_page_text` often returns only a fragment; prefer reading
-  `document.body.innerText` via javascript_tool, sliced into chunks under ~3,000 characters (tool output truncates).
+  javascript_tool) before reading. Watchlist panels load a few seconds after the table. `get_page_text` often
+  returns only a fragment; prefer reading `document.body.innerText` via javascript_tool. **Tool output truncates
+  at ~1,000 characters:** store the text in a `window` variable once, then read it in ~900-character slices.
+- **Stock sub-pages are server-rendered**, so you can read many without navigating: `fetch(url).then(r=>r.text())`
+  plus `DOMParser` in one javascript_tool call (e.g. all bear/base/bull `dcf-valuation/{case}` pages for 3 tickers).
+  The summary page is less useful: profitability/solvency scores are graphics and scenario values aren't shown;
+  use the sub-pages instead.
+- The timeline "Load More" control ignores JavaScript clicks; use `find` then a `computer` click (~10 days per click).
 - If redirected to a login page, stop and ask the user to log in. Don't enter credentials.
 - Never trigger dialogs; don't click delete/remove controls.
 
@@ -57,6 +65,10 @@ If you don't know a ticker's exchange, use the site search box or a link from th
   Overvalued), Wall St Target (x% Upside / Downside)**. "Set" in Buy Price means no buy price is set.
 - Panels: **Top Watchlist Opportunities** ("In Buy Zone n", "With Target n/total"), **Gainers / Losers**
   (1D/1W/1M/3M/1Y), **Watchlist Timeline** (News, Insider Transactions, Earnings Calls, Dividends, Stock Splits).
+- **"Top Watchlist Opportunities" upside is distance below the *buy price*, not below intrinsic value**, so its
+  percentages differ from the table's Intrinsic Value column. Say which one you're quoting.
+- The summary-page intrinsic value blends DCF with relative valuation, so it differs from the DCF base case.
+- An **empty watchlist shows popular stocks with "Add" buttons.** Never click them.
 - Switching watchlists or timeframe tabs is a read-only click and is fine.
 
 ## Workflows
