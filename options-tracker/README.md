@@ -65,6 +65,11 @@ If the Mac is asleep at 6:00 it runs when the Mac wakes up; if the Mac is shut d
 - **Alert:** a pop-up and chime 5, 15, 30 or 60 minutes before each red-folder event and again at release time (default 15 min; set it to off to silence). These alerts also show as Mac notifications if you turned those on for VIX alerts.
 - ForexFactory's feed covers only the current Sunday–Saturday week and has no actual figures; check ForexFactory for the number once it's out. The tracker fetches the feed at most every 15 minutes and keeps the last copy in `econ_cache.json` (not in git). Hide/Show the panel from its header.
 
+**Fear & Greed thermometer (left panel, under the calendar).** [CNN's Fear & Greed Index](https://www.cnn.com/markets/fear-and-greed), 0 to 100, drawn as a thermometer colored by CNN's bands: 0–24 Extreme Fear (red), 25–44 Fear, 45–55 Neutral (gray), 56–75 Greed, 76–100 Extreme Greed (green).
+- Shows today's score and rating, with the previous close, 1 week, 1 month and 1 year ago and how far today has moved from each. A small arrow on the thermometer marks the previous close.
+- **The seven indicators** (click to open): market momentum, stock price strength and breadth, put/call options, market volatility, safe-haven demand and junk bond demand, each with its own rating and position on the fear-to-greed scale.
+- The tracker fetches it at most every 10 minutes and keeps the last copy in `fng_cache.json` (not in git). Hide/Show it from its header.
+
 ## Command line
 
 The same trades file also works from the terminal (use `.venv/bin/python` or any Python with yfinance):

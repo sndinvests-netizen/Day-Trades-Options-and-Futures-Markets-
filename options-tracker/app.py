@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlparse
 
 import tracker
 from econ_calendar import usd_events
+from fear_greed import fear_greed
 from fees import order_fees
 from options_data import QuoteError, chain, news, vix
 
@@ -164,6 +165,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(lambda: dict(vix(), levels=vix_levels()))
         elif url.path == "/api/econ":
             self.guard(usd_events)
+        elif url.path == "/api/feargreed":
+            self.guard(fear_greed)
         elif url.path == "/api/news":
             self.guard(lambda: news_feed(q.get("tickers", "")))
         else:
