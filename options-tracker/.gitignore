@@ -4,3 +4,4 @@ __pycache__/
 .venv/
 trades.json.bak
 vix_levels.json
+econ_cache.json

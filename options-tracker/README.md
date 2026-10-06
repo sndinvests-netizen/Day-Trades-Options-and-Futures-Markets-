@@ -59,6 +59,12 @@ If the Mac is asleep at 6:00 it runs when the Mac wakes up; if the Mac is shut d
 - **Premium income:** premium collected and kept from cash-secured puts, covered calls, covered puts, short calls, credit spreads (verticals, iron condors, iron butterflies) and short straddles/strangles. Shows each type's collected, kept (after buybacks, assignment and fees), kept %, premium still open, what the open ones would cost to close now, and a month-by-month table. Debit trades are left out; a short call is listed as a short call unless the shares are a stock leg in the same position.
 - Results: win rate and realized P&L by group, by bought vs sold puts and calls, multi-leg, and by ticker. A spread counts as one position.
 
+**Red folder calendar (left panel).** This week's high-impact USD events from [ForexFactory](https://www.forexfactory.com/calendar): CPI, PPI, PCE, JOLTS, jobs reports, FOMC and Fed Chair, President speeches, GDP, retail sales and so on, plus US bank holidays.
+- Times are in your computer's time zone (hover a row for Eastern time). Each event shows forecast and previous, a tag (CPI, Jobs, Fed…), and a countdown. Released events dim, and events within the hour glow red.
+- A "Next red folder" box counts down to the next high-impact release. **+ Orange** adds medium-impact events, such as jobless claims and Fed member speeches.
+- **Alert:** a pop-up and chime 5, 15, 30 or 60 minutes before each red-folder event and again at release time (default 15 min; set it to off to silence). These alerts also show as Mac notifications if you turned those on for VIX alerts.
+- ForexFactory's feed covers only the current Sunday–Saturday week and has no actual figures; check ForexFactory for the number once it's out. The tracker fetches the feed at most every 15 minutes and keeps the last copy in `econ_cache.json` (not in git). Hide/Show the panel from its header.
+
 ## Command line
 
 The same trades file also works from the terminal (use `.venv/bin/python` or any Python with yfinance):

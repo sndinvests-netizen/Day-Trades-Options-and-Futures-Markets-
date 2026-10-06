@@ -108,11 +108,48 @@ button.danger.primary:hover { filter: brightness(1.06); background: linear-gradi
   background: linear-gradient(180deg, var(--pri-bot), var(--pri-top)); border-color: var(--pri-border);
   box-shadow: inset 0 2px 5px rgba(13,59,102,.3), 0 0 0 transparent; }
 
-/* layout: tracker on the left, news on the right (stacks below on narrow screens) */
-.wrap.with-news { max-width: 1860px; }
-.layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
-.wrap.with-news .layout { grid-template-columns: minmax(0, 1fr) 340px; }
-@media (max-width: 1100px) { .wrap.with-news .layout { grid-template-columns: minmax(0, 1fr); } }
+/* layout: red-folder calendar on the left, tracker in the middle, news on the right (stacks on narrow screens) */
+.wrap.with-news, .wrap.with-econ { max-width: 1860px; }
+.wrap.with-news.with-econ { max-width: 2160px; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "main"; gap: 16px; align-items: start; }
+.layout > main { grid-area: main; min-width: 0; }
+.layout > .news { grid-area: news; }
+.layout > .econ { grid-area: econ; }
+.wrap.with-news .layout { grid-template-columns: minmax(0, 1fr) 340px; grid-template-areas: "main news"; }
+.wrap.with-econ .layout { grid-template-columns: 290px minmax(0, 1fr); grid-template-areas: "econ main"; }
+.wrap.with-econ.with-news .layout { grid-template-columns: 290px minmax(0, 1fr) 340px; grid-template-areas: "econ main news"; }
+@media (max-width: 1400px) { .wrap.with-econ.with-news .layout { grid-template-columns: 270px minmax(0, 1fr); grid-template-areas: "econ main" "econ news"; } }
+@media (max-width: 1100px) { .wrap.with-news .layout, .wrap.with-econ .layout, .wrap.with-econ.with-news .layout {
+  grid-template-columns: minmax(0, 1fr); grid-template-areas: "econ" "main" "news"; } }
+/* red-folder (high-impact USD) calendar from ForexFactory */
+.econ { position: sticky; top: 14px; max-height: calc(100vh - 28px); display: flex; flex-direction: column; margin-bottom: 0; }
+@media (max-width: 1100px) { .econ { position: static; max-height: 45vh; } }
+.econ .chips { margin-top: 8px; }
+.econ-next { margin-top: 10px; padding: 9px 11px; border-radius: 10px; background: var(--well); box-shadow: var(--well-shadow);
+  border-left: 4px solid #e5383b; }
+.econ-next .lbl { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.econ-next .t { font-weight: 700; line-height: 1.3; }
+.econ-next .cd { font-variant-numeric: tabular-nums; font-weight: 700; color: #e5383b; }
+.econ-list { list-style: none; margin: 8px -4px 0; padding: 0 4px; overflow-y: auto; flex: 1; }
+.econ-list .day { margin-top: 10px; padding: 3px 0; font-size: 12px; font-weight: 700; color: var(--muted); border-bottom: 1px solid var(--line); }
+.econ-list .day:first-child { margin-top: 0; }
+.econ-list .day.today { color: var(--text); }
+.econ-list .day.today::after { content: " · today"; color: #e5383b; }
+.econ-list .ev { display: grid; grid-template-columns: 58px 14px minmax(0, 1fr); gap: 2px 7px; padding: 7px 0; border-bottom: 1px dashed var(--line); align-items: start; }
+.econ-list .ev .tm { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; padding-top: 1px; }
+.econ-list .ev .tt { font-weight: 600; line-height: 1.3; }
+.econ-list .ev .fp { grid-column: 3; font-size: 11.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 2px 9px; }
+.econ-list .ev.past { opacity: .5; }
+.econ-list .ev.soon { background: rgba(229,56,59,.1); border-radius: 8px; box-shadow: 0 0 0 1px rgba(229,56,59,.45); }
+.folder { width: 13px; height: 10px; margin-top: 4px; border-radius: 2px; position: relative; background: var(--fc); }
+.folder::before { content: ""; position: absolute; left: 0; top: -3px; width: 6px; height: 4px; border-radius: 2px 2px 0 0; background: var(--fc); }
+.folder.red { --fc: #e5383b; } .folder.orange { --fc: #f28c28; } .folder.holiday { --fc: #8a96a3; }
+.etag { font-size: 10.5px; font-weight: 700; border-radius: 5px; padding: 0 5px; margin-left: 4px; vertical-align: 1px; color: var(--text); background: var(--hover); }
+.econ .econ-lead { flex-direction: row; align-items: center; gap: 5px; white-space: nowrap; }
+.econ .econ-lead select { padding: 2px 6px; }
+.econ a { color: var(--btn-border); }
+.econ-open { display: none; }
+.wrap:not(.with-econ) .econ-open { display: inline-flex; }
 .news { position: sticky; top: 14px; max-height: calc(100vh - 28px); display: flex; flex-direction: column; margin-bottom: 0; }
 @media (max-width: 1100px) { .news { position: static; max-height: 70vh; } }
 .news-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -306,10 +343,32 @@ tr.pos-leg td.contract { padding-left: 24px; }
     <button type="button" class="vix-badge" id="vixBadge" title="VIX and your levels. Click to edit levels and alerts.">
       <span class="note">VIX</span><span class="v" id="vixVal">–</span><span id="vixChg" class="note"></span>
       <span class="zone" id="vixZone" hidden></span><span class="next" id="vixNext"></span></button>
+    <button class="ghost small econ-open" type="button" id="econShow" title="Show the red-folder calendar">Show calendar</button>
     <button class="ghost small news-open" type="button" id="newsShow" title="Show the news panel">Show news</button>
   </header>
 
   <div class="layout">
+  <!-- ===== Red folder: high-impact USD events this week (ForexFactory) ===== -->
+  <aside class="panel econ" id="econPanel" aria-label="Economic calendar">
+    <div class="news-head">
+      <h2>Red folder · USD</h2>
+      <span><button class="ghost small" type="button" id="econRefresh">Refresh</button>
+        <button class="ghost small" type="button" id="econHide" title="Hide the calendar">Hide</button></span>
+    </div>
+    <div class="note" id="econAsof">High-impact USD events this week from ForexFactory, in your time zone.</div>
+    <div class="chips" id="econChips">
+      <button type="button" class="chip" data-econ="red">Red only</button>
+      <button type="button" class="chip" data-econ="orange">+ Orange</button>
+      <label class="note econ-lead">Alert
+        <select id="econLead" title="Pop-up and chime this many minutes before each red-folder event">
+          <option value="0">off</option><option value="5">5 min</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">1 hr</option>
+        </select> before</label>
+    </div>
+    <div class="econ-next" id="econNext" hidden></div>
+    <ul class="econ-list" id="econList"><li class="note">Loading calendar…</li></ul>
+    <div class="note" style="margin-top:8px">Source: <a href="https://www.forexfactory.com/calendar" target="_blank" rel="noopener noreferrer">ForexFactory</a>. Forecast and previous only; check FF for the actual number.</div>
+  </aside>
+
   <main>
 
   <!-- ===== Chain ===== -->
@@ -768,6 +827,119 @@ setInterval(() => {
   if (document.hidden || $("#newsPanel").classList.contains("hidden")) return;
   if (Date.now() - newsAt > NEWS_EVERY || (current ? current.ticker : "") !== newsKey) loadNews();
 }, 5000);
+
+/* ================= red-folder calendar ================= */
+// High-impact USD events this week from ForexFactory (via /api/econ, which caches the feed for 15 min).
+// Times show in this computer's time zone. A pop-up and chime fire before each red event if alerts are on.
+const ECON_EVERY = 15 * 60 * 1000;
+let econData = null, econAt = 0, econMode = store.get("econMode", "red");
+const econLead = () => +store.get("econLead", 15);
+const dayKey = d => d.toLocaleDateString("en-CA");
+function econShown(on) {
+  $(".wrap").classList.toggle("with-econ", on);
+  $("#econPanel").classList.toggle("hidden", !on);
+  store.set("econ", on);
+  if (on) loadEcon();
+}
+async function loadEcon() {
+  econAt = Date.now();
+  try {
+    econData = await api("/api/econ");
+    renderEcon();
+  } catch (e) {
+    $("#econList").innerHTML = `<li class="note">Couldn't load the calendar: ${esc(e.message)}</li>`;
+  }
+}
+function econLeft(ms) {
+  const m = Math.max(0, Math.round(ms / 60000)), d = Math.floor(m / 1440), h = Math.floor(m % 1440 / 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m % 60}m` : `${m}m`;
+}
+function renderEcon() {
+  const d = econData;
+  if (!d) return;
+  document.querySelectorAll("[data-econ]").forEach(b => b.classList.toggle("on", b.dataset.econ === econMode));
+  $("#econLead").value = String(econLead());
+  const now = Date.now(), today = dayKey(new Date());
+  const show = d.events.filter(e => e.impact === "red" || e.impact === "holiday" || econMode === "orange");
+  const tm = e => e.all_day ? "All day" : new Date(e.ts * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const et = e => new Date(e.ts * 1000).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit" }) + " ET";
+  let html = "", lastDay = "";
+  for (const e of show) {
+    const at = new Date(e.ts * 1000), k = dayKey(at);
+    if (k !== lastDay) {
+      lastDay = k;
+      html += `<li class="day${k === today ? " today" : ""}">${at.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}</li>`;
+    }
+    const ms = e.ts * 1000 - now, past = ms < -5 * 60000, soon = !past && ms <= 60 * 60000 && e.impact !== "holiday";
+    const fp = [e.forecast && `Fcst <b>${esc(e.forecast)}</b>`, e.previous && `Prev ${esc(e.previous)}`,
+                past ? "released" : !e.all_day && ms > 0 && ms < 86400000 ? `in ${econLeft(ms)}` : ""].filter(Boolean).join(" · ");
+    html += `<li class="ev${past ? " past" : ""}${soon ? " soon" : ""}" title="${esc(e.title)} · ${et(e)}${e.impact === "holiday" ? " · bank holiday" : ` · ${e.impact} folder`}">
+      <span class="tm">${tm(e)}</span><span class="folder ${e.impact}"></span>
+      <span class="tt">${esc(e.title)}${e.tag ? `<span class="etag">${esc(e.tag)}</span>` : ""}</span>
+      ${fp ? `<span class="fp">${fp}</span>` : ""}</li>`;
+  }
+  $("#econList").innerHTML = html || `<li class="note">No ${econMode === "red" ? "red-folder" : "high or medium-impact"} USD events left in ForexFactory's week.${econMode === "red" ? " Try + Orange." : ""}</li>`;
+  const next = d.events.find(e => e.impact === "red" && e.ts * 1000 > now - 60000);
+  const box = $("#econNext");
+  box.hidden = !next;
+  if (next) box.innerHTML = `<div class="lbl">Next red folder</div><div class="t">${esc(next.title)}</div>
+    <div class="note">${new Date(next.ts * 1000).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })} · <span class="cd">${next.ts * 1000 > now ? "in " + econLeft(next.ts * 1000 - now) : "now"}</span></div>`;
+  const when = d.fetched ? new Date(d.fetched * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "–";
+  $("#econAsof").textContent = `ForexFactory, this week · updated ${when}` + (d.error ? " · offline, showing last copy" : "");
+}
+function econPopup(e, mins) {
+  const box = document.createElement("div");
+  box.className = "vix-alert";
+  box.style.setProperty("--c", "#e5383b");
+  const at = new Date(e.ts * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const head = mins > 0 ? `Red folder in ${mins} min: ${e.title}` : `Red folder now: ${e.title}`;
+  box.innerHTML = `<h3>${esc(head)}</h3><p>${esc([e.forecast && "Forecast " + e.forecast, e.previous && "previous " + e.previous].filter(Boolean).join(", ") || "Expect volatility around the release.")}</p>
+    <div class="inline" style="justify-content:space-between"><span class="note">USD · ${at}</span><button class="ghost small" type="button">Dismiss</button></div>`;
+  box.querySelector("button").onclick = () => box.remove();
+  $("#vixAlerts").prepend(box);
+  try {
+    const a = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.25].forEach(t => {   // two-tone chime, different from the VIX one
+      const o = a.createOscillator(), g = a.createGain();
+      o.frequency.value = t ? 660 : 990; g.gain.setValueAtTime(0.14, a.currentTime + t);
+      g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + t + 0.6);
+      o.connect(g); g.connect(a.destination); o.start(a.currentTime + t); o.stop(a.currentTime + t + 0.6);
+    });
+  } catch {}
+  if ("Notification" in window && Notification.permission === "granted") {
+    try { new Notification(head, { body: `USD · ${at}`, tag: "econ-" + e.ts + e.title }); } catch {}
+  }
+}
+function econTick() {
+  if (!econData) return;
+  if (!$("#econPanel").classList.contains("hidden")) renderEcon();
+  const lead = econLead();
+  if (!lead) return;
+  const fired = store.get("econFired", {}), now = Date.now();
+  for (const e of econData.events) {
+    if (e.impact !== "red") continue;
+    const ms = e.ts * 1000 - now;
+    for (const [k, mins, open] of [["pre", lead, ms <= lead * 60000 && ms > 0], ["at", 0, ms <= 0 && ms > -3 * 60000]]) {
+      const key = `${e.ts}|${e.title}|${k}`;
+      if (open && !fired[key]) { fired[key] = now; econPopup(e, k === "pre" ? Math.max(1, Math.round(ms / 60000)) : 0); }
+    }
+  }
+  for (const k in fired) if (now - fired[k] > 8 * 86400000) delete fired[k];
+  store.set("econFired", fired);
+}
+$("#econChips").onclick = e => {
+  const b = e.target.closest("[data-econ]");
+  if (!b) return;
+  econMode = b.dataset.econ; store.set("econMode", econMode); renderEcon();
+};
+$("#econLead").onchange = e => { store.set("econLead", +e.target.value); renderEcon(); };
+$("#econRefresh").onclick = loadEcon;
+$("#econHide").onclick = () => econShown(false);
+$("#econShow").onclick = () => econShown(true);
+setInterval(() => {
+  if (Date.now() - econAt > ECON_EVERY) loadEcon();   // keeps alerts working even while the panel is hidden
+  econTick();
+}, 30000);
 
 /* ================= VIX ================= */
 // Your VIX levels live in vix_levels.json on this computer. Every minute the tracker checks ^VIX and
@@ -2158,6 +2330,7 @@ loadChain(last.ticker, last.exp);
 const startTab = store.get("tab", "chain");
 if (startTab !== "chain") showTab(startTab);
 newsShown(store.get("news", true));
+econShown(store.get("econ", true));
 loadVix();
 </script>
 <script>
