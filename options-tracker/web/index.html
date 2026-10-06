@@ -148,6 +148,30 @@ button.danger.primary:hover { filter: brightness(1.06); background: linear-gradi
 .econ .econ-lead { flex-direction: row; align-items: center; gap: 5px; white-space: nowrap; }
 .econ .econ-lead select { padding: 2px 6px; }
 .econ a { color: var(--btn-border); }
+/* CNN Fear & Greed meter, under the red-folder list */
+.econ-list { min-height: 110px; }
+.fg { margin-top: 10px; padding: 10px 11px 9px; border-radius: 10px; background: var(--well); box-shadow: var(--well-shadow); flex: none; }
+.fg-head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.fg-head .lbl { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.fg svg { display: block; width: 100%; max-width: 230px; margin: 4px auto 0; overflow: visible; }
+.fg .tk { font-size: 8.5px; fill: var(--muted); font-weight: 600; }
+.fg .needle { stroke: var(--text); stroke-width: 3; stroke-linecap: round; transition: transform .8s cubic-bezier(.3,1.3,.5,1); transform-origin: 100px 100px; }
+.fg .hub { fill: var(--text); }
+.fg-read { text-align: center; margin-top: 4px; }
+.fg-read .sc { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; color: var(--fgc); }
+.fg-read .rt { font-weight: 700; text-transform: capitalize; color: var(--fgc); }
+.fg-read .dl { font-size: 12px; font-weight: 600; margin-left: 4px; }
+.fg-prev { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 8px; text-align: center; }
+.fg-prev div { font-size: 10.5px; color: var(--muted); line-height: 1.25; }
+.fg-prev b { display: block; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--fgc); }
+.fg details { margin-top: 8px; font-size: 12px; }
+.fg summary { cursor: pointer; color: var(--muted); font-weight: 600; }
+.fg-ind { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
+.fg-ind li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 6px; }
+.fg-ind .nm { font-weight: 600; }
+.fg-ind .v { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--fgc); text-align: right; }
+.fg-ind .bar { grid-column: 1 / -1; height: 5px; border-radius: 3px; background: var(--line); position: relative; overflow: hidden; }
+.fg-ind .bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--fgc); }
 .econ-open { display: none; }
 .wrap:not(.with-econ) .econ-open { display: inline-flex; }
 .news { position: sticky; top: 14px; max-height: calc(100vh - 28px); display: flex; flex-direction: column; margin-bottom: 0; }
@@ -367,6 +391,14 @@ tr.pos-leg td.contract { padding-left: 24px; }
     <div class="econ-next" id="econNext" hidden></div>
     <ul class="econ-list" id="econList"><li class="note">Loading calendar…</li></ul>
     <div class="note" style="margin-top:8px">Source: <a href="https://www.forexfactory.com/calendar" target="_blank" rel="noopener noreferrer">ForexFactory</a>. Forecast and previous only; check FF for the actual number.</div>
+    <section class="fg" id="fgBox" aria-label="CNN Fear and Greed Index">
+      <div class="fg-head"><span class="lbl">Fear &amp; Greed</span>
+        <a class="note" href="https://www.cnn.com/markets/fear-and-greed" target="_blank" rel="noopener noreferrer" id="fgAsof">CNN</a></div>
+      <svg viewBox="-6 6 212 104" id="fgGauge" role="img" aria-label="Fear and Greed gauge"></svg>
+      <div class="fg-read" id="fgRead"><span class="note">Loading…</span></div>
+      <div class="fg-prev" id="fgPrev"></div>
+      <details id="fgMore"><summary>The 7 indicators</summary><ul class="fg-ind" id="fgInd"></ul></details>
+    </section>
   </aside>
 
   <main>
@@ -939,6 +971,58 @@ $("#econShow").onclick = () => econShown(true);
 setInterval(() => {
   if (Date.now() - econAt > ECON_EVERY) loadEcon();   // keeps alerts working even while the panel is hidden
   econTick();
+}, 30000);
+
+/* ================= Fear & Greed ================= */
+// CNN's Fear & Greed Index (0-100) via /api/feargreed, which caches it for 5 min. Bands match CNN's page.
+const FG_EVERY = 5 * 60 * 1000;
+const FG_BANDS = [[0, 25, "Extreme fear", "#d63c3c"], [25, 45, "Fear", "#f28c28"], [45, 55, "Neutral", "#a3acb6"],
+                  [55, 75, "Greed", "#6cc070"], [75, 100, "Extreme greed", "#12a06e"]];
+let fgAt = 0;
+const fgColor = v => (FG_BANDS.find(b => v < b[1]) || FG_BANDS[4])[3];
+function fgPt(v, r) {
+  const a = Math.PI * (1 - v / 100);
+  return [(100 + r * Math.cos(a)).toFixed(2), (100 - r * Math.sin(a)).toFixed(2)];
+}
+function fgGauge(score) {
+  const r = 80, gap = 0.7;
+  let svg = FG_BANDS.map(([a, b, , c]) => {
+    const [x0, y0] = fgPt(a + (a ? gap : 0), r), [x1, y1] = fgPt(b - (b < 100 ? gap : 0), r);
+    return `<path d="M${x0} ${y0} A${r} ${r} 0 0 1 ${x1} ${y1}" fill="none" stroke="${c}" stroke-width="16" opacity="${score >= a && score < b || (b === 100 && score >= 100) ? 1 : .45}"/>`;
+  }).join("");
+  svg += [0, 25, 50, 75, 100].map(v => { const [x, y] = fgPt(v, 101); return `<text class="tk" x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle">${v}</text>`; }).join("");
+  const [nx, ny] = fgPt(0, 66);
+  svg += `<line class="needle" x1="100" y1="100" x2="${nx}" y2="${ny}" style="transform: rotate(${(score * 1.8).toFixed(1)}deg)"/><circle class="hub" cx="100" cy="100" r="6"/>`;
+  $("#fgGauge").innerHTML = svg;
+}
+async function loadFearGreed() {
+  fgAt = Date.now();
+  try {
+    const d = await api("/api/feargreed");
+    fgGauge(d.score);
+    const box = $("#fgBox");
+    box.style.setProperty("--fgc", fgColor(d.score));
+    const prev = d.previous || {}, dl = prev.close != null ? d.score - prev.close : null;
+    $("#fgRead").innerHTML = `<div class="sc">${Math.round(d.score)}</div><span class="rt">${esc(d.rating)}</span>` +
+      (dl != null ? `<span class="dl" style="color:${dl >= 0 ? "var(--up)" : "var(--down)"}">${dl >= 0 ? "▲" : "▼"} ${Math.abs(dl).toFixed(1)}</span>` : "");
+    $("#fgPrev").innerHTML = [["close", "Prev close"], ["1_week", "1 week"], ["1_month", "1 month"], ["1_year", "1 year"]]
+      .filter(([k]) => prev[k] != null)
+      .map(([k, l]) => `<div style="--fgc:${fgColor(prev[k])}" title="${l}: ${prev[k]}">${l}<b>${Math.round(prev[k])}</b></div>`).join("");
+    $("#fgInd").innerHTML = (d.indicators || []).map(i => `<li style="--fgc:${fgColor(i.score)}" title="${esc(i.what)}">
+      <span class="nm">${esc(i.name)}</span><span class="v">${esc(i.rating)}</span>
+      <span class="bar"><i style="width:${Math.max(2, Math.min(100, i.score))}%"></i></span></li>`).join("");
+    const when = d.updated ? new Date(d.updated).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+    $("#fgAsof").textContent = `CNN${when ? " · " + when : ""}${d.error ? " · offline" : ""}`;
+    $("#fgGauge").setAttribute("aria-label", `Fear and Greed ${Math.round(d.score)}, ${d.rating}`);
+  } catch (e) {
+    $("#fgRead").innerHTML = `<span class="note">Couldn't load Fear &amp; Greed: ${esc(e.message)}</span>`;
+  }
+}
+$("#fgMore").open = store.get("fgMore", false);
+$("#fgMore").ontoggle = () => store.set("fgMore", $("#fgMore").open);
+loadFearGreed();
+setInterval(() => {
+  if (!document.hidden && !$("#econPanel").classList.contains("hidden") && Date.now() - fgAt > FG_EVERY) loadFearGreed();
 }, 30000);
 
 /* ================= VIX ================= */
