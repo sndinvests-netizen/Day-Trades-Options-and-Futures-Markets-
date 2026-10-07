@@ -1334,7 +1334,7 @@ const estTag = why => `<span class="est" title="${esc(why)}">est</span>`;
 const lastTradeText = q => q.last_trade
   ? new Date(q.last_trade).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
   : "unknown";
-const estWhy = q => `No live bid/ask from Yahoo, so this is a Black-Scholes estimate at ${pct(q.iv, 0)} IV. Last trade ${f2(q.last)} on ${lastTradeText(q)}.`;
+const estWhy = q => `No usable bid/ask from Yahoo (no quote, no bid, or a very wide spread), so this is a Black-Scholes estimate at ${pct(q.iv, 0)} IV. Last trade ${f2(q.last)} on ${lastTradeText(q)}.`;
 
 function setTimer() {
   clearInterval(timer);

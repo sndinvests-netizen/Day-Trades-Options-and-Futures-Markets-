@@ -17,6 +17,8 @@ NEWS_PER_TICKER = 10
 UNUSUAL_MIN_VOLUME = 500      # unusual = at least this many contracts traded ...
 UNUSUAL_VOL_OI = 2            # ... and at least this multiple of open interest
 IV_FLOOR = 0.03               # Yahoo IV below this is a placeholder, not a real number
+IV_CEILING = 3.0              # ... and above this (300%) it is junk from a stale or one-sided quote
+NEAR_MONEY = 0.20             # only borrow IV from out-of-the-money strikes within 20% of the stock price
 FALLBACK_IV = 0.5             # last resort when nothing better is available
 
 
@@ -183,33 +185,47 @@ def historical_vol(ticker):
     return _cached(("hv", ticker), fetch)
 
 
-def _fill_missing(ticker, exp, out):
-    """Yahoo sends 0 bid / 0 ask (and placeholder IVs) for contracts with no live quote,
-    e.g. before the delayed feed catches up after the open or on thinly traded strikes.
-    Rather than pass off the last trade, which can be days old, price those contracts
-    with Black-Scholes and flag them as estimates (est=True).
+def _price_ok(r):
+    """A two-sided quote with a sane spread: its mid is a real price."""
+    mid = (r["bid"] + r["ask"]) / 2
+    return r["quoted"] and r["bid"] > 0 and r["ask"] - r["bid"] <= max(0.15, 0.6 * mid)
 
-    IV for an unquoted contract comes from the nearest quoted strike in the same
-    expiration, then the stock's 30-day historical volatility, then FALLBACK_IV.
+
+def _fill_missing(ticker, exp, out):
+    """Yahoo often sends 0 bid / 0 ask (and placeholder IVs) for contracts with no live quote:
+    before the delayed feed catches up after the open, on thinly traded strikes, and for most
+    strikes in the farther expirations. Rather than pass off the last trade, which can be days
+    old, or a no-bid mid, price those contracts with Black-Scholes and flag them (est=True).
+
+    IV is only trusted from out-of-the-money contracts near the money with a real two-sided
+    quote and a believable IV. In the far expirations the few quoted contracts are often penny
+    puts with no bid or stale deep in-the-money ones, whose Yahoo IV runs from 0 to 250%+;
+    borrowing those inflated long-dated put premiums several times over. Otherwise IV comes from the nearest
+    trusted strike in the same expiration, then the stock's 30-day historical volatility,
+    then FALLBACK_IV.
     """
-    good = sorted((r["strike"], r["iv"]) for rows in out.values() for r in rows if r["quoted"] and r["iv"] >= IV_FLOOR)
-    hv = None
-    spot = None
+    spot = spot_price(ticker)
     t = years_to_expiry(exp)
+
+    def iv_ok(kind, r):
+        otm = r["strike"] >= spot if kind == "call" else r["strike"] <= spot
+        return (_price_ok(r) and IV_FLOOR <= r["iv"] <= IV_CEILING
+                and spot and otm and abs(r["strike"] / spot - 1) <= NEAR_MONEY)
+
+    good = sorted((r["strike"], r["iv"]) for kind, rows in out.items() for r in rows if iv_ok(kind, r))
+    hv = None
     for kind, rows in out.items():
         for r in rows:
             r["est"] = r["iv_est"] = False
-            if r["quoted"] and r["iv"] >= IV_FLOOR:
-                continue
-            if good:
-                r["iv"] = min(good, key=lambda g: abs(g[0] - r["strike"]))[1]
-            else:
-                if hv is None:
-                    hv = historical_vol(ticker) or FALLBACK_IV
-                r["iv"] = hv
-            r["iv_est"] = True
-            if not r["quoted"]:
-                spot = spot or spot_price(ticker)
+            if not iv_ok(kind, r):
+                if good:
+                    r["iv"] = min(good, key=lambda g: abs(g[0] - r["strike"]))[1]
+                else:
+                    if hv is None:
+                        hv = historical_vol(ticker) or FALLBACK_IV
+                    r["iv"] = hv
+                r["iv_est"] = True
+            if not _price_ok(r):
                 r["mark"] = bs_price(kind, spot, r["strike"], t, r["iv"])
                 r["est"] = True
 
