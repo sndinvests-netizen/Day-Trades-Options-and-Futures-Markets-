@@ -477,6 +477,7 @@ tr.pos-leg td.contract { padding-left: 24px; }
         <button class="primary" type="submit">Load</button>
         <label>Strategy <select id="bStrategy"></select></label>
         <label>Expiration <select id="bExp"></select></label>
+        <span id="bExpQuick" role="group" aria-label="Quick expiration"></span>
         <div class="unit-toggle"><span id="bUnitD">P/L $</span>
           <button type="button" class="switch" id="bUnitSw" role="switch" aria-checked="false" aria-label="Show profit and loss as a percent"><span class="knob"></span></button>
           <span id="bUnitP">P/L %</span> <span class="note" id="bUnitNote" style="font-weight:500"></span></div>
@@ -1379,9 +1380,12 @@ async function getChain(exp) {
   if (B.chains[exp]) return B.chains[exp];
   const d = await api(`/api/chain?ticker=${encodeURIComponent(B.ticker)}&exp=${exp}`);
   B.chains[d.exp] = d;
-  B.spot = d.spot;
+  B.spot = modelSpot(d);
   return d;
 }
+/* Price the Builder models from: the one the option quotes imply (put-call parity, worked out
+   by the server), not Yahoo's stock quote, which runs ahead of its delayed option quotes. */
+const modelSpot = d => d.opt_spot || d.spot;
 const strikesFor = exp => {
   const c = B.chains[exp];
   return c ? [...new Set([...c.calls, ...c.puts].map(r => r.strike))].sort((a, b) => a - b) : [];
@@ -1404,7 +1408,7 @@ async function setBuilderTicker(ticker, preferExp) {
   $("#bSpot").textContent = "Loading " + ticker + "…";
   const d = await api(`/api/chain?ticker=${encodeURIComponent(ticker)}`);
   if (seq !== B.seq) return false;
-  Object.assign(B, { ticker: d.ticker, spot: d.spot, exps: d.expirations, chains: { [d.exp]: d }, legs: [], scrub: null });
+  Object.assign(B, { ticker: d.ticker, spot: modelSpot(d), exps: d.expirations, chains: { [d.exp]: d }, legs: [], scrub: null });
   resetIv();
   // default to about a month out, like most strategy builders
   B.exp = preferExp && d.expirations.includes(preferExp) ? preferExp
@@ -1477,12 +1481,12 @@ function builderError(err) {
 async function addLegFromChain(chain, type, strike, side) {
   try {
     if (B.ticker !== chain.ticker) {
-      Object.assign(B, { ticker: chain.ticker, spot: chain.spot, exps: chain.expirations, chains: {}, legs: [], exp: chain.exp, strategy: "Custom" });
+      Object.assign(B, { ticker: chain.ticker, spot: modelSpot(chain), exps: chain.expirations, chains: {}, legs: [], exp: chain.exp, strategy: "Custom" });
       $("#bTicker").value = chain.ticker;
       builderStarted = true;
     }
     B.chains[chain.exp] = chain;
-    B.spot = chain.spot;
+    B.spot = modelSpot(chain);
     if (B.legs.some(l => l.tradeId)) B.legs = [];  // was showing a saved position; start fresh
     const l = { uid: ++legUid, side, type, qty: 1, exp: chain.exp, strike };
     fillFromChain(l);
@@ -1571,7 +1575,10 @@ function renderBuilder() {
   $("#bBody").classList.remove("hidden");
   $("#bStrategy").value = TEMPLATES[B.strategy] ? B.strategy : "Custom";
   $("#bExp").innerHTML = B.exps.map(e => `<option value="${e}" ${e === B.exp ? "selected" : ""}>${e} (${daysTo(e)}d)</option>`).join("");
-  $("#bSpot").textContent = `${B.ticker} ${f2(B.spot)}`;
+  renderExpQuick();
+  const last = (B.chains[B.exp] || {}).spot;
+  $("#bSpot").textContent = `${B.ticker} ${f2(B.spot)}` +
+    (last && Math.abs(last - B.spot) >= 0.01 ? ` (options priced at this; last trade ${f2(last)})` : "");
   renderLegs();
   renderAnalysis();
 }
@@ -1690,6 +1697,24 @@ $("#bExp").onchange = async () => {
     if (TEMPLATES[B.strategy] && !B.legs.some(l => l.tradeId)) await applyTemplate(B.strategy);
     else { await getChain(B.exp); renderBuilder(); }
   } catch (err) { builderError(err); }
+};
+/* One-click expirations: the dropdown opens scrolled to the ~30-day default, which hides 0DTE at the top. */
+function renderExpQuick() {
+  const pick = [["0DTE", e => daysTo(e) === 0], ["1DTE", e => daysTo(e) === 1],
+                ["1 wk", e => daysTo(e) >= 5], ["30 d", e => daysTo(e) >= 25]];
+  const seen = new Set();
+  $("#bExpQuick").innerHTML = pick.map(([lbl, f]) => {
+    const e = B.exps.find(f);
+    if (!e || seen.has(e)) return "";
+    seen.add(e);
+    return `<button type="button" class="chip${e === B.exp ? " on" : ""}" data-exp="${e}" title="${e}">${lbl}</button>`;
+  }).join(" ");
+}
+$("#bExpQuick").onclick = e => {
+  const b = e.target.closest("button[data-exp]");
+  if (!b || b.dataset.exp === B.exp) return;
+  $("#bExp").value = b.dataset.exp;
+  $("#bExp").onchange();
 };
 $("#bDate").oninput = () => { B.day = +$("#bDate").value; renderAnalysis(false); };
 $("#bIv").oninput = () => {

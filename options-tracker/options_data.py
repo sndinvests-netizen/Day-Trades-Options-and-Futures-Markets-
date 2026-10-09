@@ -106,6 +106,23 @@ def bs_price(kind, spot, strike, t, iv, r=RISK_FREE_RATE):
     return disc * norm_cdf(-d2) - spot * norm_cdf(-d1)
 
 
+def implied_vol(kind, spot, strike, t, price, r=RISK_FREE_RATE):
+    """The IV at which Black-Scholes gives this price, or None when the price has (almost)
+    no time value to solve from (at or below intrinsic) or needs an IV outside 1%-500%."""
+    if not spot or not strike or t <= 0 or price <= 0:
+        return None
+    lo, hi = 0.01, 5.0
+    if not bs_price(kind, spot, strike, t, lo, r) < price < bs_price(kind, spot, strike, t, hi, r):
+        return None
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        if bs_price(kind, spot, strike, t, mid, r) > price:
+            hi = mid
+        else:
+            lo = mid
+    return (lo + hi) / 2
+
+
 def max_pain(calls, puts):
     """Strike where option holders' total payout at expiration is smallest."""
     strikes = sorted({r["strike"] for r in calls + puts})
@@ -191,6 +208,37 @@ def _price_ok(r):
     return r["quoted"] and r["bid"] > 0 and r["ask"] - r["bid"] <= max(0.15, 0.6 * mid)
 
 
+_OPT_SPOT = {}   # (ticker, exp) -> the stock price that expiration's option quotes imply
+
+
+def parity_spot(out, spot, t, r=RISK_FREE_RATE):
+    """The stock price the option quotes were made at, from put-call parity (C - P + K e^-rT)
+    on the five strikes nearest the money that have real quotes on both sides.
+
+    Yahoo's option quotes lag its stock price: on 2026-10-07 QQQ showed 757.01 while its 0DTE
+    calls and puts were priced off about 756.07. Solving IV against the wrong price made calls
+    look like 12% IV and puts at the same strike 30%. Falls back to `spot` when there aren't
+    enough quotes, or the answer is more than 3% away (dividends, junk quotes).
+    """
+    if not spot:
+        return spot
+    puts = {p["strike"]: p for p in out.get("put", []) if _price_ok(p)}
+    pairs = sorted(((c["strike"], c, puts[c["strike"]]) for c in out.get("call", [])
+                    if _price_ok(c) and c["strike"] in puts), key=lambda x: abs(x[0] - spot))[:5]
+    if len(pairs) < 3:
+        return spot
+    est = sorted((c["bid"] + c["ask"]) / 2 - (p["bid"] + p["ask"]) / 2 + k * math.exp(-r * t)
+                 for k, c, p in pairs)[len(pairs) // 2]
+    return est if abs(est / spot - 1) <= 0.03 else spot
+
+
+def option_spot(ticker, exp):
+    """Stock price implied by this expiration's option quotes (see parity_spot)."""
+    ticker = yahoo_symbol(ticker)
+    chain_rows(ticker, exp)
+    return _OPT_SPOT.get((ticker, exp)) or spot_price(ticker)
+
+
 def _fill_missing(ticker, exp, out):
     """Yahoo often sends 0 bid / 0 ask (and placeholder IVs) for contracts with no live quote:
     before the delayed feed catches up after the open, on thinly traded strikes, and for most
@@ -204,8 +252,19 @@ def _fill_missing(ticker, exp, out):
     trusted strike in the same expiration, then the stock's 30-day historical volatility,
     then FALLBACK_IV.
     """
-    spot = spot_price(ticker)
     t = years_to_expiry(exp)
+    spot = _OPT_SPOT[(ticker, exp)] = parity_spot(out, spot_price(ticker), t)
+
+    # Yahoo's own IV badly understates short-dated options (a 0DTE TSLA put at $0.14 came
+    # back as 15% IV when its price implies 44%), so anything priced off it, like Builder P/L,
+    # chance of profit and Greeks, came out wrong. Where there is a real two-sided quote,
+    # take IV from the mid instead, with the same expiry time used everywhere else.
+    for kind, rows in out.items():
+        for r in rows:
+            if _price_ok(r):
+                iv = implied_vol(kind, spot, r["strike"], t, (r["bid"] + r["ask"]) / 2)
+                if iv:
+                    r["iv"] = iv
 
     def iv_ok(kind, r):
         otm = r["strike"] >= spot if kind == "call" else r["strike"] <= spot
@@ -301,10 +360,11 @@ def chain(ticker, exp=None):
     exp = exp if exp in exps else exps[0]
     spot = spot_price(ticker)
     rows = chain_rows(ticker, exp)
+    opt_spot = option_spot(ticker, exp)   # Greeks use the price the quotes were made at
     t = years_to_expiry(exp)
     sides = {}
     for kind in ("call", "put"):
-        sides[kind] = [dict(r, **(greeks(kind, spot, r["strike"], t, r["iv"]) or {}),
+        sides[kind] = [dict(r, **(greeks(kind, opt_spot, r["strike"], t, r["iv"]) or {}),
                             itm=(r["strike"] < spot) if kind == "call" else (r["strike"] > spot),
                             unusual=r["volume"] >= UNUSUAL_MIN_VOLUME and r["volume"] >= UNUSUAL_VOL_OI * r["oi"])
                        for r in rows[kind]]
@@ -314,13 +374,13 @@ def chain(ticker, exp=None):
     near = [r for r in calls + puts if r["iv"] >= 0.01]
     atm_iv = None
     if near:
-        atm_strike = min((r["strike"] for r in near), key=lambda k: abs(k - spot))
+        atm_strike = min((r["strike"] for r in near), key=lambda k: abs(k - opt_spot))
         ivs = [r["iv"] for r in near if r["strike"] == atm_strike]
         atm_iv = sum(ivs) / len(ivs)
     unusual = sorted(({"kind": k, **r} for k in ("call", "put") for r in sides[k] if r["unusual"]),
                      key=lambda r: r["volume"] / max(r["oi"], 1), reverse=True)[:10]
     return {
-        "ticker": ticker, "spot": spot, "expirations": exps, "exp": exp,
+        "ticker": ticker, "spot": spot, "opt_spot": opt_spot, "expirations": exps, "exp": exp,
         "dte": (datetime.strptime(exp, "%Y-%m-%d").date() - datetime.now(ET).date()).days,
         "calls": calls, "puts": puts,
         "summary": {"call_volume": call_vol, "put_volume": put_vol,
