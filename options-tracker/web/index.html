@@ -362,6 +362,30 @@ tr.pos-leg td.contract { padding-left: 24px; }
 .switch[aria-checked="true"] .knob { left: 23px; }
 .switch:focus-visible { outline: 3px solid rgba(111,174,233,.6); outline-offset: 2px; }
 .unit-toggle.off { opacity: .45; }
+/* Earnings dropdown */
+.earn-wrap { position: relative; }
+.earn-btn { display: inline-flex; align-items: center; gap: 6px; }
+.earn-count { font-size: 11px; font-weight: 700; border-radius: 9px; padding: 0 7px; background: var(--warn-bg); color: var(--warn); }
+.earn-count.risk { background: var(--down); color: #fff; }
+.earn-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 25; width: min(560px, calc(100vw - 32px));
+  max-height: min(70vh, 640px); overflow: auto; box-shadow: 0 14px 36px rgba(0,0,0,.3); }
+.earn-panel[hidden] { display: none; }
+.earn-list { list-style: none; margin: 8px 0; padding: 0; }
+.earn-list li { display: grid; grid-template-columns: 64px 1fr auto auto; gap: 4px 10px; align-items: center; padding: 7px 4px; border-top: 1px solid var(--line); }
+.earn-list .tk { font-weight: 700; }
+.earn-list .when { font-variant-numeric: tabular-nums; }
+.earn-list .days { font-size: 12px; font-weight: 600; color: var(--muted); text-align: right; white-space: nowrap; }
+.earn-list li.soon .days { color: var(--warn); }
+.earn-list li.today .days { color: var(--down); }
+.earn-list .sub { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; color: var(--muted); }
+.earn-tag { font-size: 11px; border-radius: 6px; padding: 0 6px; border: 1px solid var(--line); }
+.earn-tag.held { border-color: var(--flag); color: var(--flag); }
+.earn-tag.risk { background: var(--down); border-color: var(--down); color: #fff; font-weight: 600; }
+.earn-tag.est { border-style: dashed; }
+.earn-x { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 15px; padding: 0 4px; }
+.earn-x:hover { color: var(--down); }
+.earn-add { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.earn-add input { width: 110px; text-transform: uppercase; }
 </style>
 </head>
 <body>
@@ -380,6 +404,33 @@ tr.pos-leg td.contract { padding-left: 24px; }
     <button type="button" class="vix-badge" id="vixBadge" title="VIX and your levels. Click to edit levels and alerts.">
       <span class="note">VIX</span><span class="v" id="vixVal">–</span><span id="vixChg" class="note"></span>
       <span class="zone" id="vixZone" hidden></span><span class="next" id="vixNext"></span></button>
+    <div class="earn-wrap">
+      <button class="ghost small earn-btn" type="button" id="earnBtn" aria-expanded="false" aria-controls="earnPanel"
+        title="Upcoming earnings for your watchlist and open positions">Earnings <span class="earn-count" id="earnCount" hidden></span> ▾</button>
+      <div class="panel earn-panel" id="earnPanel" role="region" aria-label="Upcoming earnings" hidden>
+        <div class="news-head">
+          <h2>Upcoming earnings</h2>
+          <span><button class="ghost small" type="button" id="earnRefresh">Refresh</button>
+            <button class="ghost small" type="button" id="earnClose">Close</button></span>
+        </div>
+        <div class="note" id="earnAsof">Your earnings watchlist plus every ticker you hold open.</div>
+        <div class="earn-add" style="margin-top:8px">
+          <label style="flex-direction:row;align-items:center;gap:6px">Remind me
+            <select id="earnLead" title="Pop-up and chime this many days before each report, plus one on report day">
+              <option value="0">off</option><option value="1">1 day</option><option value="2">2 days</option><option value="3">3 days</option><option value="7">1 week</option>
+            </select> before</label>
+        </div>
+        <ul class="earn-list" id="earnList"><li class="note">Loading earnings…</li></ul>
+        <form class="earn-add" id="earnAddForm">
+          <input id="earnAdd" placeholder="Add ticker" aria-label="Ticker to add to the earnings watchlist" maxlength="10" autocomplete="off">
+          <button class="ghost small" type="submit">Add</button>
+          <span class="note" id="earnMsg"></span>
+        </form>
+        <div class="note" id="earnNone" style="margin-top:6px"></div>
+        <div class="note" style="margin-top:6px">Source: Yahoo Finance. Dates marked "est." aren't confirmed by the company yet. Times are in New York time.
+          <b>Expires after report</b> means an open position will still be open when the company reports.</div>
+      </div>
+    </div>
     <button class="ghost small econ-open" type="button" id="econShow" title="Show the red-folder calendar">Show calendar</button>
     <button class="ghost small fng-open" type="button" id="fngShow" title="Show the Fear &amp; Greed meter">Show Fear &amp; Greed</button>
     <button class="ghost small news-open" type="button" id="newsShow" title="Show the news panel">Show news</button>
@@ -994,6 +1045,121 @@ setInterval(() => {
   if (Date.now() - econAt > ECON_EVERY) loadEcon();   // keeps alerts working even while the panel is hidden
   econTick();
 }, 30000);
+
+/* ================= Earnings dropdown ================= */
+// Upcoming reports (via /api/earnings, cached 6 h per ticker on the server) for your earnings watchlist
+// plus every ticker held open. Pop-up and chime N days before each report and on report day.
+const EARN_EVERY = 30 * 60000;
+const SESSION = { bmo: "Before open", amc: "After close", tns: "Time not set" };
+let earnData = null, earnAt = 0;
+const earnLead = () => +store.get("earnLead", 1);
+const earnDays = r => daysTo(r.date);
+const earnWhen = r => new Date(r.date + "T12:00:00").toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+async function loadEarn() {
+  earnAt = Date.now();
+  try { earnData = await api("/api/earnings"); renderEarn(); earnTick(); }
+  catch (e) { $("#earnList").innerHTML = `<li class="note">Couldn't load earnings: ${esc(e.message)}</li>`; }
+}
+function renderEarn() {
+  if (!earnData) return;
+  const rows = earnData.rows.filter(r => r.date && earnDays(r) >= 0);
+  const soon = rows.filter(r => earnDays(r) <= 7);
+  const cnt = $("#earnCount");
+  cnt.hidden = !soon.length;
+  cnt.textContent = soon.length;
+  cnt.classList.toggle("risk", soon.some(r => r.at_risk));
+  cnt.title = soon.length ? `${soon.length} report${soon.length === 1 ? "" : "s"} in the next 7 days` : "";
+  $("#earnList").innerHTML = rows.map(r => {
+    const d = earnDays(r);
+    const tags = [
+      r.estimated && `<span class="earn-tag est" title="Yahoo's estimate; the company hasn't confirmed this date">est.</span>`,
+      r.held && `<span class="earn-tag held">held · exp ${esc(new Date(r.exp + "T12:00:00").toLocaleDateString([], { month: "short", day: "numeric", ...(r.exp.slice(0, 4) !== today().slice(0, 4) && { year: "numeric" }) }))}</span>`,
+      r.at_risk && `<span class="earn-tag risk" title="Your latest open expiration is after this report">Expires after report</span>`,
+      r.eps_est != null && `<span>EPS est. ${f2(r.eps_est)}</span>`,
+      r.stale && `<span>(last saved copy)</span>`,
+    ].filter(Boolean).join("");
+    return `<li class="${d === 0 ? "today" : d <= 7 ? "soon" : ""}">
+      <span class="tk" title="${esc(r.name)}">${esc(r.ticker)}</span>
+      <span class="when">${earnWhen(r)} · ${SESSION[r.session] || ""}</span>
+      <span class="days">${d === 0 ? "today" : d === 1 ? "tomorrow" : `in ${d} d`}</span>
+      ${r.watch ? `<button class="earn-x" type="button" data-rm="${esc(r.ticker)}" title="Remove ${esc(r.ticker)} from the earnings watchlist" aria-label="Remove ${esc(r.ticker)}">×</button>` : "<span></span>"}
+      <span class="sub">${esc(r.name)}${tags}</span></li>`;
+  }).join("") || `<li class="note">No upcoming reports for these tickers.</li>`;
+  const none = earnData.rows.filter(r => !(r.date && earnDays(r) >= 0));
+  $("#earnNone").innerHTML = none.length ? "No upcoming date: " + none.map(r =>
+    `${esc(r.ticker)}${r.kind === "etf" ? " (ETF)" : r.kind === "error" ? " (lookup failed)" : ""}${r.watch ? ` <button class="earn-x" type="button" data-rm="${esc(r.ticker)}" aria-label="Remove ${esc(r.ticker)}">×</button>` : ""}`).join(", ") : "";
+  $("#earnLead").value = String(earnLead());
+  $("#earnAsof").textContent = `Watchlist: ${earnData.watch.join(", ") || "none"} · plus open positions · updated ${new Date(earnAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+}
+function earnPopup(r, d) {
+  const box = document.createElement("div");
+  box.className = "vix-alert";
+  box.style.setProperty("--c", r.at_risk ? "#e5383b" : "#e0a100");
+  const head = `${r.ticker} reports ${d === 0 ? "today" : d === 1 ? "tomorrow" : `in ${d} days`}${SESSION[r.session] && r.session !== "tns" ? ", " + SESSION[r.session].toLowerCase() : ""}`;
+  const body = r.at_risk ? `You hold ${r.ticker} options expiring ${r.exp}, after the report. Expect an IV crush and a big move.`
+    : r.held ? `You hold ${r.ticker}; your positions expire before the report.` : `${r.name}${r.eps_est != null ? ` · EPS est. ${f2(r.eps_est)}` : ""}${r.estimated ? " · date not confirmed" : ""}`;
+  box.innerHTML = `<h3>${esc(head)}</h3><p>${esc(body)}</p>
+    <div class="inline" style="justify-content:space-between"><span class="note">${earnWhen(r)}</span><button class="ghost small" type="button">Dismiss</button></div>`;
+  box.querySelector("button").onclick = () => box.remove();
+  $("#vixAlerts").prepend(box);
+  try {
+    const a = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.18, 0.36].forEach((t, i) => {   // rising three-note chime, different from VIX and red folder
+      const o = a.createOscillator(), g = a.createGain();
+      o.frequency.value = [523, 659, 784][i]; g.gain.setValueAtTime(0.12, a.currentTime + t);
+      g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + t + 0.5);
+      o.connect(g); g.connect(a.destination); o.start(a.currentTime + t); o.stop(a.currentTime + t + 0.5);
+    });
+  } catch {}
+  if ("Notification" in window && Notification.permission === "granted") {
+    try { new Notification(head, { body, tag: "earn-" + r.ticker + r.date }); } catch {}
+  }
+}
+function earnTick() {
+  const lead = earnLead();
+  if (!earnData || !lead) return;
+  const fired = store.get("earnFired", {}), now = Date.now();
+  for (const r of earnData.rows) {
+    if (!r.date) continue;
+    const d = earnDays(r);
+    // one heads-up once the report is within the lead window, and one on report day
+    for (const [k, open] of [["pre", d > 0 && d <= lead], ["day", d === 0]]) {
+      const key = `${r.ticker}|${r.date}|${k}`;
+      if (open && !fired[key]) { fired[key] = now; earnPopup(r, d); }
+    }
+  }
+  for (const k in fired) if (now - fired[k] > 30 * DAY) delete fired[k];
+  store.set("earnFired", fired);
+}
+async function earnSave(tickers) {
+  $("#earnMsg").textContent = "Saving…";
+  try { earnData = await api("/api/earnings/watch", { tickers }); earnAt = Date.now(); $("#earnMsg").textContent = ""; renderEarn(); earnTick(); }
+  catch (e) { $("#earnMsg").textContent = e.message; }
+}
+function earnOpen(open) {
+  $("#earnPanel").hidden = !open;
+  $("#earnBtn").setAttribute("aria-expanded", String(open));
+  if (open && Date.now() - earnAt > 5 * 60000) loadEarn();
+}
+$("#earnBtn").onclick = () => earnOpen($("#earnPanel").hidden);
+$("#earnClose").onclick = () => { earnOpen(false); $("#earnBtn").focus(); };
+$("#earnRefresh").onclick = loadEarn;
+$("#earnLead").onchange = e => { store.set("earnLead", +e.target.value); earnTick(); };
+$("#earnAddForm").onsubmit = e => {
+  e.preventDefault();
+  const t = $("#earnAdd").value.trim().toUpperCase();
+  if (!t || !earnData) return;
+  $("#earnAdd").value = "";
+  if (!earnData.watch.includes(t)) earnSave([...earnData.watch, t]);
+};
+$("#earnPanel").onclick = e => {
+  const b = e.target.closest("[data-rm]");
+  if (b && earnData) earnSave(earnData.watch.filter(t => t !== b.dataset.rm));
+};
+document.addEventListener("click", e => { if (!$("#earnPanel").hidden && e.target.isConnected && !e.target.closest(".earn-wrap") && !e.target.closest(".vix-alert")) earnOpen(false); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#earnPanel").hidden) { earnOpen(false); $("#earnBtn").focus(); } });
+loadEarn();
+setInterval(() => { if (Date.now() - earnAt > EARN_EVERY) loadEarn(); else { renderEarn(); earnTick(); } }, 60000);
 
 /* ================= Fear & Greed dial ================= */
 // CNN's Fear & Greed Index (via /api/feargreed, which caches it for 10 min), drawn as a dial

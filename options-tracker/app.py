@@ -17,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import tracker
+import earnings
 from econ_calendar import usd_events
 from fear_greed import fear_greed
 from fees import order_fees
@@ -74,6 +75,25 @@ def news_feed(extra):
     asked = [x.strip().upper() for x in extra.split(",") if x.strip()][:5]
     tickers = list(dict.fromkeys(asked + held))
     return {"tickers": tickers, "held": held, "stories": news(tickers)[:60]}
+
+
+def earnings_feed():
+    """Upcoming reports for the earnings watchlist plus every ticker held open, with each one's latest expiration."""
+    with db_lock:
+        trades = tracker.load(DB)
+    held = {}
+    for t in trades:
+        if t["status"] == "open":
+            held[t["ticker"]] = max(held.get(t["ticker"], ""), t.get("exp") or "")
+    return earnings.upcoming(held)
+
+
+def save_earnings_watch(tickers):
+    try:
+        earnings.save_watchlist(tickers)
+    except ValueError as e:
+        raise tracker.TradeError(str(e))
+    return earnings_feed()
 
 
 def vix_levels():
@@ -167,6 +187,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(usd_events)
         elif url.path == "/api/feargreed":
             self.guard(fear_greed)
+        elif url.path == "/api/earnings":
+            self.guard(earnings_feed)
         elif url.path == "/api/news":
             self.guard(lambda: news_feed(q.get("tickers", "")))
         else:
@@ -250,6 +272,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(add_position)
         elif path == "/api/vix/levels":
             self.guard(lambda: {"levels": save_vix_levels(body.get("levels"))})
+        elif path == "/api/earnings/watch":
+            self.guard(lambda: save_earnings_watch(body.get("tickers")))
         elif path == "/api/positions/close":
             self.guard(close_position)
         else:
