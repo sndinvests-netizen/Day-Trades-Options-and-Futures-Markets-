@@ -107,6 +107,8 @@ def vix_levels():
 def save_vix_levels(levels):
     out = []
     for l in levels or []:
+        if not isinstance(l, dict):
+            raise tracker.TradeError("Each VIX level needs a price")
         try:
             price = float(l.get("price"))
         except (TypeError, ValueError):
@@ -204,6 +206,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
         except ValueError:
+            return self.send(400, {"error": "bad JSON"})
+        if not isinstance(body, dict):
             return self.send(400, {"error": "bad JSON"})
         path = urlparse(self.path).path
 
