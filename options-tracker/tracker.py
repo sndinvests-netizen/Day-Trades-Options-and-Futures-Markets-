@@ -508,9 +508,9 @@ def premium_kind(legs):
 
 def premium_kept(legs):
     """For a closed position: premium kept on the option legs after buybacks and all fees."""
-    gross = sum(sign(t) * (t["exit_premium"] - t["premium"]) * MULTIPLIER * t["contracts"]
-                for t in legs if kind(t) != "stock")
-    return gross - sum(t["fees"] + t.get("exit_fees", 0.0) for t in legs)
+    opts = [t for t in legs if kind(t) != "stock"]
+    gross = sum(sign(t) * (t["exit_premium"] - t["premium"]) * MULTIPLIER * t["contracts"] for t in opts)
+    return gross - sum(t["fees"] + t.get("exit_fees", 0.0) for t in opts)
 
 
 def premium_report(trades):
@@ -532,7 +532,8 @@ def premium_report(trades):
         row["collected"] += credit
         m = months.setdefault(legs[0]["opened"][:7], {"collected": 0.0, "kept": 0.0})
         m["collected"] += credit
-        if any(t["status"] == "open" for t in legs):
+        opts = [t for t in legs if kind(t) != "stock"]  # shares held after the call closes don't keep it open
+        if any(t["status"] == "open" for t in opts):
             row["open"] += 1
             row["open_credit"] += credit
             open_positions.append({"ids": [t["id"] for t in legs], "kind": k, "credit": credit})
@@ -541,7 +542,7 @@ def premium_report(trades):
             row["closed_credit"] += credit
             row["kept"] += kept
             row["wins"] += kept > 0
-            closed = max(t["closed"] for t in legs)[:7]
+            closed = max(t["closed"] for t in opts)[:7]
             months.setdefault(closed, {"collected": 0.0, "kept": 0.0})["kept"] += kept
     rows = [r for r in by_kind.values() if r["positions"]]
     total = {key: sum(r[key] for r in rows) for key in
