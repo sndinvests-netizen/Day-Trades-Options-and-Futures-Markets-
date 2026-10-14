@@ -341,6 +341,9 @@ def news(tickers):
     for t in dict.fromkeys(wanted):
         def fetch(t=t):
             try:
+                # yfinance memoizes Search responses for the life of the process, so without this
+                # the feed keeps showing the first headlines it fetched; our own cache sets the pace
+                yf.data.YfData().cache_get.cache_clear()
                 return yf.Search(t, news_count=NEWS_PER_TICKER, max_results=1).news or []
             except Exception:
                 return []
