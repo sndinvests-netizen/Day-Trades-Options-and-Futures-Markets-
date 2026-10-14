@@ -137,9 +137,14 @@ def max_pain(calls, puts):
 
 # ---------- Yahoo ----------
 
+# Cash-settled index options are listed on Yahoo under the index symbol: VIX -> ^VIX
+YAHOO_INDEXES = {"VIX", "SPX", "XSP", "NDX", "RUT"}
+
+
 def yahoo_symbol(ticker):
-    """Yahoo spells class shares with a dash: BRK.B -> BRK-B."""
-    return ticker.upper().strip().replace(".", "-")
+    """Yahoo spells class shares with a dash (BRK.B -> BRK-B) and indexes with a caret (VIX -> ^VIX)."""
+    ticker = ticker.upper().strip().replace(".", "-")
+    return "^" + ticker if ticker in YAHOO_INDEXES else ticker
 
 
 def expirations(ticker):
