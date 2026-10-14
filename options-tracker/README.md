@@ -29,9 +29,9 @@ Your trades are saved to `options-tracker/trades.json`, which is kept out of git
 
 If the Mac is asleep at 6:00 it runs when the Mac wakes up; if the Mac is shut down it doesn't run. To have the Mac wake itself first: `sudo pmset repeat wakeorpoweron MTWRF 05:55:00`.
 
-## Weekday health check (macOS)
+## Weekly health check (macOS)
 
-`health-check.sh` runs Monday to Friday at 6:05 AM, after the morning launch, from `~/Library/LaunchAgents/com.soundinvestmentsolutions.optiontracker-healthcheck.plist`. It starts the tracker if it's down, checks that `trades.json` reads, and calls the positions, chain, VIX, Fear & Greed, economic calendar, earnings and screener endpoints. It sends a text only when something fails (the number is read from `~/.config/sis/owner_phone`, outside the repo). It logs to `~/Library/Logs/option-tracker-health.log`.
+`health-check.sh` runs Sundays at 6:00 PM, ahead of the trading week, from `~/Library/LaunchAgents/com.soundinvestmentsolutions.optiontracker-healthcheck.plist`. It starts the tracker if it's down, checks that `trades.json` reads, and calls the positions, chain, VIX, Fear & Greed, economic calendar, earnings and screener endpoints. It sends a text only when something fails (the number is read from `~/.config/sis/owner_phone`, outside the repo). It logs to `~/Library/Logs/option-tracker-health.log`.
 
 - Run it now: `./health-check.sh`
 - Turn it off: `launchctl bootout gui/$(id -u)/com.soundinvestmentsolutions.optiontracker-healthcheck`

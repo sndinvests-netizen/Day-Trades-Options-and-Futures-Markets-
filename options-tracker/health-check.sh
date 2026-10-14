@@ -1,7 +1,7 @@
 #!/bin/bash
-# Weekday health check for the option tracker (owner request 2026-10-14).
-# Runs at 6:05 AM Mon-Fri via ~/Library/LaunchAgents/com.soundinvestmentsolutions.optiontracker-healthcheck.plist,
-# after launch-morning.sh starts the tracker at 6:00. Texts the owner only when a check fails.
+# Weekly health check for the option tracker (owner request 2026-10-14).
+# Runs Sundays at 6:00 PM via ~/Library/LaunchAgents/com.soundinvestmentsolutions.optiontracker-healthcheck.plist,
+# ahead of the trading week. Texts the owner only when a check fails.
 cd "$(dirname "$0")"
 URL="http://127.0.0.1:8765"
 LOG="$HOME/Library/Logs/option-tracker-health.log"
