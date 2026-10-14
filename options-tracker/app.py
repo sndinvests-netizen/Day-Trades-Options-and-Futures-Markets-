@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlparse
 
 import tracker
 import earnings
+import screener
 from econ_calendar import usd_events
 from fear_greed import fear_greed
 from fees import order_fees
@@ -94,6 +95,20 @@ def save_earnings_watch(tickers):
     except ValueError as e:
         raise tracker.TradeError(str(e))
     return earnings_feed()
+
+
+def screener_feed(q):
+    """Stocks at support. Query: min_cap, min_oi, near (%), stocks_only, at_support (true/false), refresh=1."""
+    def flag(key, default):
+        v = q.get(key)
+        return default if v in (None, "") else v.lower() not in ("0", "false", "no", "off")
+    min_cap = num(q, "min_cap", float, screener.DEFAULT_MIN_CAP)
+    min_oi = num(q, "min_oi", float, screener.DEFAULT_MIN_OI)
+    near = num(q, "near", float, screener.DEFAULT_NEAR)
+    if min_cap < 0 or min_oi < 0 or not 0 < near <= 25:
+        raise tracker.TradeError("min_cap and min_oi can't be negative, and near must be between 0 and 25%")
+    return screener.screen(min_cap, min_oi, near, flag("stocks_only", True), flag("at_support", True),
+                           flag("refresh", False))
 
 
 def vix_levels():
@@ -191,6 +206,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(earnings_feed)
         elif url.path == "/api/news":
             self.guard(lambda: news_feed(q.get("tickers", "")))
+        elif url.path == "/api/screener":
+            self.guard(lambda: screener_feed(q))
         else:
             self.send(404, {"error": "not found"})
 
