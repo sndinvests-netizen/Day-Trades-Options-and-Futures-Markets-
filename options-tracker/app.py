@@ -222,6 +222,8 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
         except ValueError:
             return self.send(400, {"error": "bad JSON"})
+        if not isinstance(body, dict):
+            return self.send(400, {"error": "bad JSON: expected an object"})
         path = urlparse(self.path).path
 
         def add():
@@ -243,10 +245,16 @@ class Handler(BaseHTTPRequestHandler):
                 tracker.save(DB, trades)
             return t
 
+        def leg_list():
+            legs = body.get("legs") or []
+            if not isinstance(legs, list) or not all(isinstance(l, dict) for l in legs):
+                raise tracker.TradeError("legs must be a list of objects")
+            return legs
+
         def add_position():
             legs = [{"type": l.get("type"), "side": l.get("side"), "strike": num(l, "strike"),
                      "exp": l.get("exp") or None, "premium": num(l, "premium"),
-                     "contracts": num(l, "contracts", int, 1)} for l in body.get("legs") or []]
+                     "contracts": num(l, "contracts", int, 1)} for l in leg_list()]
             with db_lock:
                 trades = tracker.load(DB)
                 out = tracker.add_position(trades, str(body.get("ticker", "")), legs, str(body.get("strategy", "")),
@@ -257,7 +265,7 @@ class Handler(BaseHTTPRequestHandler):
 
         def close_position():
             legs = [{"id": num(l, "id", int), "premium": num(l, "premium"), "contracts": num(l, "contracts", int)}
-                    for l in body.get("legs") or []]
+                    for l in leg_list()]
             with db_lock:
                 trades = tracker.load(DB)
                 out = tracker.close_position(trades, legs, num(body, "fees"), body.get("closed") or None)
@@ -266,7 +274,7 @@ class Handler(BaseHTTPRequestHandler):
 
         def fee_quote():
             legs = [{"type": l.get("type"), "action": l.get("action"), "price": num(l, "price", float, 0.0),
-                     "contracts": num(l, "contracts", int, 0) or 0} for l in body.get("legs") or []]
+                     "contracts": num(l, "contracts", int, 0) or 0} for l in leg_list()]
             total, parts = order_fees(str(body.get("ticker", "")), [l for l in legs if l["contracts"] > 0])
             return {"total": total, "parts": parts}
 
