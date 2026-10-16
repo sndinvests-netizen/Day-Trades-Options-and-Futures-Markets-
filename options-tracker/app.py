@@ -98,7 +98,7 @@ def save_earnings_watch(tickers):
 
 
 def screener_feed(q):
-    """Stocks at support. Query: min_cap, min_oi, near (%), stocks_only, at_support (true/false), refresh=1."""
+    """Stocks at support. Query: min_cap, min_oi, near (%), stocks_only, at_support (true/false), level (any|50d|200d|ma), refresh=1."""
     def flag(key, default):
         v = q.get(key)
         return default if v in (None, "") else v.lower() not in ("0", "false", "no", "off")
@@ -107,8 +107,11 @@ def screener_feed(q):
     near = num(q, "near", float, screener.DEFAULT_NEAR)
     if min_cap < 0 or min_oi < 0 or not 0 < near <= 25:
         raise tracker.TradeError("min_cap and min_oi can't be negative, and near must be between 0 and 25%")
+    level = (q.get("level") or "any").lower()
+    if level not in screener.LEVELS:
+        raise tracker.TradeError("level must be any, 50d, 200d or ma")
     return screener.screen(min_cap, min_oi, near, flag("stocks_only", True), flag("at_support", True),
-                           flag("refresh", False))
+                           flag("refresh", False), level)
 
 
 def vix_levels():

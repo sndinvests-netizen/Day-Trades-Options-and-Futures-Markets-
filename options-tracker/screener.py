@@ -232,6 +232,9 @@ def _metrics(base, dates, highs, lows, closes):
                chg1y=last / closes[0] - 1, spark=[round(c, 2) for c in weekly[-53:]],
                last_date=dates[-1].strftime("%Y-%m-%d"), support=None, support_type=None, touches=None,
                dist=None, held=False)
+    for n, key in ((50, "50"), (200, "200")):
+        sma = _sma(closes, n)
+        row["held" + key] = bool(sma and min(closes[-BREAK_DAYS:]) >= sma * (1 - BREAK))
     if sup:
         level, kind, touches = sup
         row.update(support=round(level, 2), support_type=kind, touches=touches, dist=last / level - 1,
@@ -423,8 +426,27 @@ def _start_scan(floor):
     threading.Thread(target=_scan, args=(floor,), daemon=True).start()
 
 
+LEVELS = ("any", "50d", "200d", "ma")   # support-level filter: any level, the 50-day, the 200-day, or either
+
+
+def _at_ma(r, level, near):
+    """The row re-pointed at its 50-day / 200-day MA if the close is 0% to near% above it (and it hasn't
+    just broken it), else None. With level "ma" the closer of the two that qualify wins."""
+    hits = []
+    for key, kind in (("50", "50D"), ("200", "200D")):
+        if level not in ("ma", key + "d"):
+            continue
+        sma = r.get("sma" + key)
+        if not sma or not r.get("held" + key, True):   # rows cached before this filter lack held50/held200
+            continue
+        dist = r["price"] / sma - 1
+        if 0 <= dist <= near / 100:
+            hits.append(dict(r, support=sma, support_type=kind, touches=None, dist=dist, held=True))
+    return min(hits, key=lambda h: h["dist"]) if hits else None
+
+
 def screen(min_cap=DEFAULT_MIN_CAP, min_oi=DEFAULT_MIN_OI, near=DEFAULT_NEAR, stocks_only=True, at_support=True,
-           refresh=False):
+           refresh=False, level="any"):
     if _data is None and not _oi:
         with _lock:
             _load()
@@ -441,7 +463,7 @@ def screen(min_cap=DEFAULT_MIN_CAP, min_oi=DEFAULT_MIN_OI, near=DEFAULT_NEAR, st
         with _lock:
             return dict(_job, oi_queue=len(_oi_queue), oi_running=_oi_running)
     base = {"params": {"min_cap": min_cap, "min_oi": min_oi, "near": near, "stocks_only": stocks_only,
-                       "at_support": at_support},
+                       "at_support": at_support, "level": level},
             "job": progress(), "stale": stale, "now": time.time(),
             "oi_note": "Total open interest across every listed expiration (calls + puts), from Yahoo; "
                        "exchanges update it once a day, overnight."}
@@ -453,7 +475,15 @@ def screen(min_cap=DEFAULT_MIN_CAP, min_oi=DEFAULT_MIN_OI, near=DEFAULT_NEAR, st
     for r in pool:
         if r["type"] == "stock" and r["mktcap"] is not None and r["mktcap"] < min_cap:   # None: built-in list, all large caps
             continue
-        flag = bool(r["dist"] is not None and 0 <= r["dist"] <= near / 100 and r["held"])
+        if level != "any":
+            ma = _at_ma(r, level, near)
+            if ma:
+                r = ma
+            elif at_support:
+                continue
+            flag = bool(ma)
+        else:
+            flag = bool(r["dist"] is not None and 0 <= r["dist"] <= near / 100 and r["held"])
         if at_support and not flag:
             continue
         r = dict(r, at_support=flag)

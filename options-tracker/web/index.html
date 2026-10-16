@@ -391,6 +391,7 @@ tr.pos-leg td.contract { padding-left: 24px; }
 label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3px 5px 3px 12px; border-radius: 999px;
   background: var(--well); border: 1px solid var(--line); box-shadow: var(--well-shadow); font-size: 12px; font-weight: 600; color: var(--text); }
 .scr-chip input { width: 64px; padding: 2px 7px; border-radius: 999px; box-shadow: none; background: var(--panel); text-align: right; font-weight: 700; }
+.scr-chip select { padding: 2px 7px; border-radius: 999px; box-shadow: none; background: var(--panel); font-weight: 700; }
 .scr-chip .u { color: var(--muted); font-weight: 500; padding-right: 6px; }
 .scr-sep { flex: 1; }
 .scr-count { margin-top: 12px; display: flex; gap: 6px 14px; flex-wrap: wrap; align-items: baseline; }
@@ -644,6 +645,8 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
           <input id="scrCap" type="number" min="2" step="1" inputmode="decimal"><span class="u">$B</span></label>
         <label class="scr-chip" title="How far above its support level the stock may close and still count as at support">Within
           <input id="scrNear" type="number" min="0.1" max="25" step="0.5" inputmode="decimal"><span class="u">% above support</span></label>
+        <label class="scr-chip" title="Only stocks sitting on this support level: 50-day MA, 200-day MA, or either one. Any = nearest support of every kind (swing lows and both MAs)">Level
+          <select id="scrLevel"><option value="any">Any support</option><option value="50d">50-day MA</option><option value="200d">200-day MA</option><option value="ma">50 or 200-day MA</option></select></label>
         <button type="button" class="chip" id="scrStocks" aria-pressed="true" title="Stocks only, or stocks plus 25 big optionable ETFs">Type: Stocks only</button>
         <button type="button" class="chip" id="scrAtSup" aria-pressed="true" title="Show only stocks at support, or everything scanned with the At support flag (open interest is looked up only for stocks at support; the rest show – and are kept regardless of the open interest filter)">At support only</button>
         <span class="scr-sep"></span>
@@ -2693,7 +2696,7 @@ const feePartial = wireFees($("#partialForm"), () => ({ ticker: partialLegs[0]?.
     contracts: document.querySelector(`#partialLegs [data-qty="${t.id}"]`)?.value || 0 })) }));
 
 /* ================= screener: stocks at support ================= */
-const SCR_DEFAULTS = { min_oi: 100, min_cap: 10, near: 3, stocks_only: true, at_support: true };   // K contracts, $B, %
+const SCR_DEFAULTS = { min_oi: 100, min_cap: 10, near: 3, stocks_only: true, at_support: true, level: "any" };   // K contracts, $B, %
 let scr = { ...SCR_DEFAULTS, ...store.get("screen", {}) }, scrData = null, scrTimer = null, scrSeq = 0, scrDebounce = null;
 let scrSort = store.get("scrSort", { k: "mktcap", dir: -1 });
 const capFmt = x => x == null ? "–" : x >= 1e12 ? "$" + (x / 1e12).toFixed(2) + "T" : x >= 1e9 ? "$" + (x / 1e9).toFixed(x >= 1e11 ? 0 : 1) + "B" : "$" + (x / 1e6).toFixed(0) + "M";
@@ -2702,7 +2705,7 @@ const sgnPct = (x, d = 1) => x == null ? "–" : (x > 0 ? "+" : "") + (x * 100).
 const SUP_NAME = { "swing low": "Swing low", "200D": "200-day MA", "50D": "50-day MA" };
 
 function scrSync() {
-  $("#scrOi").value = scr.min_oi; $("#scrCap").value = scr.min_cap; $("#scrNear").value = scr.near;
+  $("#scrOi").value = scr.min_oi; $("#scrCap").value = scr.min_cap; $("#scrNear").value = scr.near; $("#scrLevel").value = scr.level || "any";
   for (const [id, on, yes, no] of [["#scrStocks", scr.stocks_only, "Type: Stocks only", "Type: Stocks + ETFs"],
                                    ["#scrAtSup", scr.at_support, "At support only", "All scanned"]]) {
     $(id).classList.toggle("on", on); $(id).setAttribute("aria-pressed", on); $(id).textContent = on ? yes : no;
@@ -2720,7 +2723,7 @@ async function loadScreener(refresh) {
   clearTimeout(scrTimer);
   const seq = ++scrSeq;
   const q = new URLSearchParams({ min_cap: scr.min_cap * 1e9, min_oi: scr.min_oi * 1e3, near: scr.near,
-                                  stocks_only: scr.stocks_only, at_support: scr.at_support });
+                                  stocks_only: scr.stocks_only, at_support: scr.at_support, level: scr.level || "any" });
   if (refresh) q.set("refresh", "1");
   if (!scrData) $("#scrBody").innerHTML = `<div class="note empty">Loading the screener…</div>`;
   try {
@@ -2831,6 +2834,7 @@ function scrCsv() {
 
 $("#scrForm").onsubmit = e => { e.preventDefault(); scrRead(); loadScreener(); };
 for (const id of ["#scrOi", "#scrCap", "#scrNear"]) $(id).addEventListener("input", scrChanged);
+$("#scrLevel").onchange = () => { scr.level = $("#scrLevel").value; loadScreener(); };
 $("#scrStocks").onclick = () => { scr.stocks_only = !scr.stocks_only; scrSync(); loadScreener(); };
 $("#scrAtSup").onclick = () => { scr.at_support = !scr.at_support; scrSync(); loadScreener(); };
 $("#scrClear").onclick = () => { scr = { ...SCR_DEFAULTS }; scrSync(); loadScreener(); };
