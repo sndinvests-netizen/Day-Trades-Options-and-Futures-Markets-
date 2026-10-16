@@ -181,6 +181,18 @@ def _sma(xs, n):
     return sum(xs[-n:]) / n if len(xs) >= n else None
 
 
+def _rsi(xs, n=14):
+    """Wilder's RSI of the last close, or None with fewer than n + 1 closes."""
+    if len(xs) < n + 1:
+        return None
+    gains = [max(b - a, 0) for a, b in zip(xs, xs[1:])]
+    losses = [max(a - b, 0) for a, b in zip(xs, xs[1:])]
+    ag, al = sum(gains[:n]) / n, sum(losses[:n]) / n
+    for g, l in zip(gains[n:], losses[n:]):
+        ag, al = (ag * (n - 1) + g) / n, (al * (n - 1) + l) / n
+    return 100.0 if al == 0 else 100 - 100 / (1 + ag / al)
+
+
 def _support(lows, closes):
     """Nearest support at or below the last close: (level, kind, touches) or None."""
     lows12 = lows[-252:]
@@ -232,6 +244,8 @@ def _metrics(base, dates, highs, lows, closes):
                chg1y=last / closes[0] - 1, spark=[round(c, 2) for c in weekly[-53:]],
                last_date=dates[-1].strftime("%Y-%m-%d"), support=None, support_type=None, touches=None,
                dist=None, held=False)
+    rd, rw = _rsi(closes), _rsi(weekly)
+    row.update(rsi_d=round(rd, 1) if rd is not None else None, rsi_w=round(rw, 1) if rw is not None else None)
     for n, key in ((50, "50"), (200, "200")):
         sma = _sma(closes, n)
         row["held" + key] = bool(sma and min(closes[-BREAK_DAYS:]) >= sma * (1 - BREAK))
@@ -426,6 +440,8 @@ def _start_scan(floor):
     threading.Thread(target=_scan, args=(floor,), daemon=True).start()
 
 
+RSI_MODES = ("any", "oversold", "overbought")   # daily AND weekly RSI below RSI_LOW / above RSI_HIGH
+RSI_LOW, RSI_HIGH = 40, 70
 LEVELS = ("any", "50d", "200d", "ma")   # support-level filter: any level, the 50-day, the 200-day, or either
 
 
@@ -445,8 +461,12 @@ def _at_ma(r, level, near):
     return min(hits, key=lambda h: h["dist"]) if hits else None
 
 
+RSI_MODES = ("any", "oversold", "overbought")   # daily AND weekly RSI below RSI_LOW / above RSI_HIGH
+RSI_LOW, RSI_HIGH = 40, 70
+
+
 def screen(min_cap=DEFAULT_MIN_CAP, min_oi=DEFAULT_MIN_OI, near=DEFAULT_NEAR, stocks_only=True, at_support=True,
-           refresh=False, level="any"):
+           refresh=False, level="any", rsi="any"):
     if _data is None and not _oi:
         with _lock:
             _load()
@@ -463,7 +483,7 @@ def screen(min_cap=DEFAULT_MIN_CAP, min_oi=DEFAULT_MIN_OI, near=DEFAULT_NEAR, st
         with _lock:
             return dict(_job, oi_queue=len(_oi_queue), oi_running=_oi_running)
     base = {"params": {"min_cap": min_cap, "min_oi": min_oi, "near": near, "stocks_only": stocks_only,
-                       "at_support": at_support, "level": level},
+                       "at_support": at_support, "level": level, "rsi": rsi},
             "job": progress(), "stale": stale, "now": time.time(),
             "oi_note": "Total open interest across every listed expiration (calls + puts), from Yahoo; "
                        "exchanges update it once a day, overnight."}
@@ -479,12 +499,16 @@ def screen(min_cap=DEFAULT_MIN_CAP, min_oi=DEFAULT_MIN_OI, near=DEFAULT_NEAR, st
             ma = _at_ma(r, level, near)
             if ma:
                 r = ma
-            elif at_support:
+            elif at_support and rsi == "any":
                 continue
             flag = bool(ma)
         else:
             flag = bool(r["dist"] is not None and 0 <= r["dist"] <= near / 100 and r["held"])
-        if at_support and not flag:
+        if rsi != "any":
+            d, w = r.get("rsi_d"), r.get("rsi_w")   # rows cached before RSI existed have none until the next scan
+            if d is None or w is None or not ((d < RSI_LOW and w < RSI_LOW) if rsi == "oversold" else (d > RSI_HIGH and w > RSI_HIGH)):
+                continue
+        elif at_support and not flag:
             continue
         r = dict(r, at_support=flag)
         hit = _oi.get(r["ticker"]) or {}

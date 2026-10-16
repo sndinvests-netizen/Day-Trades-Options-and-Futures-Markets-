@@ -110,8 +110,11 @@ def screener_feed(q):
     level = (q.get("level") or "any").lower()
     if level not in screener.LEVELS:
         raise tracker.TradeError("level must be any, 50d, 200d or ma")
+    rsi = (q.get("rsi") or "any").lower()
+    if rsi not in screener.RSI_MODES:
+        raise tracker.TradeError("rsi must be any, oversold or overbought")
     return screener.screen(min_cap, min_oi, near, flag("stocks_only", True), flag("at_support", True),
-                           flag("refresh", False), level)
+                           flag("refresh", False), level, rsi)
 
 
 def vix_levels():

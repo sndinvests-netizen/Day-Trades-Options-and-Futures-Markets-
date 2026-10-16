@@ -156,6 +156,11 @@ button.danger.primary:hover { filter: brightness(1.06); background: linear-gradi
 .econ a { color: var(--btn-border); }
 .econ-open, .fng-open { display: none; }
 .wrap:not(.with-econ) .econ-open, .wrap:not(.with-fng) .fng-open { display: inline-flex; }
+/* hidden left panels: the Show buttons are tabs pinned to the left edge, where the panels were */
+.wrap:not(.with-econ) .econ-open, .wrap:not(.with-fng) .fng-open { position: fixed; left: 0; z-index: 40; border-radius: 0 10px 10px 0;
+  padding: 10px 12px; box-shadow: var(--shadow); font-weight: 700; }
+.wrap:not(.with-econ) .econ-open { top: 140px; }
+.wrap:not(.with-fng) .fng-open { top: 190px; }
 /* CNN Fear & Greed dial: red (fear) through gray (neutral) to green (greed), CNN's five bands */
 .fng { margin-bottom: 0; flex: none; }
 .fng-body { margin-top: 6px; }
@@ -204,6 +209,9 @@ button.danger.primary:hover { filter: brightness(1.06); background: linear-gradi
 .news-list .fresh { color: var(--up); font-weight: 600; }
 .news-open { display: none; }
 .wrap:not(.with-news) .news-open { display: inline-flex; }
+/* hidden news panel: the Show button is a tab pinned to the right edge, where the panel was, not up in the header */
+.wrap:not(.with-news) .news-open { position: fixed; right: 0; top: 140px; z-index: 40; border-radius: 10px 0 0 10px; padding: 10px 12px;
+  box-shadow: var(--shadow); font-weight: 700; }
 
 .check { flex-direction: row; align-items: center; gap: 7px; padding-bottom: 8px; cursor: pointer; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
@@ -400,9 +408,11 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
 #scrTable th[data-k]:hover, #scrTable th.sorted { color: var(--text); }
 #scrTable tbody tr:hover td { background-color: var(--hover); }
 #scrTable td.tk { text-align: left; }
+#scrTable th, #scrTable td { padding: 5px 6px; }   /* compact, so the extra RSI columns don't push Open interest off the edge */
+#scrTable .spark { width: 72px; }
 .tk-btn { font: inherit; background: none; border: 0; padding: 0; cursor: pointer; color: var(--text); font-weight: 700; text-align: left; }
 .tk-btn:hover { color: var(--pri-edge); text-decoration: underline; }
-.tk-name { display: block; font-size: 11.5px; color: var(--muted); max-width: 190px; overflow: hidden; text-overflow: ellipsis; }
+.tk-name { display: block; font-size: 11.5px; color: var(--muted); max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
 .spark-link { display: block; color: inherit; text-decoration: none; cursor: pointer; }
 .spark-link:hover .spark polyline { stroke-width: 2.4; }
 .spark { display: block; width: 96px; height: 28px; margin-left: auto; overflow: visible; }
@@ -649,6 +659,8 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
           <input id="scrNear" type="number" min="0.1" max="25" step="0.5" inputmode="decimal"><span class="u">% above support</span></label>
         <label class="scr-chip" title="Only stocks sitting on this support level: 50-day MA, 200-day MA, or either one. Any = nearest support of every kind (swing lows and both MAs)">Level
           <select id="scrLevel"><option value="any">Any support</option><option value="50d">50-day MA</option><option value="200d">200-day MA</option><option value="ma">50 or 200-day MA</option></select></label>
+        <label class="scr-chip" title="Daily AND weekly 14-period RSI: Oversold = both below 40, Overbought = both above 70. While an RSI filter is on, 'At support only' is ignored (the At support column still shows)">RSI
+          <select id="scrRsi"><option value="any">Any</option><option value="oversold">Oversold (D &amp; W &lt; 40)</option><option value="overbought">Overbought (D &amp; W &gt; 70)</option></select></label>
         <button type="button" class="chip" id="scrStocks" aria-pressed="true" title="Stocks only, or stocks plus 25 big optionable ETFs">Type: Stocks only</button>
         <button type="button" class="chip" id="scrAtSup" aria-pressed="true" title="Show only stocks at support, or everything scanned with the At support flag (open interest is looked up only for stocks at support; the rest show – and are kept regardless of the open interest filter)">At support only</button>
         <span class="scr-sep"></span>
@@ -2698,7 +2710,7 @@ const feePartial = wireFees($("#partialForm"), () => ({ ticker: partialLegs[0]?.
     contracts: document.querySelector(`#partialLegs [data-qty="${t.id}"]`)?.value || 0 })) }));
 
 /* ================= screener: stocks at support ================= */
-const SCR_DEFAULTS = { min_oi: 100, min_cap: 10, near: 3, stocks_only: true, at_support: true, level: "any" };   // K contracts, $B, %
+const SCR_DEFAULTS = { min_oi: 100, min_cap: 10, near: 3, stocks_only: true, at_support: true, level: "any", rsi: "any" };   // K contracts, $B, %
 let scr = { ...SCR_DEFAULTS, ...store.get("screen", {}) }, scrData = null, scrTimer = null, scrSeq = 0, scrDebounce = null;
 let scrSort = store.get("scrSort", { k: "mktcap", dir: -1 });
 const capFmt = x => x == null ? "–" : x >= 1e12 ? "$" + (x / 1e12).toFixed(2) + "T" : x >= 1e9 ? "$" + (x / 1e9).toFixed(x >= 1e11 ? 0 : 1) + "B" : "$" + (x / 1e6).toFixed(0) + "M";
@@ -2707,7 +2719,7 @@ const sgnPct = (x, d = 1) => x == null ? "–" : (x > 0 ? "+" : "") + (x * 100).
 const SUP_NAME = { "swing low": "Swing low", "200D": "200-day MA", "50D": "50-day MA" };
 
 function scrSync() {
-  $("#scrOi").value = scr.min_oi; $("#scrCap").value = scr.min_cap; $("#scrNear").value = scr.near; $("#scrLevel").value = scr.level || "any";
+  $("#scrOi").value = scr.min_oi; $("#scrCap").value = scr.min_cap; $("#scrNear").value = scr.near; $("#scrLevel").value = scr.level || "any"; $("#scrRsi").value = scr.rsi || "any";
   for (const [id, on, yes, no] of [["#scrStocks", scr.stocks_only, "Type: Stocks only", "Type: Stocks + ETFs"],
                                    ["#scrAtSup", scr.at_support, "At support only", "All scanned"]]) {
     $(id).classList.toggle("on", on); $(id).setAttribute("aria-pressed", on); $(id).textContent = on ? yes : no;
@@ -2725,7 +2737,7 @@ async function loadScreener(refresh) {
   clearTimeout(scrTimer);
   const seq = ++scrSeq;
   const q = new URLSearchParams({ min_cap: scr.min_cap * 1e9, min_oi: scr.min_oi * 1e3, near: scr.near,
-                                  stocks_only: scr.stocks_only, at_support: scr.at_support, level: scr.level || "any" });
+                                  stocks_only: scr.stocks_only, at_support: scr.at_support, level: scr.level || "any", rsi: scr.rsi || "any" });
   if (refresh) q.set("refresh", "1");
   if (!scrData) $("#scrBody").innerHTML = `<div class="note empty">Loading the screener…</div>`;
   try {
@@ -2764,6 +2776,7 @@ function scrCols() {
     ["support", "Support"], ["support_type", "Support type", "left", "Swing low (with how many swing lows make up the level), 200-day or 50-day moving average"],
     ["dist", "Above support", "", "How far the last close is above the support level"],
     ["off_high", "Off 52w high"], ["vs200", "vs 200D", "", "Last close vs the 200-day simple moving average"],
+    ["rsi_d", "RSI D", "", "Daily 14-period RSI (Wilder)"], ["rsi_w", "RSI W", "", "Weekly 14-period RSI (Wilder), counting the current week so far"],
     ["oi", "Open interest", "", d.oi_note || ""],
   ];
 }
@@ -2816,6 +2829,7 @@ function renderScreener() {
       <td class="left" title="${esc(supTip)}">${r.support_type ? esc(SUP_NAME[r.support_type] || r.support_type) + (r.touches ? ` <span class="note">×${r.touches}</span>` : "") : "–"}</td>
       <td>${r.dist == null ? "–" : pct(r.dist, 2)}</td>
       <td class="${signed(r.off_high)}">${sgnPct(r.off_high)}</td><td class="${signed(r.vs200)}">${sgnPct(r.vs200)}</td>
+      <td>${r.rsi_d == null ? "–" : r.rsi_d.toFixed(0)}</td><td>${r.rsi_w == null ? "–" : r.rsi_w.toFixed(0)}</td>
       <td title="${esc(oiTip)}">${r.oi == null ? `<span class="note">${r.oi_error ? "failed" : r.at_support ? "…" : "–"}</span>` : oiFmt(r.oi)}</td></tr>`;
   }).join("");
   $("#scrBody").innerHTML = `<div class="scroll"><table id="scrTable">${head}<tbody>${body}</tbody></table></div>`;
@@ -2824,7 +2838,7 @@ function renderScreener() {
 function scrCsv() {
   if (!scrData || !scrData.rows.length) return toast("Nothing to download yet.", false);
   const cols = ["ticker", "name", "sector", "price", "day_pct", "mktcap", "chg1y", "at_support", "support", "support_type", "touches",
-                "dist", "high52", "off_high", "sma200", "vs200", "sma50", "oi", "oi_calls", "oi_puts", "oi_exps", "last_date"];
+                "dist", "high52", "off_high", "sma200", "vs200", "sma50", "rsi_d", "rsi_w", "oi", "oi_calls", "oi_puts", "oi_exps", "last_date"];
   const cell = v => v == null ? "" : typeof v === "number" ? String(+v.toFixed(6)) : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
   const csv = [cols.join(","), ...scrRows().map(r => cols.map(c => cell(r[c])).join(","))].join("\n");
   const a = document.createElement("a");
@@ -2837,6 +2851,7 @@ function scrCsv() {
 $("#scrForm").onsubmit = e => { e.preventDefault(); scrRead(); loadScreener(); };
 for (const id of ["#scrOi", "#scrCap", "#scrNear"]) $(id).addEventListener("input", scrChanged);
 $("#scrLevel").onchange = () => { scr.level = $("#scrLevel").value; loadScreener(); };
+$("#scrRsi").onchange = () => { scr.rsi = $("#scrRsi").value; loadScreener(); };
 $("#scrStocks").onclick = () => { scr.stocks_only = !scr.stocks_only; scrSync(); loadScreener(); };
 $("#scrAtSup").onclick = () => { scr.at_support = !scr.at_support; scrSync(); loadScreener(); };
 $("#scrClear").onclick = () => { scr = { ...SCR_DEFAULTS }; scrSync(); loadScreener(); };
