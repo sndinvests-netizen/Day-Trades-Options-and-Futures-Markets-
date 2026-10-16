@@ -403,6 +403,8 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
 .tk-btn { font: inherit; background: none; border: 0; padding: 0; cursor: pointer; color: var(--text); font-weight: 700; text-align: left; }
 .tk-btn:hover { color: var(--pri-edge); text-decoration: underline; }
 .tk-name { display: block; font-size: 11.5px; color: var(--muted); max-width: 190px; overflow: hidden; text-overflow: ellipsis; }
+.spark-link { display: block; color: inherit; text-decoration: none; cursor: pointer; }
+.spark-link:hover .spark polyline { stroke-width: 2.4; }
 .spark { display: block; width: 96px; height: 28px; margin-left: auto; overflow: visible; }
 .spark polyline { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
 .spark path { fill: currentColor; opacity: .12; stroke: none; }
@@ -2808,7 +2810,7 @@ function renderScreener() {
         ${r.name && r.name !== r.ticker ? `<span class="tk-name" title="${esc(r.name)}">${esc(r.name)}</span>` : ""}</td>
       <td class="left">${esc(r.sector || "–")}</td><td>${f2(r.price)}</td>
       <td class="${signed(r.day_pct)}">${sgnPct(r.day_pct, 2)}</td><td>${capFmt(r.mktcap)}</td>
-      <td class="${signed(r.chg1y)}" title="1-year change ${sgnPct(r.chg1y)}">${spark(r.spark)}</td>
+      <td class="${signed(r.chg1y)}" ><a class="spark-link" href="https://www.tradingview.com/chart/?symbol=${encodeURIComponent(r.ticker.replace("-", "."))}" target="_blank" rel="noopener" title="1-year change ${sgnPct(r.chg1y)}. Click to open ${esc(r.ticker)} on TradingView">${spark(r.spark)}</a></td>
       <td>${r.at_support ? `<span class="hit">Yes</span>` : `<span class="note">No</span>`}</td>
       <td title="${esc(supTip)}">${r.support == null ? "–" : f2(r.support)}</td>
       <td class="left" title="${esc(supTip)}">${r.support_type ? esc(SUP_NAME[r.support_type] || r.support_type) + (r.touches ? ` <span class="note">×${r.touches}</span>` : "") : "–"}</td>
