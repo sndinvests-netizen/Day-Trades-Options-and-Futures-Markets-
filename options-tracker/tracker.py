@@ -20,6 +20,7 @@ Usage examples:
 """
 import argparse
 import json
+import math
 import os
 import shutil
 import sys
@@ -173,10 +174,11 @@ def add_position(trades, ticker, legs, strategy="", fees=None, opened=None, note
     for leg in legs:
         if leg.get("type") not in ("put", "call", "stock") or leg.get("side") not in ("buy", "sell"):
             raise TradeError("each leg needs type put/call/stock and side buy/sell")
-        if leg["premium"] is None or leg["premium"] < 0 or not leg.get("contracts") or leg["contracts"] < 1:
+        if (leg["premium"] is None or not math.isfinite(leg["premium"]) or leg["premium"] < 0
+                or not leg.get("contracts") or leg["contracts"] < 1):
             raise TradeError("each leg needs a price of 0 or more and at least 1 contract")
         if leg["type"] != "stock":
-            if not leg.get("strike") or leg["strike"] <= 0:
+            if not leg.get("strike") or not math.isfinite(leg["strike"]) or leg["strike"] <= 0:
                 raise TradeError("strike must be above 0")
             try:
                 leg["dte"] = dte(leg["exp"], opened)
