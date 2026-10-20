@@ -6,6 +6,7 @@ trades.json.bak
 vix_levels.json
 econ_cache.json
 fng_cache.json
+breadth_cache.json
 earnings_cache.json
 earnings_watch.json
 screener_cache.json

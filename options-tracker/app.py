@@ -21,6 +21,7 @@ import earnings
 import screener
 from econ_calendar import usd_events
 from fear_greed import fear_greed
+from breadth import breadth
 from fees import order_fees
 from options_data import QuoteError, chain, news, vix
 
@@ -208,6 +209,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(usd_events)
         elif url.path == "/api/feargreed":
             self.guard(fear_greed)
+        elif url.path == "/api/breadth":
+            self.guard(breadth)
         elif url.path == "/api/earnings":
             self.guard(earnings_feed)
         elif url.path == "/api/news":

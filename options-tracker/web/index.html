@@ -154,13 +154,25 @@ button.danger.primary:hover { filter: brightness(1.06); background: linear-gradi
 .econ .econ-lead { flex-direction: row; align-items: center; gap: 5px; white-space: nowrap; }
 .econ .econ-lead select { padding: 2px 6px; }
 .econ a { color: var(--btn-border); }
-.econ-open, .fng-open { display: none; }
-.wrap:not(.with-econ) .econ-open, .wrap:not(.with-fng) .fng-open { display: inline-flex; }
+.econ-open, .fng-open, .brd-open { display: none; }
+.wrap:not(.with-econ) .econ-open, .wrap:not(.with-fng) .fng-open, .wrap:not(.with-brd) .brd-open { display: inline-flex; }
 /* hidden left panels: the Show buttons are tabs pinned to the left edge, where the panels were */
-.wrap:not(.with-econ) .econ-open, .wrap:not(.with-fng) .fng-open { position: fixed; left: 0; z-index: 40; border-radius: 0 10px 10px 0;
+.wrap:not(.with-econ) .econ-open, .wrap:not(.with-fng) .fng-open, .wrap:not(.with-brd) .brd-open { position: fixed; left: 0; z-index: 40; border-radius: 0 10px 10px 0;
   padding: 10px 12px; box-shadow: var(--shadow); font-weight: 700; }
 .wrap:not(.with-econ) .econ-open { top: 140px; }
 .wrap:not(.with-fng) .fng-open { top: 190px; }
+.wrap:not(.with-brd) .brd-open { top: 240px; }
+/* S&P 500 breadth: % above the 50-day on a 0-100 bar, same red-to-green scale as Fear & Greed */
+.brd-gauge { position: relative; height: 12px; border-radius: 6px; margin: 20px 2px 4px; background: var(--fng-scale); }
+.brd-gauge s { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--panel); opacity: .8; }
+.brd-gauge i { position: absolute; top: -5px; width: 5px; height: 22px; margin-left: -2.5px; border-radius: 3px;
+  background: var(--text); box-shadow: 0 0 0 2px var(--panel); }
+.brd-gauge u { position: absolute; top: -17px; text-decoration: none; font-size: 10px; color: var(--muted); transform: translateX(-50%); }
+.brd-scale { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin: 0 2px; }
+.brd-split { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin: 3px 0 1px; background: var(--line); }
+.brd-split .u { background: var(--up); } .brd-split .d { background: var(--down); }
+.brd .fng-hist li.wide { display: block; }
+.brd .fng-hist li.wide .row { display: flex; justify-content: space-between; gap: 6px; }
 /* CNN Fear & Greed dial: red (fear) through gray (neutral) to green (greed), CNN's five bands */
 .fng { margin-bottom: 0; flex: none; }
 .fng-body { margin-top: 6px; }
@@ -466,6 +478,7 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
     </div>
     <button class="ghost small econ-open" type="button" id="econShow" title="Show the red-folder calendar">Show calendar</button>
     <button class="ghost small fng-open" type="button" id="fngShow" title="Show the Fear &amp; Greed meter">Show Fear &amp; Greed</button>
+    <button class="ghost small brd-open" type="button" id="brdShow" title="Show the market breadth panel">Show breadth</button>
     <button class="ghost small news-open" type="button" id="newsShow" title="Show the news panel">Show news</button>
   </header>
 
@@ -502,6 +515,18 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
     <div class="note" id="fngAsof">CNN Fear &amp; Greed Index, 0 to 100.</div>
     <div class="fng-body" id="fngBody"><div class="note">Loading Fear &amp; Greed…</div></div>
     <div class="note" style="margin-top:8px">Source: <a href="https://www.cnn.com/markets/fear-and-greed" target="_blank" rel="noopener noreferrer">CNN</a>. Built from seven market indicators; updates through the trading day.</div>
+  </aside>
+
+  <!-- ===== S&P 500 market breadth ===== -->
+  <aside class="panel fng brd" id="brdPanel" aria-label="Market breadth">
+    <div class="news-head">
+      <h2>Market breadth</h2>
+      <span><button class="ghost small" type="button" id="brdRefresh">Refresh</button>
+        <button class="ghost small" type="button" id="brdHide" title="Hide the market breadth panel">Hide</button></span>
+    </div>
+    <div class="note" id="brdAsof">S&amp;P 500 stocks above their moving averages.</div>
+    <div class="fng-body" id="brdBody"><div class="note">Loading market breadth… (the first load takes about 15 seconds)</div></div>
+    <div class="note" style="margin-top:8px">Computed here from Yahoo Finance daily prices for every S&amp;P 500 member, about 15 min delayed. Updates every 15 minutes.</div>
   </aside>
   </div>
 
@@ -1240,7 +1265,7 @@ const FNG_BANDS = [[0, 25, "Extreme Fear", "--fng-xf"], [25, 45, "Fear", "--fng-
 let fngData = null, fngAt = 0;
 const fngBand = v => FNG_BANDS.find(b => Math.round(v) < b[1]) || FNG_BANDS[4];
 function leftShown() {
-  $(".wrap").classList.toggle("with-left", !$("#econPanel").classList.contains("hidden") || !$("#fngPanel").classList.contains("hidden"));
+  $(".wrap").classList.toggle("with-left", ["#econPanel", "#fngPanel", "#brdPanel"].some(id => !$(id).classList.contains("hidden")));
 }
 function fngShown(on) {
   $(".wrap").classList.toggle("with-fng", on);
@@ -1309,6 +1334,74 @@ $("#fngShow").onclick = () => fngShown(true);
 setInterval(() => {
   if (!document.hidden && !$("#fngPanel").classList.contains("hidden") && Date.now() - fngAt > FNG_EVERY) loadFng();
 }, 30000);
+
+/* ================= Market breadth ================= */
+// S&P 500 breadth (via /api/breadth, computed by breadth.py from Yahoo daily bars, cached 15 min):
+// % of members above their 50-day average on a 0-100 bar, plus the 200-day, advancers/decliners and new highs/lows.
+const BRD_EVERY = 15 * 60 * 1000;
+const BRD_BANDS = [[0, 20, "Oversold", "--fng-xf"], [20, 40, "Weak", "--fng-f"], [40, 60, "Neutral", "--fng-n"],
+                   [60, 80, "Healthy", "--fng-g"], [80, 101, "Overbought", "--fng-xg"]];
+const BRD_NOTES = { Oversold: "Washed out: most stocks are below their 50-day. Often near short-term bottoms.",
+  Weak: "Fewer than 4 in 10 stocks are in short-term uptrends.", Neutral: "About half the market is above its 50-day.",
+  Healthy: "Broad participation: most stocks are in short-term uptrends.",
+  Overbought: "Stretched: 8 in 10 or more are above their 50-day. Rallies often pause here." };
+let brdData = null, brdAt = 0;
+const brdBand = v => BRD_BANDS.find(b => Math.round(v) < b[1]) || BRD_BANDS[4];
+function brdShown(on) {
+  $(".wrap").classList.toggle("with-brd", on);
+  $("#brdPanel").classList.toggle("hidden", !on);
+  store.set("brd", on);
+  leftShown();
+  if (on && (!brdData || Date.now() - brdAt > BRD_EVERY)) loadBrd();
+}
+async function loadBrd() {
+  brdAt = Date.now();
+  try {
+    brdData = await api("/api/breadth");
+    renderBrd();
+  } catch (e) {
+    if (!brdData) $("#brdBody").innerHTML = `<div class="note">Couldn't load market breadth: ${esc(e.message)}</div>`;
+  }
+}
+function renderBrd() {
+  const d = brdData;
+  if (!d) return;
+  const band = brdBand(d.above50), pct = v => `${Math.round(v)}%`;
+  const delta = (now, then) => { const c = Math.round(now - then); return `<span class="chg note">${c > 0 ? "+" : ""}${c}</span>`; };
+  const row = (label, now, then, tip) => `<li title="${esc(tip)}"><span>${esc(label)}</span>
+      <span class="v">${pct(then)}</span>${delta(now, then)}</li>`;
+  const total = d.advancers + d.decliners + d.unchanged || 1;
+  const ticks = [20, 40, 60, 80].map(t => `<s style="left:${t}%"></s>`).join("");
+  $("#brdBody").innerHTML = `
+    <div class="fng-read"><div class="fng-score" style="color:var(${band[3]})">${pct(d.above50)}</div>
+      <div class="fng-rating" style="--c:var(${band[3]})"><span class="sw"></span>${band[2]}
+        <span class="dl" style="color:${d.above50 >= d.above50_week ? "var(--up)" : "var(--down)"}">${d.above50 >= d.above50_week ? "▲" : "▼"} ${Math.abs(d.above50 - d.above50_week).toFixed(0)} this week</span></div>
+      <div class="note">of S&amp;P 500 stocks are above their 50-day average</div></div>
+    <div class="brd-gauge" role="img" aria-label="${pct(d.above50)} above the 50-day, ${band[2]}">${ticks}
+      <u style="left:${Math.max(0, Math.min(100, d.above50_week))}%" title="A week ago">wk</u>
+      <i style="left:${Math.max(0, Math.min(100, d.above50))}%"></i></div>
+    <div class="brd-scale"><span>Oversold</span><span>Neutral</span><span>Overbought</span></div>
+    <div class="note" style="margin-top:6px">${esc(BRD_NOTES[band[2]])}</div>
+    <ul class="fng-hist">
+      ${row("50-day, 1 week ago", d.above50, d.above50_week, "Share above the 50-day 5 sessions ago; the right column is the change since")}
+      ${row("50-day, 1 month ago", d.above50, d.above50_month, "Share above the 50-day 21 sessions ago; the right column is the change since")}
+      <li title="Long-term trend: share above the 200-day; the right column is the change over the last month"><span>Above 200-day</span>
+        <span class="v">${pct(d.above200)}</span>${delta(d.above200, d.above200_month)}</li>
+      <li class="wide" title="Members up vs down since the previous close (${d.unchanged} unchanged)"><div class="row"><span>Advancers / decliners</span>
+        <span><span class="v" style="color:var(--up)">${d.advancers}</span> / <span class="v" style="color:var(--down)">${d.decliners}</span></span></div>
+        <div class="brd-split"><span class="u" style="width:${(100 * d.advancers / total).toFixed(1)}%"></span><span class="d" style="width:${(100 * d.decliners / total).toFixed(1)}%"></span></div></li>
+      <li title="Members whose high (or low) today is the highest (lowest) of the past 52 weeks"><span>New 52-wk highs / lows</span>
+        <span><span class="v" style="color:var(--up)">${d.new_highs}</span> / <span class="v" style="color:var(--down)">${d.new_lows}</span></span><span></span></li>
+    </ul>`;
+  const when = d.fetched ? new Date(d.fetched * 1000).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) : "–";
+  $("#brdAsof").textContent = `S&P 500, ${d.members} stocks · prices through ${d.as_of} · checked ${when}` + (d.error ? " · offline, showing last copy" : "");
+}
+$("#brdRefresh").onclick = loadBrd;
+$("#brdHide").onclick = () => brdShown(false);
+$("#brdShow").onclick = () => brdShown(true);
+setInterval(() => {
+  if (!document.hidden && !$("#brdPanel").classList.contains("hidden") && Date.now() - brdAt > BRD_EVERY) loadBrd();
+}, 60000);
 
 /* ================= VIX ================= */
 // Your VIX levels live in vix_levels.json on this computer. Every minute the tracker checks ^VIX and
@@ -2888,6 +2981,7 @@ if (startTab !== "chain") showTab(startTab);
 newsShown(store.get("news", true));
 econShown(store.get("econ", true));
 fngShown(store.get("fng", true));
+brdShown(store.get("brd", true));
 loadVix();
 </script>
 <script>
