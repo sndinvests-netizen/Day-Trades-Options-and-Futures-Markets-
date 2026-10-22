@@ -66,7 +66,7 @@ def positions():
               for n, c, w, r in tracker.report_groups(trades)]
     collateral, long_cost = tracker.open_totals(trades)
     return {"open": open_, "closed": closed, "report": report, "premium": tracker.premium_report(trades),
-            "collateral": collateral, "long_cost": long_cost}
+            "collateral": collateral, "long_cost": long_cost, "holdings": tracker.share_holdings(trades)}
 
 
 def news_feed(extra):
@@ -243,6 +243,15 @@ class Handler(BaseHTTPRequestHandler):
                 tracker.save(DB, trades)
             return t
 
+        def add_shares():
+            with db_lock:
+                trades = tracker.load(DB)
+                t = tracker.add_shares(trades, str(body.get("ticker", "")), num(body, "lots", int, 1),
+                                       num(body, "price"), num(body, "fees", float, 0.0),
+                                       body.get("opened") or None, body.get("notes", ""))
+                tracker.save(DB, trades)
+            return t
+
         def close():
             with db_lock:
                 trades = tracker.load(DB)
@@ -290,6 +299,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(fee_quote)
         elif path == "/api/trades":
             self.guard(add)
+        elif path == "/api/shares":
+            self.guard(add_shares)
         elif path == "/api/trades/delete":
             self.guard(delete)
         elif path == "/api/trades/close":

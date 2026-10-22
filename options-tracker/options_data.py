@@ -326,10 +326,27 @@ def chain_rows(ticker, exp):
 
 def quote(ticker, exp, strike, kind="put"):
     """One contract: dict(spot, bid, ask, last, mark, volume, oi, iv)."""
-    row = next((r for r in chain_rows(ticker, exp)[kind] if abs(r["strike"] - strike) < 1e-6), None)
+    rows = chain_rows(ticker, exp)[kind]
+    row = next((r for r in rows if abs(r["strike"] - strike) < 1e-6), None)
     if row is None:
-        raise QuoteError(f"{ticker} {exp} {strike:g}{kind[0].upper()} not found in chain")
+        row = _unlisted(ticker, exp, strike, kind, rows)
     return dict(row, spot=spot_price(ticker))
+
+
+def _unlisted(ticker, exp, strike, kind, rows):
+    """A strike the broker trades but Yahoo leaves out of its chain (often the half-dollar
+    strikes, e.g. AAL 11.5P between 11 and 12). Price it with Black-Scholes at the IV
+    interpolated between the listed strikes on either side, flagged est and unlisted."""
+    below = max((r for r in rows if r["strike"] < strike), key=lambda r: r["strike"], default=None)
+    above = min((r for r in rows if r["strike"] > strike), key=lambda r: r["strike"], default=None)
+    if not below or not above:
+        raise QuoteError(f"{ticker} {exp} {strike:g}{kind[0].upper()} not found in chain")
+    w = (strike - below["strike"]) / (above["strike"] - below["strike"])
+    iv = below["iv"] + w * (above["iv"] - below["iv"])
+    spot = option_spot(ticker, exp)
+    return {"strike": strike, "bid": 0.0, "ask": 0.0, "last": 0.0, "last_trade": None, "quoted": False,
+            "mark": bs_price(kind, spot, strike, years_to_expiry(exp), iv), "volume": 0, "oi": 0,
+            "iv": iv, "est": True, "iv_est": True, "unlisted": True}
 
 
 def news(tickers):

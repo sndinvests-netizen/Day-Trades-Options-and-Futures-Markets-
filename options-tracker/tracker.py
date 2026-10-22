@@ -220,6 +220,56 @@ def add_position(trades, ticker, legs, strategy="", fees=None, opened=None, note
     return out
 
 
+def add_shares(trades, ticker, lots, price, fees=0.0, opened=None, notes="", assigned_from=None, credit=0.0):
+    """Buy shares as one open lot (lots = blocks of 100 shares) and return it.
+
+    Shares are kept apart from the options (category "Shares"). An assignment creates
+    its lot at the strike with `credit` = the put premium per share, so the cost basis
+    can be shown with and without that premium (see share_holdings).
+    """
+    try:
+        opened = parse_date(opened) if opened else date.today()
+    except ValueError:
+        raise TradeError("dates must be YYYY-MM-DD")
+    if not lots or lots < 1:
+        raise TradeError("Add at least 1 lot (100 shares)")
+    if price is None or price <= 0:
+        raise TradeError("Share price must be above 0")
+    lot = {
+        "id": max([t["id"] for t in trades], default=0) + 1,
+        "ticker": ticker.upper().strip(), "type": "stock", "side": "buy", "strike": 0.0, "exp": None,
+        "contracts": lots, "premium": price, "fees": fees or 0.0, "opened": opened.isoformat(),
+        "dte_at_open": 0, "category": "Shares", "status": "open", "notes": notes or "",
+    }
+    if assigned_from:
+        lot.update(assigned_from=assigned_from, credit=round(credit, 4))
+    trades.append(lot)
+    return lot
+
+
+def share_holdings(trades):
+    """Open share lots per ticker: shares, average cost, and average cost net of put premium.
+
+    Average cost is the lots' price weighted by shares (what the broker shows). Net average
+    cost also subtracts the premium collected on the puts that were assigned into the shares.
+    """
+    out = {}
+    for t in trades:
+        if t["status"] != "open" or kind(t) != "stock" or t["side"] != "buy":
+            continue
+        h = out.setdefault(t["ticker"], {"ticker": t["ticker"], "shares": 0, "cost": 0.0, "credit": 0.0, "fees": 0.0, "ids": []})
+        n = t["contracts"] * MULTIPLIER
+        h["shares"] += n
+        h["cost"] += t["premium"] * n
+        h["credit"] += t.get("credit", 0.0) * n
+        h["fees"] += t["fees"]
+        h["ids"].append(t["id"])
+    for h in out.values():
+        h["avg_cost"] = h["cost"] / h["shares"]
+        h["net_avg_cost"] = (h["cost"] - h["credit"] + h["fees"]) / h["shares"]
+    return sorted(out.values(), key=lambda h: h["ticker"])
+
+
 def delete_position(trades, trade_id):
     """Remove a trade logged by mistake, open or closed, and return what was removed.
 
@@ -314,6 +364,13 @@ def close_trade(trades, trade_id, premium=None, expired=False, assigned=False, f
         raise TradeError(f"Trade #{trade_id} is already {t['status']}")
     if expired:
         price, status = 0.0, "expired"
+    elif assigned and t["side"] == "sell" and kind(t) == "put" and not t.get("group"):
+        # Assigned short put: the option keeps all its premium and the shares arrive at the strike.
+        price, status = 0.0, "assigned"
+        add_shares(trades, t["ticker"], t["contracts"], t["strike"], 0.0, closed, f"Assigned from #{t['id']}",
+                   assigned_from=t["id"], credit=t["premium"])
+    elif assigned and t["side"] == "sell" and kind(t) == "call" and not t.get("group") and called_away(trades, t, closed):
+        price, status = 0.0, "assigned"
     elif assigned:
         # Exercised at the strike: closed here at its intrinsic value at expiration.
         if premium is None:
@@ -330,6 +387,25 @@ def close_trade(trades, trade_id, premium=None, expired=False, assigned=False, f
              closed=(closed or date.today().isoformat()),
              realized=round(pnl(t, price, fees), 2))
     return t
+
+
+def called_away(trades, call, closed=None):
+    """A short call was assigned: sell the same ticker's open share lots at the strike, oldest
+    first. Returns False (nothing changed) when the shares aren't all in the tracker."""
+    lots = [x for x in trades if x["ticker"] == call["ticker"] and kind(x) == "stock" and x["status"] == "open"
+            and x["side"] == "buy" and not x.get("group")]
+    if sum(x["contracts"] for x in lots) < call["contracts"]:
+        return False
+    need = call["contracts"]
+    for lot in sorted(lots, key=lambda x: (x["opened"], x["id"])):
+        if need <= 0:
+            break
+        n = min(need, lot["contracts"])
+        if n < lot["contracts"]:
+            lot = split_trade(trades, lot, n)
+        close_trade(trades, lot["id"], call["strike"], fees=0.0, closed=closed)
+        need -= n
+    return True
 
 
 def cmd_add(args, trades):

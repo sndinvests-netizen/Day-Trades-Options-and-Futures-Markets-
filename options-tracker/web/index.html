@@ -645,6 +645,7 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
       <div class="row">
         <h2>Open positions</h2>
         <div><button class="ghost" id="reloadTrades">Refresh quotes</button>
+          <button class="ghost" id="newShares">Add shares</button>
           <button class="primary" id="newTrade">Log a trade</button></div>
       </div>
       <div id="openGroups"></div>
@@ -764,6 +765,23 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
       <label>Notes <input name="notes"></label>
     </div>
     <div class="formerr" id="addErr"></div>
+    <div class="actions"><button class="ghost" type="button" data-close>Cancel</button><button class="primary" type="submit">Save</button></div>
+  </form>
+</dialog>
+
+<dialog id="sharesDlg">
+  <form id="sharesForm" method="dialog">
+    <h2>Add shares</h2>
+    <p class="note">Buy more shares of a stock you hold (or start a position). Assigned puts are added automatically at the strike.</p>
+    <div class="grid2">
+      <label>Ticker <input name="ticker" required style="text-transform:uppercase"></label>
+      <label>Lots of 100 shares <input name="lots" type="number" min="1" step="1" value="1"></label>
+      <label>Price per share <input name="price" type="number" step="any" min="0" required></label>
+      <label>Fees ($ total) <input name="fees" type="number" step="any" min="0" value="0"></label>
+      <label>Bought on <input name="opened" type="date"></label>
+      <label>Notes <input name="notes"></label>
+    </div>
+    <div class="formerr" id="sharesErr"></div>
     <div class="actions"><button class="ghost" type="button" data-close>Cancel</button><button class="primary" type="submit">Save</button></div>
   </form>
 </dialog>
@@ -1167,8 +1185,10 @@ function renderEarn() {
   $("#earnList").innerHTML = rows.map(r => {
     const d = earnDays(r);
     const tags = [
-      r.estimated && `<span class="earn-tag est" title="Yahoo's estimate; the company hasn't confirmed this date">est.</span>`,
-      r.held && `<span class="earn-tag held">held · exp ${esc(new Date(r.exp + "T12:00:00").toLocaleDateString([], { month: "short", day: "numeric", ...(r.exp.slice(0, 4) !== today().slice(0, 4) && { year: "numeric" }) }))}</span>`,
+      r.projected ? `<span class="earn-tag est" title="Projected 13 weeks after the last report; Yahoo hasn't posted the next date yet">proj.</span>`
+        : r.estimated && `<span class="earn-tag est" title="Yahoo's estimate; the company hasn't confirmed this date">est.</span>`,
+      r.held && !r.exp && `<span class="earn-tag held">held · shares</span>`,
+      r.held && r.exp && `<span class="earn-tag held">held · exp ${esc(new Date(r.exp + "T12:00:00").toLocaleDateString([], { month: "short", day: "numeric", ...(r.exp.slice(0, 4) !== today().slice(0, 4) && { year: "numeric" }) }))}</span>`,
       r.at_risk && `<span class="earn-tag risk" title="Your latest open expiration is after this report">Expires after report</span>`,
       r.eps_est != null && `<span>EPS est. ${f2(r.eps_est)}</span>`,
       r.stale && `<span>(last saved copy)</span>`,
@@ -1192,7 +1212,7 @@ function earnPopup(r, d) {
   box.style.setProperty("--c", r.at_risk ? "#e5383b" : "#e0a100");
   const head = `${r.ticker} reports ${d === 0 ? "today" : d === 1 ? "tomorrow" : `in ${d} days`}${SESSION[r.session] && r.session !== "tns" ? ", " + SESSION[r.session].toLowerCase() : ""}`;
   const body = r.at_risk ? `You hold ${r.ticker} options expiring ${r.exp}, after the report. Expect an IV crush and a big move.`
-    : r.held ? `You hold ${r.ticker}; your positions expire before the report.` : `${r.name}${r.eps_est != null ? ` · EPS est. ${f2(r.eps_est)}` : ""}${r.estimated ? " · date not confirmed" : ""}`;
+    : r.held ? `You hold ${r.ticker}; your positions expire before the report.` : `${r.name}${r.eps_est != null ? ` · EPS est. ${f2(r.eps_est)}` : ""}${r.projected ? " · projected date, not announced" : r.estimated ? " · date not confirmed" : ""}`;
   box.innerHTML = `<h3>${esc(head)}</h3><p>${esc(body)}</p>
     <div class="inline" style="justify-content:space-between"><span class="note">${earnWhen(r)}</span><button class="ghost small" type="button">Dismiss</button></div>`;
   box.querySelector("button").onclick = () => box.remove();
@@ -1665,7 +1685,8 @@ const estTag = why => `<span class="est" title="${esc(why)}">est</span>`;
 const lastTradeText = q => q.last_trade
   ? new Date(q.last_trade).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
   : "unknown";
-const estWhy = q => `No usable bid/ask from Yahoo (no quote, no bid, or a very wide spread), so this is a Black-Scholes estimate at ${pct(q.iv, 0)} IV. Last trade ${f2(q.last)} on ${lastTradeText(q)}.`;
+const estWhy = q => q.unlisted ? `Yahoo doesn't list this strike, so this is a Black-Scholes estimate at ${pct(q.iv, 0)} IV (between the strikes on either side).`
+  : `No usable bid/ask from Yahoo (no quote, no bid, or a very wide spread), so this is a Black-Scholes estimate at ${pct(q.iv, 0)} IV. Last trade ${f2(q.last)} on ${lastTradeText(q)}.`;
 
 function setTimer() {
   clearInterval(timer);
@@ -2440,7 +2461,7 @@ function renderTrades() {
   const d = tradeData;
   const unreal = d.open.reduce((a, t) => a + (t.live ? t.live.unrealized : 0), 0);
   const realized = d.closed.reduce((a, t) => a + t.realized, 0);
-  const positions = groupPositions(d.open);
+  const positions = groupPositions(d.open.filter(t => t.category !== "Shares"));
   const atTarget = positions.filter(p => (profitTarget(p) || {}).hit).length;
   $("#tradeTiles").innerHTML = [
     ["Open positions", positions.length, d.open.length + " legs"],
@@ -2464,14 +2485,29 @@ function renderTrades() {
   };
   const alertsOf = rows => rows.flatMap(t => [t.live && t.live.warning && (rows.length > 1 ? `${t.label}: ` : "") + t.live.warning,
       t.dte != null && (t.dte < 0 ? "past expiration: close it" : t.dte <= 7 && "expires within a week"), t.live_error && "no quote: " + t.live_error,
-      t.live && t.live.est && (rows.length > 1 ? `${t.label}: ` : "") + `no live bid/ask, mark estimated (last trade ${f2(t.live.last)} ${lastTradeText(t.live)})`]).filter(Boolean);
+      t.live && t.live.est && (rows.length > 1 ? `${t.label}: ` : "") + (t.live.unlisted ? "strike not in Yahoo's chain, mark estimated" : `no live bid/ask, mark estimated (last trade ${f2(t.live.last)} ${lastTradeText(t.live)})`)]).filter(Boolean);
   const alertHtml = list => [...new Set(list)].map(a => `<span class="warn">${esc(a)}</span>`).join(" ");
   const posKey = p => p[0].group ? "g" + p[0].group : "t" + p[0].id;
 
+  const lots = d.open.filter(t => t.category === "Shares");
+  const sharesHtml = !d.holdings.length ? "" : `<h3>Shares <span class="note" style="text-transform:none;letter-spacing:0">assigned puts and shares you added · average cost is price × shares ÷ total shares</span></h3>
+    <div class="scroll"><table><thead><tr><th class="left">Ticker</th><th>Shares</th><th title="Weighted average price paid">Avg cost</th><th title="Average cost minus the premium collected on the puts that were assigned, plus fees">Avg cost net of premium</th><th>Stock</th><th>Cost</th><th>Unrealized</th><th>vs net avg</th><th class="left">Lots</th></tr></thead><tbody>` +
+    d.holdings.map(h => {
+      const lv = d.open.find(t => t.ticker === h.ticker && t.live), spot = lv ? lv.live.spot : null;
+      const un = spot == null ? null : (spot - h.avg_cost) * h.shares - h.fees;
+      const mine = lots.filter(t => t.ticker === h.ticker);
+      return `<tr><td class="left"><b>${esc(h.ticker)}</b></td><td>${int(h.shares)}</td><td><b>${f2(h.avg_cost)}</b></td><td>${f2(h.net_avg_cost)}</td>
+        <td>${spot == null ? "–" : f2(spot)}</td><td>${usd(h.cost)}</td><td class="${un == null ? "" : signed(un)}">${un == null ? "–" : usd(un, true)}</td>
+        <td class="${spot == null ? "" : signed(spot - h.net_avg_cost)}">${spot == null ? "–" : pct((spot - h.net_avg_cost) / h.net_avg_cost, 1)}</td>
+        <td class="left">${mine.map(t => `<div class="note">#${t.id} ${t.contracts * 100} @ ${f2(t.premium)}${t.assigned_from ? " (assigned #" + t.assigned_from + ")" : ""}
+          <button class="ghost small" data-close-key="t${t.id}">Sell</button> <button class="ghost small" data-partial-key="t${t.id}">Partial</button> <button class="ghost small danger" data-del-id="${t.id}">Delete</button></div>`).join("")}${
+          d.holdings.length && h.ids.length > mine.length ? '<div class="note">+ shares inside a covered call (see below)</div>' : ""}</td></tr>`;
+    }).join("") + "</tbody></table></div>";
+
   if (!positions.length) {
-    $("#openGroups").innerHTML = '<p class="note">No open trades. Use “Log a trade”, save a position from the Builder, or click a contract on the Chain tab.</p>';
+    $("#openGroups").innerHTML = sharesHtml + '<p class="note">No open trades. Use “Log a trade”, save a position from the Builder, or click a contract on the Chain tab.</p>';
   } else {
-    $("#openGroups").innerHTML = ["Hop", "Skip", "Leap"].map(cat => {
+    $("#openGroups").innerHTML = sharesHtml + ["Hop", "Skip", "Leap"].map(cat => {
       const ps = positions.filter(p => p[0].category === cat);
       if (!ps.length) return "";
       const sub = { Hop: "90 days or less at open", Skip: "91–360 days at open", Leap: "over 360 days at open" }[cat];
@@ -2587,6 +2623,16 @@ function renderPremium() {
 const positionByKey = key => groupPositions(tradeData.open).find(p => (p[0].group ? "g" + p[0].group : "t" + p[0].id) === key);
 $("#reloadTrades").onclick = () => loadTrades();
 $("#newTrade").onclick = () => openAdd({});
+$("#newShares").onclick = () => { const f = $("#sharesForm"); f.reset(); f.elements.opened.value = today(); $("#sharesErr").textContent = ""; $("#sharesDlg").showModal(); };
+$("#sharesForm").onsubmit = async e => {
+  e.preventDefault();
+  const v = Object.fromEntries(new FormData(e.target));
+  try {
+    await api("/api/shares", { ticker: v.ticker, lots: v.lots, price: v.price, fees: v.fees, opened: v.opened, notes: v.notes });
+    $("#sharesDlg").close();
+    loadTrades();
+  } catch (err) { $("#sharesErr").textContent = err.message; }
+};
 $("#openGroups").onclick = e => {
   const b = e.target.closest("button");
   if (!b) return;
@@ -2653,7 +2699,7 @@ function openClose(id) {
   f.reset();
   f.elements.closed.value = today();
   if (t.live) f.elements.premium.value = t.live.mark.toFixed(2);
-  $("#closeTitle").textContent = `Close #${t.id}: ${t.ticker} ${t.label} ${t.exp}`;
+  $("#closeTitle").textContent = `Close #${t.id}: ${t.ticker} ${t.label} ${t.exp || ""}`;
   updateCloseForm();
   $("#closeErr").textContent = "";
   $("#closeDlg").showModal();
@@ -2664,7 +2710,7 @@ function updateCloseForm() {
   $("#closePriceLbl").classList.toggle("hidden", how === "expired");
   $("#closePriceLbl").firstChild.textContent = how === "assigned" ? "Intrinsic value per share " : "Exit price per share ";
   $("#closeHint").textContent = how === "assigned"
-    ? "Intrinsic value: for a put, strike minus stock price; for a call, stock price minus strike." : "";
+    ? "Short put: no price needed, the shares are added at the strike and you keep the premium. Short call: your shares are sold at the strike. Otherwise: intrinsic value per share." : "";
 }
 $("#closeForm").elements.how.onchange = updateCloseForm;
 $("#closeForm").onsubmit = async e => {

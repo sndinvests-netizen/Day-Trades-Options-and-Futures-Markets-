@@ -1,5 +1,5 @@
 #!/bin/bash
-# Morning launcher for the option tracker, run by a launchd schedule (weekdays 6:00 AM).
+# Morning launcher for the option tracker, run by a launchd schedule (weekdays 6:30 AM).
 # Starts the tracker in the background if it isn't already running, then opens it in
 # the browser and exits, so the schedule can fire again the next morning.
 cd "$(dirname "$0")"

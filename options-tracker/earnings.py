@@ -13,7 +13,7 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import yfinance as yf
@@ -24,6 +24,7 @@ WATCH_FILE = os.path.join(HERE, "earnings_watch.json")
 # The stocks from the trading plan watchlist (TRADING_PLAN_CHECKLIST.md 1.6); QQQ and SPY are ETFs.
 DEFAULT_WATCH = ["INTC", "TSLA", "AMD", "AAPL", "PLTR"]
 REFRESH_SECONDS = 6 * 3600
+PROJECT_WITHIN = 120 * 86400  # only project from a report in the last ~4 months
 ET = ZoneInfo("America/New_York")
 TICKER = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
 
@@ -81,13 +82,21 @@ def _fetch(sym):
     # earningsTimestampStart is Yahoo's (maybe estimated) next date.
     ts = next((t for t in (info.get("earningsTimestamp"), info.get("earningsTimestampStart"))
                if t and t > now - 86400), None)
+    projected = False
     if not ts:
-        return dict(row, kind="none")
-    est = bool(info.get("isEarningsDateEstimate")) or ts != info.get("earningsTimestamp")
+        # Right after a report Yahoo only has the one just released. Project the next one a quarter
+        # (13 weeks, same weekday and time) later, until Yahoo posts a date.
+        last = info.get("earningsTimestamp")
+        if not last or last < now - PROJECT_WITHIN:
+            return dict(row, kind="none")
+        # step in Eastern wall-clock time so a 4:00 PM report stays 4:00 PM across a DST change
+        ts, projected = int((datetime.fromtimestamp(last, ET) + timedelta(weeks=13)).timestamp()), True
+    est = projected or bool(info.get("isEarningsDateEstimate")) or ts != info.get("earningsTimestamp")
     eps = None
     try:
         cal = tk.calendar or {}
-        eps = cal.get("Earnings Average")
+        if not projected:   # the calendar's EPS estimate is still the quarter just reported
+            eps = cal.get("Earnings Average")
     except Exception:
         pass
     d = datetime.fromtimestamp(ts, ET)
@@ -99,7 +108,7 @@ def _fetch(sym):
         same_day = call and datetime.fromtimestamp(call, ET).date() == d.date()
         session = _session(call) if same_day and _session(call) != "dmh" else "tns"
     return dict(row, kind="equity", ts=ts, date=d.strftime("%Y-%m-%d"), session=session,
-                estimated=est, eps_est=round(eps, 2) if isinstance(eps, (int, float)) else None)
+                estimated=est, projected=projected, eps_est=round(eps, 2) if isinstance(eps, (int, float)) else None)
 
 
 def _get(sym):
