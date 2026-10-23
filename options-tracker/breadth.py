@@ -28,6 +28,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_FILE = os.path.join(HERE, "breadth_cache.json")
 REFRESH_SECONDS = 15 * 60
 RETRY_SECONDS = 2 * 60          # after a failed fetch, wait this long before trying again
+DOWNLOAD_SECONDS = 90           # a normal batch takes about 15 s
 MEMBERS_SECONDS = 7 * 24 * 3600
 WEEK, MONTH, YEAR = 5, 21, 252  # sessions
 BANDS = [(20, "Oversold"), (40, "Weak"), (60, "Neutral"), (80, "Healthy"), (101, "Overbought")]
@@ -89,6 +90,27 @@ def _download():
             "new_highs": new_hi, "new_lows": new_lo}
 
 
+def _download_capped():
+    """_download in a side thread, given up on after DOWNLOAD_SECONDS. yf.download's threaded batch can hang
+    for good (seen 2026-10-23), and since it runs under _lock that froze every later breadth request."""
+    box = {}
+
+    def run():
+        try:
+            box["data"] = _download()
+        except Exception as e:
+            box["error"] = e
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(DOWNLOAD_SECONDS)
+    if t.is_alive():
+        raise TimeoutError(f"Yahoo download took over {DOWNLOAD_SECONDS} s")
+    if "error" in box:
+        raise box["error"]
+    return box["data"]
+
+
 def _load_disk():
     try:
         with open(CACHE_FILE) as f:
@@ -112,7 +134,7 @@ def breadth():
         if (_mem["data"] is None or stale) and now - _mem["tried"] > RETRY_SECONDS:
             _mem["tried"] = now
             try:
-                data = _download()
+                data = _download_capped()
                 _mem.update(data=data, fetched=now, at=now, error=None)
                 try:
                     with open(CACHE_FILE, "w") as f:
