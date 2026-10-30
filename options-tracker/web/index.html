@@ -330,6 +330,12 @@ input[type=range].glow:focus-visible { outline: 3px solid rgba(111,174,233,.5); 
 .chart svg { width: 100%; height: auto; display: block; touch-action: none; }
 .chart text { font-size: 11px; fill: var(--muted); font-family: inherit; }
 .chart .tip text { fill: var(--text); font-size: 12px; }
+/* gamma exposure (GEX) panel on the Chain tab */
+#gexTiles { margin: 4px 0 12px; }
+#gexTiles .tile { box-shadow: none; }
+#gexChart svg { max-width: 900px; }
+#gexChart .bar:hover { opacity: .75; }
+#gexChart .lvl { font-size: 11px; font-weight: 700; }
 .heat td { text-align: center; font-size: 12px; padding: 4px 6px; border: 1px solid var(--panel); }
 .heat th { text-align: center; }
 .heat th.price, .heat td.price { text-align: right; position: sticky; left: 0; background: var(--panel); z-index: 1; }
@@ -577,6 +583,43 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
           <span><span class="sw" style="background:var(--itm)"></span>In the money</span>
           <span><span class="sw" style="background:var(--spot)"></span>Stock price</span>
           <span><span class="flag">●</span> Unusual: volume at least 2× open interest (500+ contracts)</span>
+        </div>
+      </div>
+      <div class="panel" id="gexPanel">
+        <div class="row">
+          <h2 id="gexTitle">Gamma exposure (GEX)</h2>
+          <div class="inline note">
+            <label style="flex-direction:row;align-items:center;gap:6px">Expirations <select id="gexExps"
+              title="Which expirations' open interest goes into GEX (it doesn't follow the chain's expiration)">
+              <option value="1,1">Nearest only</option><option value="7,8">Next 7 days</option>
+              <option value="45,8" selected>Within 45 days (max 8)</option><option value="90,15">Within 90 days (max 15)</option></select></label>
+            <label style="flex-direction:row;align-items:center;gap:6px">Strikes <select id="gexRange">
+              <option value="0.05">±5%</option><option value="0.1" selected>±10%</option><option value="0.15">±15%</option></select></label>
+            <div class="tabs mini" id="gexMode">
+              <button type="button" data-mode="net" class="on">Net</button>
+              <button type="button" data-mode="split">Calls &amp; puts</button>
+            </div>
+            <span id="gexAsof"></span>
+          </div>
+        </div>
+        <div id="gexErr" class="note hidden"></div>
+        <div id="gexBody">
+          <div class="tiles" id="gexTiles"><div class="note">Loading gamma exposure…</div></div>
+          <div class="chart" id="gexChart"></div>
+          <div class="legend note">
+            <span><span class="sw" style="background:var(--up)"></span>Calls / positive GEX</span>
+            <span><span class="sw" style="background:var(--down)"></span>Puts / negative GEX</span>
+            <span><span style="color:var(--spot)">━</span> Stock price</span>
+            <span><span style="color:var(--up)">╍</span> Call wall</span>
+            <span><span style="color:var(--down)">╍</span> Put wall</span>
+            <span><span style="color:var(--flag)">┅</span> Gamma flip</span>
+          </div>
+          <div class="note" id="gexExpList" style="margin-top:8px"></div>
+          <div class="note" style="margin-top:6px">Yahoo data, ~15 min delayed; open interest is as of the prior close; dealer positioning assumed
+            (dealers long the calls and short the puts customers trade, so call GEX counts positive and put GEX negative).
+            GEX is dollars of stock dealers would buy or sell per 1% move: gamma × open interest × 100 × price² × 1%.
+            Positive GEX: dealers hedge against the move, which tends to dampen swings. Negative GEX: they hedge with it, which tends to amplify them.
+            When Yahoo's open interest is blank (overnight and early morning) it comes from CBOE's delayed quotes instead.</div>
         </div>
       </div>
       <div class="panel">
@@ -1588,6 +1631,7 @@ async function loadChain(ticker, exp, quiet) {
     store.set("last", { ticker: d.ticker, exp: d.exp });
     renderChips();
     renderChain();
+    if (!gexData || gexData.ticker !== d.ticker || quiet) loadGex(d.ticker, quiet);
   } catch (err) {
     if (seq !== reqSeq) return;
     $("#chainErr").textContent = err.message;
@@ -1704,6 +1748,126 @@ function setTimer() {
     if (tabOn("chain") && current && !busy) loadChain(current.ticker, current.exp, true);
     else if (tabOn("trades")) loadTrades(true);
   }, sec * 1000);
+}
+
+/* ================= gamma exposure (GEX) ================= */
+let gexData = null, gexSeq = 0;
+const gexMoney = (v, sign) => {
+  if (v == null || isNaN(v)) return "–";
+  if (Math.abs(v) < 500) return "$0";
+  const a = Math.abs(v), s = v < 0 ? "−" : sign && v > 0 ? "+" : "";
+  return s + "$" + (a >= 1e9 ? (a / 1e9).toFixed(2) + "B" : a >= 1e6 ? (a / 1e6).toFixed(a >= 1e8 ? 0 : 1) + "M" : (a / 1e3).toFixed(0) + "K");
+};
+async function loadGex(ticker, quiet) {
+  if (!ticker) return;
+  const seq = ++gexSeq;
+  const [days, exps] = $("#gexExps").value.split(",");
+  if (!quiet || !gexData || gexData.ticker !== ticker) {
+    $("#gexAsof").textContent = "Loading…";
+    if (!gexData || gexData.ticker !== ticker) { $("#gexTiles").innerHTML = `<div class="note">Loading gamma exposure for ${esc(ticker)}… (reads several expirations, a few seconds)</div>`; $("#gexChart").innerHTML = ""; $("#gexExpList").textContent = ""; }
+  }
+  try {
+    const d = await api(`/api/gex?ticker=${encodeURIComponent(ticker)}&days=${days}&exps=${exps}`);
+    if (seq !== gexSeq) return;
+    gexData = d;
+    $("#gexErr").classList.add("hidden");
+    $("#gexBody").classList.remove("hidden");
+    renderGex();
+  } catch (err) {
+    if (seq !== gexSeq) return;
+    gexData = null;
+    $("#gexAsof").textContent = "";
+    $("#gexErr").textContent = "No gamma exposure for " + ticker + ": " + err.message;
+    $("#gexErr").classList.remove("hidden");
+    $("#gexBody").classList.add("hidden");
+  }
+}
+function renderGex() {
+  const d = gexData;
+  if (!d) return;
+  $("#gexTitle").textContent = `Gamma exposure (GEX) · ${d.ticker}`;
+  $("#gexAsof").textContent = "Updated " + new Date(d.as_of).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const away = k => k == null ? "" : `${pct((k - d.spot) / d.spot)} from price`;
+  const pos = d.net_gex >= 0;
+  $("#gexTiles").innerHTML = [
+    ["Price", f2(d.spot), d.ticker],
+    ["Net GEX per 1% move", `<span class="${pos ? "up" : "down"}">${gexMoney(d.net_gex, true)}</span>`,
+      pos ? "Positive gamma: moves tend to be damped" : "Negative gamma: moves tend to be amplified"],
+    ["Call wall", f2(d.call_wall), `${away(d.call_wall)} · ${gexMoney(d.call_wall_gex)} · most call OI ${f2(d.call_oi_wall)}`],
+    ["Put wall", f2(d.put_wall), `${away(d.put_wall)} · ${gexMoney(d.put_wall_gex)} · most put OI ${f2(d.put_oi_wall)}`],
+    ["Gamma flip", d.gamma_flip == null ? "–" : f2(d.gamma_flip),
+      d.gamma_flip == null ? `Cumulative GEX by strike never crosses zero` : `${away(d.gamma_flip)} · cumulative GEX by strike crosses 0`],
+    ["Zero-gamma price", d.profile_flip == null ? "–" : f2(d.profile_flip),
+      d.profile_flip == null ? "Total GEX keeps one sign within ±15%" : `${away(d.profile_flip)} · total GEX changes sign if price moves here`],
+  ].map(([k, v, sub]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${esc(sub)}</div></div>`).join("");
+  $("#gexExpList").textContent = "Expirations used: " + d.expirations.map(e => `${e.exp} (${e.dte}d, ${gexMoney(e.net_gex, true)})`).join(", ")
+    + ". Open interest from " + d.oi_sources.join(" / ") + ".";
+
+  // rows within the chosen range, merged into bins when there are too many strikes to draw
+  const span = +$("#gexRange").value, split = $("#gexMode .on").dataset.mode === "split";
+  let rows = d.strikes.filter(r => Math.abs(r.strike / d.spot - 1) <= span + 1e-9);
+  const MAXROWS = 90;
+  let step = 0;
+  if (rows.length > MAXROWS) {
+    const raw = (2 * span * d.spot) / MAXROWS, mag = 10 ** Math.floor(Math.log10(raw));
+    step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(x => x >= raw);
+    const bins = new Map();
+    for (const r of rows) {
+      const k = Math.round(r.strike / step) * step;
+      const b = bins.get(k) || { strike: k, call_gex: 0, put_gex: 0, net_gex: 0, call_oi: 0, put_oi: 0 };
+      for (const f of ["call_gex", "put_gex", "net_gex", "call_oi", "put_oi"]) b[f] += r[f];
+      bins.set(k, b);
+    }
+    rows = [...bins.values()];
+  }
+  rows.sort((a, b) => b.strike - a.strike);  // highest strike on top, like a price axis
+  if (!rows.length) { $("#gexChart").innerHTML = `<div class="note">No open interest within ±${(span * 100).toFixed(0)}% of the price.</div>`; return; }
+  const RH = rows.length > 60 ? 7 : rows.length > 35 ? 10 : 14;
+  const W = 880, m = { l: 62, r: 118, t: 22, b: 30 }, H = m.t + m.b + rows.length * RH;
+  const vals = split ? rows.flatMap(r => [r.call_gex, r.put_gex]) : rows.map(r => r.net_gex);
+  let mx = Math.max(...vals.map(Math.abs)) || 1;
+  const X = v => m.l + (v + mx) / (2 * mx) * (W - m.l - m.r);
+  const hiK = rows[0].strike, loK = rows[rows.length - 1].strike;
+  const Y = k => hiK === loK ? m.t + RH / 2 : m.t + RH / 2 + (hiK - k) / (hiK - loK) * (rows.length - 1) * RH;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(d.ticker)} net gamma exposure by strike">`;
+  for (const v of niceTicks(-mx, mx, 6)) svg += `<line x1="${X(v)}" x2="${X(v)}" y1="${m.t}" y2="${H - m.b}" stroke="var(--line)" ${v ? 'stroke-dasharray="2 4"' : ""}/>
+    <text x="${X(v)}" y="${H - m.b + 16}" text-anchor="middle">${gexMoney(v)}</text>`;
+  svg += `<line x1="${X(0)}" x2="${X(0)}" y1="${m.t}" y2="${H - m.b}" stroke="var(--muted)"/>`;
+  const labelEvery = Math.ceil(rows.length / (RH >= 14 ? 40 : RH >= 10 ? 24 : 16));
+  const bh = Math.max(2, RH - (RH > 8 ? 3 : 1));
+  rows.forEach((r, i) => {
+    const y = Y(r.strike), tip = `${step ? "Strikes near " : "Strike "}${f2(r.strike)}: net ${gexMoney(r.net_gex, true)} (calls ${gexMoney(r.call_gex)}, puts ${gexMoney(r.put_gex)}); OI ${int(r.call_oi)} C / ${int(r.put_oi)} P`;
+    const bar = (v, color) => `<rect class="bar" x="${Math.min(X(0), X(v)).toFixed(1)}" y="${(y - bh / 2).toFixed(1)}" width="${Math.abs(X(v) - X(0)).toFixed(1)}" height="${bh}" fill="${color}" rx="1"><title>${esc(tip)}</title></rect>`;
+    svg += split ? bar(r.call_gex, "var(--up)") + bar(r.put_gex, "var(--down)") : bar(r.net_gex, r.net_gex >= 0 ? "var(--up)" : "var(--down)");
+    if (i % labelEvery === 0) svg += `<text x="${m.l - 8}" y="${y + 4}" text-anchor="end">${r.strike >= 1000 ? r.strike.toFixed(0) : +r.strike.toFixed(2)}</text>`;
+  });
+  // markers: price, walls, flip; labels to the right of the plot, nudged apart when they collide
+  const marks = [[d.spot, "var(--spot)", "", "Price " + f2(d.spot)], [d.call_wall, "var(--up)", "6 4", "Call wall " + f2(d.call_wall)],
+    [d.put_wall, "var(--down)", "6 4", "Put wall " + f2(d.put_wall)], [d.gamma_flip, "var(--flag)", "2 3", "Flip " + f2(d.gamma_flip)],
+    [d.profile_flip, "var(--flag)", "1 4", "Zero γ " + f2(d.profile_flip)]]
+    .filter(([k]) => k != null && k >= loK - (step || 0) && k <= hiK + (step || 0)).map(([k, c, dash, lab]) => ({ y: Y(k), c, dash, lab }))
+    .sort((a, b) => a.y - b.y);
+  let lastY = -1e9;
+  for (const mk of marks) {
+    svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${mk.y}" y2="${mk.y}" stroke="${mk.c}" stroke-width="${mk.dash ? 1.5 : 2}" ${mk.dash ? `stroke-dasharray="${mk.dash}"` : ""}/>`;
+    const ly = Math.max(mk.y + 4, lastY + 13); lastY = ly;
+    svg += `<text class="lvl" x="${W - m.r + 6}" y="${ly}" style="fill:${mk.c}">${esc(mk.lab)}</text>`;
+  }
+  $("#gexChart").innerHTML = svg + `<text x="${m.l}" y="12">${split ? "Call and put GEX by strike" : "Net GEX by strike"}${step ? ` (strikes grouped every ${+step.toFixed(2)})` : ""}, per 1% move</text></svg>`;
+}
+$("#gexExps").onchange = () => { store.set("gexExps", $("#gexExps").value); current && loadGex(current.ticker); };
+$("#gexRange").onchange = () => { store.set("gexRange", $("#gexRange").value); renderGex(); };
+$("#gexMode").onclick = e => {
+  const m = e.target.dataset.mode; if (!m) return;
+  store.set("gexMode", m);
+  for (const b of document.querySelectorAll("#gexMode button")) b.classList.toggle("on", b.dataset.mode === m);
+  renderGex();
+};
+{
+  const e = store.get("gexExps", null), r = store.get("gexRange", null), m = store.get("gexMode", "net");
+  if (e && [...$("#gexExps").options].some(o => o.value === e)) $("#gexExps").value = e;
+  if (r && [...$("#gexRange").options].some(o => o.value === r)) $("#gexRange").value = r;
+  for (const b of document.querySelectorAll("#gexMode button")) b.classList.toggle("on", b.dataset.mode === m);
 }
 
 /* ================= builder ================= */
@@ -2678,6 +2842,16 @@ function renderClosed(closed) {
   };
 }
 
+// Screener sparklines open TradingView only in Chrome (where the TradingView login is), via the local server,
+// never in the browser showing the tracker. The links have no href, so nothing can open them here.
+document.addEventListener("click", async e => {
+  const a = e.target.closest("a.spark-link[data-tv]");
+  if (!a) return;
+  e.preventDefault();
+  try { await api("/api/open-chart", { symbol: a.dataset.tv }); }
+  catch (err) { toast(`Couldn't open ${a.dataset.tv} in Chrome: ${err.message}`, false); }
+});
+
 $("#closed").onclick = e => { const b = e.target.closest("button[data-del-id]"); if (b) openDelete(+b.dataset.delId); };
 
 /* ---- delete a trade logged by mistake ---- */
@@ -2995,7 +3169,7 @@ function renderScreener() {
         ${r.name && r.name !== r.ticker ? `<span class="tk-name" title="${esc(r.name)}">${esc(r.name)}</span>` : ""}</td>
       <td class="left">${esc(r.sector || "–")}</td><td>${f2(r.price)}</td>
       <td class="${signed(r.day_pct)}">${sgnPct(r.day_pct, 2)}</td><td>${capFmt(r.mktcap)}</td>
-      <td class="${signed(r.chg1y)}" ><a class="spark-link" href="https://www.tradingview.com/chart/?symbol=${encodeURIComponent(r.ticker.replace("-", "."))}" target="_blank" rel="noopener" title="1-year change ${sgnPct(r.chg1y)}. Click to open ${esc(r.ticker)} on TradingView">${spark(r.spark)}</a></td>
+      <td class="${signed(r.chg1y)}" ><a class="spark-link" role="link" data-tv="${esc(r.ticker.replace("-", "."))}" title="1-year change ${sgnPct(r.chg1y)}. Click to open ${esc(r.ticker)} on TradingView in Chrome">${spark(r.spark)}</a></td>
       <td>${r.at_support ? `<span class="hit">Yes</span>` : `<span class="note">No</span>`}</td>
       <td title="${esc(supTip)}">${r.support == null ? "–" : f2(r.support)}</td>
       <td class="left" title="${esc(supTip)}">${r.support_type ? esc(SUP_NAME[r.support_type] || r.support_type) + (r.touches ? ` <span class="note">×${r.touches}</span>` : "") : "–"}</td>

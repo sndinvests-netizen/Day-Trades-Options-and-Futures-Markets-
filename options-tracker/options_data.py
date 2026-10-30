@@ -416,3 +416,166 @@ def chain(ticker, exp=None):
         "unusual": unusual,
         "as_of": datetime.now(ET).isoformat(timespec="seconds"),
     }
+
+
+# ---------- gamma exposure ----------
+
+GEX_DAYS = 45        # use every expiration within this many days ...
+GEX_MAX_EXPS = 8     # ... but no more than this many
+GEX_RANGE = 0.25     # per-strike rows returned within this fraction of the stock price
+GEX_NEAR = 0.10      # Yahoo's open interest is judged on strikes within 10% of the price ...
+GEX_MIN_OI_SHARE = 0.3   # ... and counts as missing when fewer than this share of them have any
+CBOE_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/{}.json"
+CBOE_CACHE_SECONDS = 300
+
+
+def cboe_chain(ticker):
+    """Open interest and IV for every listed contract from CBOE's free delayed-quote feed, as
+    {(exp, kind, strike): (oi, iv)}; {} if CBOE has nothing. Yahoo blanks open interest (and
+    bid/ask/IV) overnight and early in the morning, while CBOE keeps the prior close's numbers,
+    so gex() falls back to this for any expiration where Yahoo's open interest is missing."""
+    import json
+    import re
+    import urllib.request
+    sym = ticker.lstrip("^").replace("-", ".")
+    sym = "_" + sym if ticker.startswith("^") else sym
+
+    def fetch():
+        req = urllib.request.Request(CBOE_URL.format(sym), headers={"User-Agent": "Mozilla/5.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=25) as f:
+                opts = json.load(f)["data"]["options"]
+        except Exception:
+            return {}
+        out = {}
+        for o in opts:
+            m = re.search(r"(\d{2})(\d{2})(\d{2})([CP])(\d{8})$", o.get("option", ""))
+            if not m:
+                continue
+            exp = f"20{m[1]}-{m[2]}-{m[3]}"
+            key = (exp, "call" if m[4] == "C" else "put", int(m[5]) / 1000)
+            oi, iv = _num(o.get("open_interest")), _num(o.get("iv"))
+            prev = out.get(key)   # SPX lists AM and PM (SPXW) contracts on the same day and strike
+            out[key] = (oi + (prev[0] if prev else 0), iv or (prev[1] if prev else 0))
+        return out
+    return _cached(("cboe", sym), fetch, CBOE_CACHE_SECONDS)
+
+
+def gamma_flip(strikes, net, spot):
+    """Strike where cumulative net GEX (summed from the lowest strike up) crosses zero,
+    interpolated between the two strikes on either side. With several crossings, the one
+    nearest the stock price. None when it never crosses."""
+    flips, cum = [], 0.0
+    for i, (k, g) in enumerate(zip(strikes, net)):
+        prev = cum
+        cum += g
+        if i and (prev < 0 <= cum or prev > 0 >= cum) and cum != prev:
+            k0 = strikes[i - 1]
+            flips.append(k0 + (k - k0) * (-prev / (cum - prev)))
+    return min(flips, key=lambda f: abs(f - spot)) if flips else None
+
+
+def gex_profile(book, spot, span=0.15, steps=60):
+    """Total net GEX if the stock moved to each of steps+1 prices across spot +/- span, holding
+    open interest, IV and time fixed, and the price nearest spot where it changes sign (the
+    'zero gamma' level most GEX sites quote), interpolated. Returns ([[price, gex], ...], flip)."""
+    import numpy as np
+    if not book:
+        return [], None
+    sign, k, t, iv, oi = (np.array(c, dtype=float) for c in zip(*book))
+    prices = np.linspace(spot * (1 - span), spot * (1 + span), steps + 1)
+    S = prices[:, None]
+    st = iv * np.sqrt(t)
+    d1 = (np.log(S / k) + (RISK_FREE_RATE + iv * iv / 2) * t) / st
+    gamma = np.exp(-d1 * d1 / 2) / np.sqrt(2 * np.pi) / (S * st)
+    tot = (sign * gamma * oi).sum(axis=1) * 100 * prices ** 2 * 0.01
+    flips = [prices[i] + (prices[i + 1] - prices[i]) * (-tot[i] / (tot[i + 1] - tot[i]))
+             for i in range(steps) if (tot[i] < 0 <= tot[i + 1]) or (tot[i] > 0 >= tot[i + 1])]
+    flip = float(min(flips, key=lambda f: abs(f - spot))) if flips else None
+    return [[float(p), float(g)] for p, g in zip(prices, tot)], flip
+
+
+def gex(ticker, days=GEX_DAYS, max_exps=GEX_MAX_EXPS):
+    """Dealer gamma exposure by strike across the nearest expirations.
+
+    Dollar GEX per 1% move = gamma x open interest x 100 x spot^2 x 0.01, with calls positive and
+    puts negative (assumes dealers are long the calls and short the puts customers trade). Gamma is
+    Black-Scholes at each contract's IV after chain_rows' clean-up (quote-implied, borrowed from a
+    nearby strike, or historical volatility). Open interest is as of the prior close. Where Yahoo's
+    open interest is blank (overnight), it and any borrowed IV come from CBOE's delayed feed.
+    """
+    ticker = yahoo_symbol(ticker)
+    days, max_exps = max(1, int(days)), max(1, min(int(max_exps), 30))
+
+    def build():
+        now = datetime.now(ET)
+        live = [e for e in expirations(ticker)
+                if datetime.strptime(e, "%Y-%m-%d").replace(hour=16, tzinfo=ET) > now]
+        if not live:
+            raise QuoteError(f"No open expirations for {ticker}")
+        today = now.date()
+        dte = lambda e: (datetime.strptime(e, "%Y-%m-%d").date() - today).days
+        used = [e for e in live if dte(e) <= days][:max_exps] or live[:1]
+        spot = spot_price(ticker)
+        by = {}   # strike -> [call_gex, put_gex, call_oi, put_oi]
+        book = []  # (sign, strike, t, iv, oi) for every contract counted, for the GEX profile
+        per_exp = []
+        for exp in used:
+            rows = chain_rows(ticker, exp)
+            s0, t = option_spot(ticker, exp), years_to_expiry(exp, now)
+            near = [r for k in ("call", "put") for r in rows[k] if abs(r["strike"] / spot - 1) <= GEX_NEAR]
+            source, cboe = "Yahoo", None
+            if near and sum(r["oi"] > 0 for r in near) < GEX_MIN_OI_SHARE * len(near):
+                cboe = cboe_chain(ticker)
+                if any(k[0] == exp for k in cboe):
+                    source = "CBOE"
+                else:
+                    source, cboe = "Yahoo (open interest missing)", None
+            eg = 0.0
+            for kind, sign, col in (("call", 1, 0), ("put", -1, 1)):
+                for r in rows[kind]:
+                    oi, iv = r["oi"], r["iv"]
+                    if cboe is not None:
+                        c_oi, c_iv = cboe.get((exp, kind, r["strike"]), (0, 0))
+                        oi = int(c_oi)
+                        if r["iv_est"] and IV_FLOOR <= c_iv <= IV_CEILING:
+                            iv = c_iv
+                    if oi <= 0:
+                        continue
+                    g = greeks(kind, s0, r["strike"], t, iv)
+                    if not g:
+                        continue
+                    v = sign * g["gamma"] * oi * 100 * spot * spot * 0.01
+                    book.append((sign, r["strike"], t, iv, oi))
+                    b = by.setdefault(r["strike"], [0.0, 0.0, 0, 0])
+                    b[col] += v
+                    b[col + 2] += oi
+                    eg += v
+            per_exp.append({"exp": exp, "dte": dte(exp), "net_gex": eg, "oi_source": source})
+        if not by:
+            raise QuoteError(f"{ticker}: no open interest in the nearest expirations")
+        strikes = sorted(by)
+        net = [by[k][0] + by[k][1] for k in strikes]
+        call_wall = max(strikes, key=lambda k: by[k][0])
+        put_wall = min(strikes, key=lambda k: by[k][1])
+        rows = [{"strike": k, "call_gex": by[k][0], "put_gex": by[k][1], "net_gex": n,
+                 "call_oi": by[k][2], "put_oi": by[k][3]}
+                for k, n in zip(strikes, net) if abs(k / spot - 1) <= GEX_RANGE]
+        total = sum(net)
+        profile, profile_flip = gex_profile(book, spot)
+        return {
+            "ticker": ticker, "spot": spot, "net_gex": total,
+            "call_gex": sum(by[k][0] for k in strikes), "put_gex": sum(by[k][1] for k in strikes),
+            "regime": "positive" if total >= 0 else "negative",
+            "call_wall": call_wall, "call_wall_gex": by[call_wall][0],
+            "put_wall": put_wall, "put_wall_gex": by[put_wall][1],
+            "call_oi_wall": max(strikes, key=lambda k: by[k][2]),
+            "put_oi_wall": max(strikes, key=lambda k: by[k][3]),
+            "gamma_flip": gamma_flip(strikes, net, spot),
+            "profile": profile, "profile_flip": profile_flip,
+            "oi_sources": sorted({e["oi_source"] for e in per_exp}),
+            "expirations": per_exp, "days": days, "max_exps": max_exps,
+            "strikes": rows,
+            "as_of": now.isoformat(timespec="seconds"),
+        }
+    return _cached(("gex", ticker, days, max_exps), build)

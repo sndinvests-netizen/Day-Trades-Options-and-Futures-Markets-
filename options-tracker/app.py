@@ -10,6 +10,8 @@ trades.json, the same file tracker.py uses, which is kept out of git.
 import argparse
 import json
 import os
+import re
+import subprocess
 import threading
 import traceback
 import webbrowser
@@ -23,7 +25,7 @@ from econ_calendar import usd_events
 from fear_greed import fear_greed
 from breadth import breadth
 from fees import order_fees
-from options_data import QuoteError, chain, news, vix
+from options_data import GEX_DAYS, GEX_MAX_EXPS, QuoteError, chain, gex, news, vix
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 INDEX = os.path.join(HERE, "web", "index.html")
@@ -201,6 +203,11 @@ class Handler(BaseHTTPRequestHandler):
             if not ticker:
                 return self.send(400, {"error": "Enter a ticker"})
             self.guard(lambda: chain(ticker, q.get("exp")))
+        elif url.path == "/api/gex":
+            ticker = q.get("ticker", "").strip()
+            if not ticker:
+                return self.send(400, {"error": "Enter a ticker"})
+            self.guard(lambda: gex(ticker, num(q, "days", int, GEX_DAYS), num(q, "exps", int, GEX_MAX_EXPS)))
         elif url.path == "/api/positions":
             self.guard(positions)
         elif url.path == "/api/vix":
@@ -313,8 +320,21 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(lambda: save_earnings_watch(body.get("tickers")))
         elif path == "/api/positions/close":
             self.guard(close_position)
+        elif path == "/api/open-chart":
+            self.guard(lambda: open_chart(body.get("symbol")))
         else:
             self.send(404, {"error": "not found"})
+
+
+def open_chart(symbol):
+    """Open a TradingView chart in Google Chrome, where the TradingView login lives, whatever browser shows the tracker."""
+    symbol = str(symbol or "").upper()
+    if not re.fullmatch(r"[A-Z0-9.^=!:_-]{1,20}", symbol):
+        raise QuoteError("bad symbol")
+    url = "https://www.tradingview.com/chart/?symbol=" + symbol
+    if subprocess.run(["open", "-a", "Google Chrome", url], capture_output=True).returncode:
+        raise QuoteError("couldn't open Google Chrome")
+    return {"opened": url}
 
 
 def main():

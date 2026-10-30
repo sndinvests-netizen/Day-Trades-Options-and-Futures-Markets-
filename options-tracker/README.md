@@ -46,6 +46,12 @@ If the Mac is asleep at 6:30 it runs when the Mac wakes up; if the Mac is shut d
 - Auto-refresh every 1, 2 or 5 minutes. Recent tickers and your watchlist appear as one-click chips.
 - Click any call or put to log a trade on it, prefilled at the mid price.
 
+**Gamma exposure (GEX) on the Chain tab.** Below the chain, a GEX panel shows where dealer hedging may pin or push the stock, with call and put walls.
+- **What it adds up:** every contract in the nearest expirations (default: all within 45 days, at most 8; switch to nearest only, 7 days or 90 days). Dollar GEX per 1% move = gamma × open interest × 100 × price² × 1%. Gamma is Black-Scholes at each contract's IV (the same cleaned-up IV the chain uses). Calls count positive and puts negative, assuming dealers are long the calls and short the puts customers trade.
+- **Tiles:** price; net GEX with its regime (positive: dealer hedging tends to dampen moves; negative: it tends to amplify them); **call wall** (strike with the most call GEX, plus the strike with the most call open interest); **put wall** (most put GEX, plus most put open interest); **gamma flip** (where cumulative net GEX, summed from the lowest strike up, crosses zero, interpolated); and **zero-gamma price** (the price where total GEX would change sign if the stock moved there, the level most GEX sites quote).
+- **Chart:** horizontal bars of net GEX by strike within ±5/10/15% of the price (or calls and puts side by side), with the price, walls and flip marked. Hover a bar for its numbers. With many strikes, neighboring strikes are grouped.
+- **Data:** Yahoo, about 15 minutes delayed; open interest is as of the prior close. Yahoo blanks open interest overnight and early in the morning, so for those expirations open interest (and any IV Yahoo is missing) comes from [CBOE's delayed quotes](https://www.cboe.com/delayed_quotes/) instead; the panel says which source it used. API: `GET /api/gex?ticker=SPY&days=45&exps=8`.
+
 **Builder tab.** Design a position and see how it pays off before you trade it.
 - Pick a ready-made strategy: long call/put, covered call, cash-secured put, the four vertical spreads, straddles and strangles, iron condor, iron butterfly, call butterfly, collar, and calendar or diagonal spreads. Strikes are placed around the stock's expected move.
 - Or build your own: add, remove and edit legs (buy/sell, call/put/stock, expiration, strike, quantity, price). On the Chain tab, clicking a contract adds it as a leg: a click on the bid sells, a click anywhere else buys.
