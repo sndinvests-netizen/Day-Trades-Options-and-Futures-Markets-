@@ -25,7 +25,7 @@ from econ_calendar import usd_events
 from fear_greed import fear_greed
 from breadth import breadth
 from fees import order_fees
-from options_data import GEX_DAYS, GEX_MAX_EXPS, QuoteError, chain, gex, news, vix
+from options_data import GEX_DAYS, GEX_MAX_EXPS, QuoteError, chain, gex, news, quote, vix
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 INDEX = os.path.join(HERE, "web", "index.html")
@@ -203,6 +203,13 @@ class Handler(BaseHTTPRequestHandler):
             if not ticker:
                 return self.send(400, {"error": "Enter a ticker"})
             self.guard(lambda: chain(ticker, q.get("exp")))
+        elif url.path == "/api/quote":
+            # One contract's bid/ask/mark, e.g. the new leg in the Roll dialog.
+            ticker, kind = q.get("ticker", "").strip(), q.get("type", "put")
+            strike = num(q, "strike")
+            if not ticker or not q.get("exp") or not strike or kind not in ("put", "call"):
+                return self.send(400, {"error": "ticker, exp, strike and type put/call needed"})
+            self.guard(lambda: quote(ticker, q["exp"], strike, kind))
         elif url.path == "/api/gex":
             ticker = q.get("ticker", "").strip()
             if not ticker:

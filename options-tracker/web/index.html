@@ -868,7 +868,7 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
         <label>Contracts <input name="rcontracts" type="number" step="1" min="1"></label>
         <label>New strike <input name="rstrike" type="number" step="any" min="0"></label>
         <label>New expiration <input name="rexp" type="date"></label>
-        <label id="rollPriceLbl">New credit per share <input name="rpremium" type="number" step="any" min="0"></label>
+        <label id="rollPriceLbl">New credit per share <input name="rpremium" type="number" step="any" min="0"><span class="note" id="rollQuote"></span></label>
       </div>
       <div class="roll-sum" id="rollSum"></div>
     </fieldset>
@@ -2943,6 +2943,8 @@ function openClose(id, how = "closed") {
   }
   $("#closeTitle").textContent = `${f.elements.how.value === "rolled" ? "Roll" : "Close"} #${t.id}: ${t.ticker} ${t.label} ${t.exp || ""}`;
   f.elements.rexp.min = today();
+  $("#rollQuote").textContent = "";
+  rollPxAuto = false;
   updateCloseForm();
   $("#closeErr").textContent = "";
   $("#closeDlg").showModal();
@@ -2959,6 +2961,35 @@ $("#closeForm").elements.rexp.addEventListener("keydown", e => {
   e.preventDefault();
   try { e.target.showPicker(); } catch {}
 });
+// The new leg's price comes from the option chain: once type, strike and expiration are set,
+// "New credit per share" fills with the bid/ask mid. You can still type over it.
+let rollQuoteSeq = 0, rollQuoteTimer, rollPxAuto = false;   // rollPxAuto: the price field holds a chain quote, not a typed price
+async function fetchRollQuote() {
+  const e = $("#closeForm").elements, t = tradeData.open.find(x => x.id === closingId), note = $("#rollQuote");
+  if (!t || e.how.value !== "rolled" || !(+e.rstrike.value > 0) || !e.rexp.value) { note.textContent = ""; return; }
+  const seq = ++rollQuoteSeq;
+  note.textContent = "Getting quote…";
+  try {
+    const q = await api("/api/quote?" + new URLSearchParams({ ticker: t.ticker, exp: e.rexp.value, strike: e.rstrike.value, type: e.rtype.value }));
+    if (seq !== rollQuoteSeq) return;   // a newer contract was picked meanwhile
+    e.rpremium.value = q.mark.toFixed(2);
+    rollPxAuto = true;
+    note.textContent = q.unlisted ? `strike not in Yahoo's chain, price estimated`
+      : q.quoted ? `bid ${f2(q.bid)} / ask ${f2(q.ask)} · filled with the mid` : `no live bid/ask, filled with the last trade`;
+    renderRollSum();
+    feeClose();
+  } catch (err) {
+    if (seq !== rollQuoteSeq) return;
+    note.textContent = err.message;
+    if (rollPxAuto) { e.rpremium.value = ""; rollPxAuto = false; renderRollSum(); }   // don't leave the old contract's price
+  }
+}
+$("#closeForm").elements.rpremium.addEventListener("input", () => { rollPxAuto = false; });
+for (const n of ["rtype", "rstrike", "rexp"])
+  $("#closeForm").elements[n].addEventListener(n === "rstrike" ? "input" : "change", () => {
+    clearTimeout(rollQuoteTimer);
+    rollQuoteTimer = setTimeout(fetchRollQuote, 400);
+  });
 function updateCloseForm() {
   const how = $("#closeForm").elements.how.value, t = tradeData.open.find(x => x.id === closingId);
   const short = t && t.side === "sell", rolled = how === "rolled";
