@@ -21,6 +21,7 @@ from urllib.parse import parse_qs, urlparse
 import tracker
 import earnings
 import screener
+import leaps
 from econ_calendar import usd_events
 from fear_greed import fear_greed
 from breadth import breadth
@@ -98,6 +99,14 @@ def save_earnings_watch(tickers):
     except ValueError as e:
         raise tracker.TradeError(str(e))
     return earnings_feed()
+
+
+def save_leaps_watch(tickers):
+    try:
+        leaps.save_watchlist(tickers)
+    except ValueError as e:
+        raise tracker.TradeError(str(e))
+    return leaps.scan()
 
 
 def screener_feed(q):
@@ -231,6 +240,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(lambda: news_feed(q.get("tickers", "")))
         elif url.path == "/api/screener":
             self.guard(lambda: screener_feed(q))
+        elif url.path == "/api/leaps":
+            self.guard(lambda: leaps.scan(q.get("refresh") == "1"))
         else:
             self.send(404, {"error": "not found"})
 
@@ -337,6 +348,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(lambda: {"levels": save_vix_levels(body.get("levels"))})
         elif path == "/api/earnings/watch":
             self.guard(lambda: save_earnings_watch(body.get("tickers")))
+        elif path == "/api/leaps/watch":
+            self.guard(lambda: save_leaps_watch(body.get("tickers")))
         elif path == "/api/positions/close":
             self.guard(close_position)
         elif path == "/api/open-chart":

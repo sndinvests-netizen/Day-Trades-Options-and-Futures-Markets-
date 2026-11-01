@@ -92,6 +92,13 @@ If the Mac is asleep at 6:30 it runs when the Mac wakes up; if the Mac is shut d
 - **The seven indicators** (click to open): market momentum, stock price strength and breadth, put/call options, market volatility, safe-haven demand and junk bond demand, each with its own rating and position on the fear-to-greed scale.
 - The tracker fetches it at most every 10 minutes and keeps the last copy in `fng_cache.json` (not in git). Hide/Show it from its header.
 
+**LEAPS tab.** Ranks a watchlist for buying long-dated calls (LEAPS) as a stock replacement. It's a scanner, not advice.
+- **Watchlist:** type tickers and press **Save & scan**. They're saved to `leaps_watch.json` (not in git). Until you save one, it uses your Earnings watchlist.
+- **The stock (40 points):** trend 15 (above the 200- and 50-day SMAs, 50 above 200), strength vs SPY over 6 and 12 months 15, and Rule of 40 10 (revenue growth % + free-cash-flow margin %).
+- **The contract (60 points):** every call 365+ days out with delta 0.70–0.85 is a candidate. The best one is the liquid one (open interest ≥ 100, spread ≤ 5%) with the least **time value per year** (extrinsic ÷ years, as a % of the stock price), which is what holding it costs you. Scored on time value/yr 25, breakeven per year 10, IV vs 1-year realized vol 10 (Yahoo has no free IV history for a true IV rank), spread 10 and open interest 5. A ticker with no liquid LEAPS loses 15 points and shows a **thin** tag.
+- Earnings within 14 days are flagged. Hover a score for its breakdown, click ▸ for up to 4 alternate contracts, and **Builder** loads the call into the Builder. **Download CSV** saves the table.
+- The scan takes about 2 seconds per ticker in the background and is reused for 4 hours (**Refresh** rescans). The last scan is kept in `leaps_cache.json` (not in git).
+
 ## Command line
 
 The same trades file also works from the terminal (use `.venv/bin/python` or any Python with yfinance):
