@@ -461,10 +461,6 @@ def _at_ma(r, level, near):
     return min(hits, key=lambda h: h["dist"]) if hits else None
 
 
-RSI_MODES = ("any", "oversold", "overbought")   # daily AND weekly RSI below RSI_LOW / above RSI_HIGH
-RSI_LOW, RSI_HIGH = 40, 70
-
-
 def screen(min_cap=DEFAULT_MIN_CAP, min_oi=DEFAULT_MIN_OI, near=DEFAULT_NEAR, stocks_only=True, at_support=True,
            refresh=False, level="any", rsi="any"):
     if _data is None and not _oi:
