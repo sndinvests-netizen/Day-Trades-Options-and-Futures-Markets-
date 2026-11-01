@@ -276,6 +276,11 @@ h3 { font-size: 12px; margin: 16px 0 6px; color: var(--muted); text-transform: u
 .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .row > div { display: flex; gap: 8px; }
 .hidden { display: none !important; }
+/* Date fields: clicking anywhere opens the calendar, and its icon and popup follow the theme
+   (without color-scheme, Chrome draws a dark icon that vanishes on the dark theme). */
+input[type="date"] { cursor: pointer; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) input[type="date"] { color-scheme: dark; } }
+:root[data-theme="dark"] input[type="date"] { color-scheme: dark; }
 /* Rolls: new-contract box in the Close dialog, and the chain tags in the trade tables */
 .roll-box { border: 1px dashed var(--flag); border-radius: 10px; padding: 10px 12px 12px; margin: 12px 0 0; }
 .roll-box legend { color: var(--flag); font-weight: 600; font-size: 12.5px; padding: 0 6px; }
@@ -2937,11 +2942,23 @@ function openClose(id, how = "closed") {
     f.elements.rstrike.value = t.strike;
   }
   $("#closeTitle").textContent = `${f.elements.how.value === "rolled" ? "Roll" : "Close"} #${t.id}: ${t.ticker} ${t.label} ${t.exp || ""}`;
+  f.elements.rexp.min = today();
   updateCloseForm();
   $("#closeErr").textContent = "";
   $("#closeDlg").showModal();
   feeClose();
 }
+// Every date field opens its calendar on click, not just on the small icon.
+document.addEventListener("click", e => {
+  const i = e.target.closest('input[type="date"]');
+  if (i && !i.disabled) try { i.showPicker(); } catch {}
+});
+// The roll's new expiration is picked from the calendar only: typing opens the calendar instead.
+$("#closeForm").elements.rexp.addEventListener("keydown", e => {
+  if (["Tab", "Escape", "Enter"].includes(e.key)) return;
+  e.preventDefault();
+  try { e.target.showPicker(); } catch {}
+});
 function updateCloseForm() {
   const how = $("#closeForm").elements.how.value, t = tradeData.open.find(x => x.id === closingId);
   const short = t && t.side === "sell", rolled = how === "rolled";
