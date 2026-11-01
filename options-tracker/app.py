@@ -130,6 +130,8 @@ def vix_levels():
 
 def save_vix_levels(levels):
     out = []
+    if not isinstance(levels or [], list) or not all(isinstance(l, dict) for l in levels or []):
+        raise tracker.TradeError("levels must be a list of objects")
     for l in levels or []:
         try:
             price = float(l.get("price"))
@@ -145,6 +147,14 @@ def save_vix_levels(levels):
     with open(VIX_LEVELS, "w") as f:
         json.dump(out, f, indent=2)
     return out
+
+
+def leg_list(body):
+    """The "legs" list of a request body, checked to be a list of objects."""
+    legs = body.get("legs") or []
+    if not isinstance(legs, list) or not all(isinstance(l, dict) for l in legs):
+        raise tracker.TradeError("legs must be a list of objects")
+    return legs
 
 
 def num(body, key, cast=float, default=None):
@@ -238,6 +248,8 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
         except ValueError:
             return self.send(400, {"error": "bad JSON"})
+        if not isinstance(body, dict):
+            return self.send(400, {"error": "bad JSON"})
         path = urlparse(self.path).path
 
         def add():
@@ -271,7 +283,7 @@ class Handler(BaseHTTPRequestHandler):
         def add_position():
             legs = [{"type": l.get("type"), "side": l.get("side"), "strike": num(l, "strike"),
                      "exp": l.get("exp") or None, "premium": num(l, "premium"),
-                     "contracts": num(l, "contracts", int, 1)} for l in body.get("legs") or []]
+                     "contracts": num(l, "contracts", int, 1)} for l in leg_list(body)]
             with db_lock:
                 trades = tracker.load(DB)
                 out = tracker.add_position(trades, str(body.get("ticker", "")), legs, str(body.get("strategy", "")),
@@ -282,7 +294,7 @@ class Handler(BaseHTTPRequestHandler):
 
         def close_position():
             legs = [{"id": num(l, "id", int), "premium": num(l, "premium"), "contracts": num(l, "contracts", int)}
-                    for l in body.get("legs") or []]
+                    for l in leg_list(body)]
             with db_lock:
                 trades = tracker.load(DB)
                 out = tracker.close_position(trades, legs, num(body, "fees"), body.get("closed") or None)
@@ -291,7 +303,7 @@ class Handler(BaseHTTPRequestHandler):
 
         def fee_quote():
             legs = [{"type": l.get("type"), "action": l.get("action"), "price": num(l, "price", float, 0.0),
-                     "contracts": num(l, "contracts", int, 0) or 0} for l in body.get("legs") or []]
+                     "contracts": num(l, "contracts", int, 0) or 0} for l in leg_list(body)]
             total, parts = order_fees(str(body.get("ticker", "")), [l for l in legs if l["contracts"] > 0])
             return {"total": total, "parts": parts}
 
