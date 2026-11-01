@@ -268,6 +268,16 @@ class Handler(BaseHTTPRequestHandler):
                 tracker.save(DB, trades)
             return t
 
+        def roll():
+            with db_lock:
+                trades = tracker.load(DB)
+                old, new = tracker.roll_trade(trades, num(body, "id", int), num(body, "premium"), num(body, "strike"),
+                                              body.get("exp") or None, num(body, "new_premium"), num(body, "contracts", int),
+                                              num(body, "new_contracts", int), body.get("type") or None,
+                                              num(body, "fees"), body.get("closed") or None)
+                tracker.save(DB, trades)
+            return {"old": old, "new": new}
+
         def add_position():
             legs = [{"type": l.get("type"), "side": l.get("side"), "strike": num(l, "strike"),
                      "exp": l.get("exp") or None, "premium": num(l, "premium"),
@@ -312,6 +322,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(delete)
         elif path == "/api/trades/close":
             self.guard(close)
+        elif path == "/api/trades/roll":
+            self.guard(roll)
         elif path == "/api/positions":
             self.guard(add_position)
         elif path == "/api/vix/levels":

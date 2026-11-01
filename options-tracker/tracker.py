@@ -16,6 +16,7 @@ Usage examples:
   python3 tracker.py close 3 --premium 1.05
   python3 tracker.py close 4 --expired
   python3 tracker.py close 5 --assigned --premium 8
+  python3 tracker.py roll 6 --premium 0.55 --strike 42 --exp 2026-11-20 --new-premium 0.70
   python3 tracker.py report
 """
 import argparse
@@ -282,7 +283,63 @@ def delete_position(trades, trade_id):
     removed = [x for x in trades if x.get("group") == t["group"]] if t.get("group") else [t]
     ids = {x["id"] for x in removed}
     trades[:] = [x for x in trades if x["id"] not in ids]
+    # Deleting the new leg of a roll undoes the roll: the leg it came from is open again.
+    old = next((x for x in trades if x["id"] == t.get("rolled_from")), None)
+    if old and old["status"] == "rolled" and old.get("rolled_to") == t["id"]:
+        for k in ("exit_premium", "exit_fees", "closed", "realized", "rolled_to"):
+            old.pop(k, None)
+        if not old.get("rolled_from"):  # it started the chain, so there is no chain left
+            old.pop("roll_root", None)
+        old["status"] = "open"
+        # A partial roll split the contracts off: put them back on the leg they came from.
+        parent = next((x for x in trades if x["id"] == old.get("split_from") and x["status"] == "open"
+                       and x["premium"] == old["premium"] and x.get("roll_root") == old.get("roll_root")), None)
+        if parent:
+            parent.update(contracts=parent["contracts"] + old["contracts"], fees=round(parent["fees"] + old["fees"], 2))
+            trades.remove(old)
     return removed
+
+
+def roll_trade(trades, trade_id, exit_premium, strike, exp, premium, contracts=None, new_contracts=None,
+               type=None, fees=None, rolled=None):
+    """Roll an open single option leg: buy it back (or sell it, if long) at exit_premium and open
+    a new leg of the same side at a new strike and/or expiration for `premium`. Returns (old, new).
+
+    contracts = how many to roll (default all; fewer splits the leg). new_contracts defaults
+    to the same number. type defaults to the same put/call. fees=None fills in the broker's
+    fees for each side; a typed total goes on the buy-back. Both legs carry the same
+    "roll_root", so the report counts the whole chain as one position.
+    """
+    t = next((x for x in trades if x["id"] == trade_id), None)
+    if t is None:
+        raise TradeError(f"No trade #{trade_id}")
+    if t["status"] != "open":
+        raise TradeError(f"Trade #{t['id']} is already {t['status']}")
+    if kind(t) == "stock" or t.get("group"):
+        raise TradeError("Only a single option leg can be rolled (close a multi-leg position instead)")
+    n = t["contracts"] if contracts is None else contracts
+    if n < 1 or n > t["contracts"]:
+        raise TradeError(f"#{t['id']} has {t['contracts']} contract(s) open; can't roll {n}")
+    if exit_premium is None or exit_premium < 0:
+        raise TradeError("Buy-back price needed (0 or more)")
+    if premium is None or premium < 0:
+        raise TradeError("Price for the new contract needed (0 or more)")
+    new_type = type or kind(t)
+    if new_type == kind(t) and strike == t["strike"] and exp == t["exp"]:
+        raise TradeError("The new contract has the same strike and expiration")
+    rolled = rolled or date.today().isoformat()
+    if n < t["contracts"]:
+        t = split_trade(trades, t, n)
+    open_fees = None if fees is None else 0.0
+    new = add_trade(trades, t["ticker"], new_type, t["side"], strike, exp, premium,
+                    new_contracts or n, open_fees, rolled, t.get("notes", ""))
+    if fees is None:
+        fees = closing_fees(t["ticker"], [(t, n, exit_premium)])
+    close_trade(trades, t["id"], exit_premium, fees=fees, closed=rolled)
+    root = t.get("roll_root") or t.get("split_from") or t["id"]
+    t.update(status="rolled", rolled_to=new["id"], roll_root=root)
+    new.update(rolled_from=t["id"], roll_root=root)
+    return t, new
 
 
 def close_position(trades, legs, fees=None, closed=None):
@@ -440,6 +497,17 @@ def cmd_close(args, trades):
     print(f"#{t['id']} {t['status']}: realized P&L {money(t['realized'], True)}")
 
 
+def cmd_roll(args, trades):
+    try:
+        old, new = roll_trade(trades, args.id, args.premium, args.strike, args.exp, args.new_premium,
+                              args.contracts, args.new_contracts, args.type, args.fees, args.date)
+    except TradeError as e:
+        sys.exit(str(e))
+    print(f"#{old['id']} rolled: realized {money(old['realized'], True)}")
+    print(f"#{new['id']} opened {new['contracts']} {new['ticker']} {new['exp']} {label(new)} @ {new['premium']:.2f}"
+          f"  [{new['category']}, {new['dte_at_open']} DTE]")
+
+
 def money(x, cents=False):
     if x is None:
         return "unlimited"
@@ -508,11 +576,12 @@ def describe(t, show_live=False):
 def positions_of(trades):
     """Group legs into positions: a multi-leg group, or a single trade on its own.
 
-    Contracts split off by a partial close stay with the trade they came from.
+    Contracts split off by a partial close stay with the trade they came from, and every
+    leg of a roll chain stays with the leg the chain started from.
     """
     out = {}
     for t in trades:
-        key = ("g", t["group"]) if t.get("group") else ("t", t.get("split_from") or t["id"])
+        key = ("g", t["group"]) if t.get("group") else ("t", t.get("roll_root") or t.get("split_from") or t["id"])
         out.setdefault(key, []).append(t)
     return list(out.values())
 
@@ -606,13 +675,18 @@ def premium_report(trades):
         row, credit = by_kind[k], option_credit(legs)
         row["positions"] += 1
         row["collected"] += credit
-        m = months.setdefault(legs[0]["opened"][:7], {"collected": 0.0, "kept": 0.0})
-        m["collected"] += credit
+        for t in legs:  # a roll's new credit counts in the month it was opened
+            if kind(t) != "stock":
+                months.setdefault(t["opened"][:7], {"collected": 0.0, "kept": 0.0})["collected"] += option_credit([t])
         opts = [t for t in legs if kind(t) != "stock"]  # shares held after the call closes don't keep it open
         if any(t["status"] == "open" for t in opts):
+            # Credit still in play = credits taken in minus what was paid to close legs already
+            # closed (a roll's buy-back, a partial close).
+            in_play = credit + sum(sign(t) * t["exit_premium"] * MULTIPLIER * t["contracts"]
+                                   for t in opts if t["status"] != "open")
             row["open"] += 1
-            row["open_credit"] += credit
-            open_positions.append({"ids": [t["id"] for t in legs], "kind": k, "credit": credit})
+            row["open_credit"] += in_play
+            open_positions.append({"ids": [t["id"] for t in legs], "kind": k, "credit": in_play})
         else:
             kept = premium_kept(legs)
             row["closed_credit"] += credit
@@ -680,6 +754,18 @@ def main(argv=None):
     c.add_argument("--fees", type=float, default=None, help="total closing fees in dollars (default: Robinhood's fees)")
     c.add_argument("--date", help="close date YYYY-MM-DD (default today)")
 
+    r = sub.add_parser("roll", help="roll a single option leg to a new strike and/or expiration")
+    r.add_argument("id", type=int)
+    r.add_argument("--premium", type=float, required=True, help="buy-back (or sell-to-close) price per share")
+    r.add_argument("--strike", type=float, required=True, help="new strike")
+    r.add_argument("--exp", required=True, help="new expiration YYYY-MM-DD")
+    r.add_argument("--new-premium", type=float, required=True, help="price per share of the new contract")
+    r.add_argument("--contracts", type=int, help="how many to roll (default all)")
+    r.add_argument("--new-contracts", type=int, help="contracts on the new leg (default same)")
+    r.add_argument("--type", choices=["put", "call"], help="new type (default same)")
+    r.add_argument("--fees", type=float, default=None, help="total fees for both sides (default: Robinhood's fees)")
+    r.add_argument("--date", help="roll date YYYY-MM-DD (default today)")
+
     l = sub.add_parser("list", help="show trades")
     l.add_argument("--status", choices=["open", "closed", "all"], default="open")
     l.add_argument("--category", choices=["hop", "skip", "leap"])
@@ -695,9 +781,9 @@ def main(argv=None):
 
     args = p.parse_args(argv)
     trades = load(args.db)
-    {"add": cmd_add, "close": cmd_close, "delete": cmd_delete, "list": cmd_list,
+    {"add": cmd_add, "close": cmd_close, "roll": cmd_roll, "delete": cmd_delete, "list": cmd_list,
      "report": cmd_report, "premium": cmd_premium}[args.cmd](args, trades)
-    if args.cmd in ("add", "close", "delete"):
+    if args.cmd in ("add", "close", "roll", "delete"):
         save(args.db, trades)
 
 

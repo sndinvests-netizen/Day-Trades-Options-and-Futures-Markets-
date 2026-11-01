@@ -276,6 +276,13 @@ h3 { font-size: 12px; margin: 16px 0 6px; color: var(--muted); text-transform: u
 .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .row > div { display: flex; gap: 8px; }
 .hidden { display: none !important; }
+/* Rolls: new-contract box in the Close dialog, and the chain tags in the trade tables */
+.roll-box { border: 1px dashed var(--flag); border-radius: 10px; padding: 10px 12px 12px; margin: 12px 0 0; }
+.roll-box legend { color: var(--flag); font-weight: 600; font-size: 12.5px; padding: 0 6px; }
+.roll-sum { margin-top: 10px; border-radius: 8px; background: var(--well); padding: 8px 12px; display: grid; grid-template-columns: 1fr auto; gap: 3px 16px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.roll-sum:empty { display: none; }
+.roll-sum b { text-align: right; }
+.pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 0 7px; border-radius: 999px; border: 1px solid var(--flag); color: var(--flag); white-space: nowrap; }
 dialog { border: 1px solid var(--line); border-radius: 16px; background: var(--panel); color: var(--text); padding: 20px;
   width: min(470px, calc(100vw - 32px)); box-shadow: 0 20px 50px rgba(0,0,0,.35); }
 dialog::backdrop { background: rgba(10,20,35,.45); backdrop-filter: blur(2px); }
@@ -844,11 +851,22 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
       <label>How <select name="how">
         <option value="closed">Bought / sold to close</option>
         <option value="expired">Expired worthless</option>
-        <option value="assigned">Assigned / exercised</option></select></label>
+        <option value="assigned">Assigned / exercised</option>
+        <option value="rolled" id="closeRollOpt">Rolled to a new contract</option></select></label>
       <label id="closePriceLbl">Exit price per share <input name="premium" type="number" step="any" min="0"></label>
       <label>Fees ($ total) <input name="fees" type="number" step="any" min="0" placeholder="auto: Robinhood fees"><span class="note feeest"></span></label>
-      <label>Closed on <input name="closed" type="date"></label>
+      <label id="closeDateLbl">Closed on <input name="closed" type="date"></label>
     </div>
+    <fieldset id="rollBox" class="roll-box hidden"><legend>New contract</legend>
+      <div class="grid2">
+        <label>Type <select name="rtype"><option value="put">Put</option><option value="call">Call</option></select></label>
+        <label>Contracts <input name="rcontracts" type="number" step="1" min="1"></label>
+        <label>New strike <input name="rstrike" type="number" step="any" min="0"></label>
+        <label>New expiration <input name="rexp" type="date"></label>
+        <label id="rollPriceLbl">New credit per share <input name="rpremium" type="number" step="any" min="0"></label>
+      </div>
+      <div class="roll-sum" id="rollSum"></div>
+    </fieldset>
     <p class="note" id="closeHint"></p>
     <div class="formerr" id="closeErr"></div>
     <div class="actions"><button class="ghost" type="button" data-close>Cancel</button><button class="primary" type="submit">Save</button></div>
@@ -2685,11 +2703,11 @@ function renderTrades() {
       const sub = { Hop: "90 days or less at open", Skip: "91–360 days at open", Leap: "over 360 days at open" }[cat];
       return `<h3>${cat} <span class="note" style="text-transform:none;letter-spacing:0">${sub}</span></h3><div class="scroll-top"><div></div></div><div class="scroll"><table>${head}<tbody>` +
         ps.map(p => {
-          const buttons = `<button class="ghost small" data-builder="${posKey(p)}">Builder</button> <button class="ghost small" data-close-key="${posKey(p)}">Close</button> <button class="ghost small" data-partial-key="${posKey(p)}" title="Buy back or sell some of the contracts and keep the rest open">Partial</button> <button class="ghost small danger" data-del-id="${p[0].id}" title="Delete a trade logged by mistake">Delete</button>`;
+          const buttons = `<button class="ghost small" data-builder="${posKey(p)}">Builder</button> <button class="ghost small" data-close-key="${posKey(p)}">Close</button> ${p.length === 1 && p[0].type !== "stock" ? `<button class="ghost small" data-roll-id="${p[0].id}" title="Close this leg and open a new strike or expiration in one step">Roll</button> ` : ""}<button class="ghost small" data-partial-key="${posKey(p)}" title="Buy back or sell some of the contracts and keep the rest open">Partial</button> <button class="ghost small danger" data-del-id="${p[0].id}" title="Delete a trade logged by mistake">Delete</button>`;
           if (p.length === 1) {
             const t = p[0], s = t.stats;
             return `<tr><td class="left">${t.id}</td>
-              <td class="left">${targetDot(profitTarget(p))}<b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp || ""}${t.notes ? `<div class="note">${esc(t.notes)}</div>` : ""}${targetNote(profitTarget(p))}</td>
+              <td class="left">${targetDot(profitTarget(p))}<b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp || ""}${t.rolled_from ? `<div><span class="pill">rolled from #${t.rolled_from}</span> ${chainNote(t)}</div>` : ""}${t.notes ? `<div class="note">${esc(t.notes)}</div>` : ""}${targetNote(profitTarget(p))}</td>
               <td style="white-space:nowrap">${buttons}</td>${roiCell(p)}
               ${legCells(t)}<td>${f2(s.breakeven)}</td><td>${usd(s.max_profit)}</td><td>${usd(s.max_loss)}</td>
               <td class="left">${alertHtml(alertsOf(p))}</td>
@@ -2803,6 +2821,7 @@ $("#openGroups").onclick = e => {
   if (b.dataset.delId) return openDelete(+b.dataset.delId);
   if (b.dataset.builder) openInBuilder(positionByKey(b.dataset.builder));
   if (b.dataset.partialKey) return openPartial(positionByKey(b.dataset.partialKey));
+  if (b.dataset.rollId) return openClose(+b.dataset.rollId, "rolled");
   if (b.dataset.closeKey) {
     const p = positionByKey(b.dataset.closeKey);
     if (p.length === 1) openClose(p[0].id); else openClosePosition(p);
@@ -2823,9 +2842,9 @@ function renderClosed(closed) {
   const saved = store.get("closedMonthsOpen", {});
   const head = `<thead><tr><th class="left">#</th><th class="left">Contract</th><th class="left">Side</th><th>Qty</th><th class="left">Group</th><th>Opened</th><th>Closed</th>
         <th class="left">How</th><th>Entry</th><th>Exit</th><th>Realized</th><th></th></tr></thead>`;
-  const row = t => `<tr><td class="left">${t.id}</td><td class="left"><b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp || ""}${t.group ? ` <span class="note">${esc(t.strategy)} P${t.group}</span>` : ""}${t.split_from ? ` <span class="note">partial of #${t.split_from}</span>` : ""}</td>
+  const row = t => `<tr><td class="left">${t.id}</td><td class="left"><b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp || ""}${t.group ? ` <span class="note">${esc(t.strategy)} P${t.group}</span>` : ""}${t.split_from ? ` <span class="note">partial of #${t.split_from}</span>` : ""}${t.rolled_from ? ` <span class="pill">rolled from #${t.rolled_from}</span>` : ""}</td>
         <td class="left">${t.side === "buy" ? "Long" : "Short"}</td><td>${t.contracts}</td><td class="left">${t.category}</td><td>${t.opened}</td><td>${t.closed}</td>
-        <td class="left">${t.status}</td><td>${f2(t.premium)}</td><td>${f2(t.exit_premium)}</td>
+        <td class="left">${t.status === "rolled" ? `<span class="pill">rolled → #${t.rolled_to}</span> ${chainNote(t)}` : t.status}</td><td>${f2(t.premium)}</td><td>${f2(t.exit_premium)}</td>
         <td class="${signed(t.realized)}">${usd(t.realized, true)}</td>
         <td><button class="ghost small danger" data-del-id="${t.id}" title="Delete a trade logged by mistake">Delete</button></td></tr>`;
   $("#closed").innerHTML = keys.map((m, i) => {
@@ -2865,6 +2884,8 @@ function openDelete(id) {
   $("#delTitle").textContent = legs.length > 1 ? `Delete ${t.ticker} ${t.strategy} (all ${legs.length} legs)?` : `Delete trade #${t.id}?`;
   $("#delList").innerHTML = legs.map(x => `<li>${x.side === "buy" ? "Bought" : "Sold"} ${x.contracts} ${esc(x.ticker)} ${esc(x.label)} ${x.exp || ""} @ ${f2(x.premium)}
     <span class="note">(${x.status === "open" ? "open" : x.status + " " + usd(x.realized, true)})</span></li>`).join("");
+  const prev = t.rolled_from && all.find(x => x.id === t.rolled_from && x.status === "rolled" && x.rolled_to === t.id);
+  if (prev) $("#delList").innerHTML += `<li class="note">This undoes the roll: #${prev.id} ${esc(prev.label)} ${prev.exp} goes back to open.</li>`;
   $("#delErr").textContent = "";
   $("#delDlg").showModal();
 }
@@ -2899,35 +2920,95 @@ $("#addForm").onsubmit = async e => {
 };
 
 let closingId = null;
-function openClose(id) {
+function openClose(id, how = "closed") {
   const t = tradeData.open.find(x => x.id === id);
   closingId = id;
   const f = $("#closeForm");
   f.reset();
   f.elements.closed.value = today();
   if (t.live) f.elements.premium.value = t.live.mark.toFixed(2);
-  $("#closeTitle").textContent = `Close #${t.id}: ${t.ticker} ${t.label} ${t.exp || ""}`;
+  // Rolls are for single option legs; share lots and spread legs can't be rolled here.
+  const rollable = t.type !== "stock" && !t.group;
+  $("#closeRollOpt").hidden = $("#closeRollOpt").disabled = !rollable;
+  f.elements.how.value = rollable ? how : "closed";
+  if (rollable) {
+    f.elements.rtype.value = t.type;
+    f.elements.rcontracts.value = t.contracts;
+    f.elements.rstrike.value = t.strike;
+  }
+  $("#closeTitle").textContent = `${f.elements.how.value === "rolled" ? "Roll" : "Close"} #${t.id}: ${t.ticker} ${t.label} ${t.exp || ""}`;
   updateCloseForm();
   $("#closeErr").textContent = "";
   $("#closeDlg").showModal();
   feeClose();
 }
 function updateCloseForm() {
-  const how = $("#closeForm").elements.how.value;
+  const how = $("#closeForm").elements.how.value, t = tradeData.open.find(x => x.id === closingId);
+  const short = t && t.side === "sell", rolled = how === "rolled";
   $("#closePriceLbl").classList.toggle("hidden", how === "expired");
-  $("#closePriceLbl").firstChild.textContent = how === "assigned" ? "Intrinsic value per share " : "Exit price per share ";
+  $("#closePriceLbl").firstChild.textContent = how === "assigned" ? "Intrinsic value per share "
+    : rolled ? (short ? "Buy-back price per share " : "Sell-to-close price per share ") : "Exit price per share ";
+  $("#closeDateLbl").firstChild.textContent = rolled ? "Rolled on " : "Closed on ";
+  $("#rollPriceLbl").firstChild.textContent = short ? "New credit per share " : "New cost per share ";
+  $("#rollBox").classList.toggle("hidden", !rolled);
+  if (t) $("#closeTitle").textContent = `${rolled ? "Roll" : "Close"} #${t.id}: ${t.ticker} ${t.label} ${t.exp || ""}`;
   $("#closeHint").textContent = how === "assigned"
-    ? "Short put: no price needed, the shares are added at the strike and you keep the premium. Short call: your shares are sold at the strike. Otherwise: intrinsic value per share." : "";
+    ? "Short put: no price needed, the shares are added at the strike and you keep the premium. Short call: your shares are sold at the strike. Otherwise: intrinsic value per share."
+    : rolled ? "Saving closes this leg and opens the new one, linked as one roll chain. Fees left blank are filled in for both sides." : "";
+  renderRollSum();
 }
+// Running totals for a roll: what the buy-back costs, what the new leg brings in, and the whole chain so far.
+function renderRollSum() {
+  const box = $("#rollSum"), e = $("#closeForm").elements, t = tradeData.open.find(x => x.id === closingId);
+  if (!t || e.how.value !== "rolled") { box.innerHTML = ""; return; }
+  const sg = t.side === "buy" ? 1 : -1, n = t.contracts, nn = +e.rcontracts.value || n;
+  const out = e.premium.value === "" ? null : sg * +e.premium.value * 100 * n;
+  const inn = e.rpremium.value === "" ? null : -sg * +e.rpremium.value * 100 * nn;
+  const fees = e.fees.value === "" ? null : +e.fees.value;
+  const chain = rollChain(t);
+  const before = chain ? chain.net : -sg * t.premium * 100 * n - t.fees;
+  const newLbl = `${+e.rstrike.value || "?"}${e.rtype.value[0].toUpperCase()} ${e.rexp.value || "?"}`;
+  const line = (label, v) => `<span>${label}</span><b class="${v == null ? "" : signed(v)}">${v == null ? "–" : (v > 0 ? "+" : "") + usd(v, true)}</b>`;
+  const net = out == null || inn == null ? null : out + inn - (fees || 0);
+  box.innerHTML = line(`${isShort(t) ? "Buy back" : "Sell"} ${esc(t.label)} ${t.exp}`, out) +
+    line(`${isShort(t) ? "Sell" : "Buy"} ${esc(newLbl)}`, inn) +
+    (fees != null ? line("Fees", -fees) : "") +
+    line(`<b>Net on the roll</b>${fees == null ? ' <span class="note">before fees</span>' : ""}`, net) +
+    line(`Chain total so far <span class="note">(${chain ? chain.legs.length + " legs" : "opened " + t.opened}, with the roll)</span>`, net == null ? null : before + net);
+}
+const isShort = t => t.side === "sell";
+// A roll chain: every option leg sharing a roll_root. net = cash taken in minus cash paid, after all fees.
+function rollChain(t) {
+  if (!t.roll_root || !tradeData) return null;
+  const legs = [...tradeData.open, ...tradeData.closed].filter(x => x.roll_root === t.roll_root && x.type !== "stock");
+  const net = legs.reduce((s, x) => {
+    const sg = x.side === "buy" ? 1 : -1;
+    s += -sg * x.premium * x.contracts * 100 - x.fees;
+    if (x.status !== "open") s += sg * x.exit_premium * x.contracts * 100 - (x.exit_fees || 0);
+    return s;
+  }, 0);
+  return { legs, net, open: legs.some(x => x.status === "open") };
+}
+const chainNote = t => {
+  const c = rollChain(t);
+  return c ? `<span class="note">chain ${c.open ? "so far" : "total"} <span class="${signed(c.net)}">${(c.net > 0 ? "+" : "") + usd(c.net, true)}</span></span>` : "";
+};
 $("#closeForm").elements.how.onchange = updateCloseForm;
+$("#closeForm").addEventListener("input", renderRollSum);
 $("#closeForm").onsubmit = async e => {
   e.preventDefault();
   const v = Object.fromEntries(new FormData(e.target));
-  const body = { id: closingId, fees: v.fees, closed: v.closed, expired: v.how === "expired", assigned: v.how === "assigned" };
-  if (v.how !== "expired") body.premium = v.premium;
   try {
-    const t = await api("/api/trades/close", body);
-    if (t.realized > 0) celebrate(t.realized);
+    if (v.how === "rolled") {
+      const r = await api("/api/trades/roll", { id: closingId, premium: v.premium, strike: v.rstrike, exp: v.rexp,
+        new_premium: v.rpremium, new_contracts: v.rcontracts, type: v.rtype, fees: v.fees, closed: v.closed });
+      toast(`Rolled #${r.old.id} → #${r.new.id} ${r.new.ticker} ${r.new.strike}${r.new.type[0].toUpperCase()} ${r.new.exp}`, false);
+    } else {
+      const body = { id: closingId, fees: v.fees, closed: v.closed, expired: v.how === "expired", assigned: v.how === "assigned" };
+      if (v.how !== "expired") body.premium = v.premium;
+      const t = await api("/api/trades/close", body);
+      if (t.realized > 0) celebrate(t.realized);
+    }
     $("#closeDlg").close();
     loadTrades();
   } catch (err) { $("#closeErr").textContent = err.message; }
@@ -3041,6 +3122,9 @@ const feeSave = wireFees($("#saveForm"), () => ({ ticker: B.ticker,
 const feeClose = wireFees($("#closeForm"), () => {
   const t = tradeData.open.find(x => x.id === closingId), e = $("#closeForm").elements;
   if (!t) return null;
+  if (e.how.value === "rolled") return { ticker: t.ticker, legs: [
+    { type: t.type, action: closeSide(t.side), price: e.premium.value, contracts: t.contracts },
+    { type: e.rtype.value, action: t.side, price: e.rpremium.value, contracts: e.rcontracts.value || t.contracts }] };
   if (e.how.value !== "closed") return { ticker: t.ticker, legs: [] };
   return { ticker: t.ticker, legs: [{ type: t.type, action: closeSide(t.side), price: e.premium.value, contracts: t.contracts }] };
 });
