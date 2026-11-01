@@ -14,3 +14,5 @@ screener_cache.json.tmp
 leaps_cache.json
 leaps_cache.json.tmp
 leaps_watch.json
+leaps_market_cache.json
+leaps_market_cache.json.tmp

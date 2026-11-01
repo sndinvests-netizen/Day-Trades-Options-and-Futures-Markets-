@@ -241,7 +241,7 @@ class Handler(BaseHTTPRequestHandler):
         elif url.path == "/api/screener":
             self.guard(lambda: screener_feed(q))
         elif url.path == "/api/leaps":
-            self.guard(lambda: leaps.scan(q.get("refresh") == "1"))
+            self.guard(lambda: leaps.scan(q.get("refresh") == "1", q.get("mode") or "watch"))
         else:
             self.send(404, {"error": "not found"})
 

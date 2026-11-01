@@ -10,12 +10,16 @@ Two passes for each ticker:
 2. The contract. Every call expiring at least MIN_DAYS out with a Black-Scholes delta between
    DELTA_LO and DELTA_HI (deep in the money, so it tracks the stock) is a candidate. For each one:
    - cost: the mid of a real two-sided quote, else the tracker's Black-Scholes estimate (flagged "est")
-   - time value per year: (cost - intrinsic) / years to expiry, as a % of the stock price. This is
-     what the position costs you to hold, the number that matters most for a stock replacement.
+   - time value per year: (cost - intrinsic + dividends you give up) / years to expiry, as a % of the
+     stock price. This is what holding the call costs you vs owning the shares, the number that matters
+     most for a stock replacement. Intrinsic uses the live stock price, and the dividends are the stock's
+     annual dividend rate x years: a call holder doesn't get them, so high-yield stocks aren't flattered.
+   - a quote whose time value (dividends included) is under 80% of the interest on the strike is below
+     what the call can be worth: a stale or placeholder quote, so it is skipped.
    - breakeven: strike + cost, as a % move from today, and per year
    - spread: (ask - bid) / mid; open interest; leverage = delta x price / cost
    The best contract is the liquid one (OI >= MIN_OI, spread <= MAX_SPREAD, real quote) with the
-   least time value per year; if none is liquid, the cheapest one is shown, flagged.
+   highest contract score; if none is liquid, the best-scoring one is shown, flagged "thin".
    - IV / HV: the contract's IV over the stock's 1-year realized volatility. Yahoo has no free IV
      history, so a real IV rank isn't available; IV well above realized vol means LEAPS are pricey.
 
@@ -25,9 +29,10 @@ Score (0-100) = stock 40 (trend 15, relative strength 15, Rule of 40 10)
 
 Earnings within EARNINGS_WARN_DAYS days are flagged, not scored. It's a scanner, not advice.
 
-Scans run in a background thread (a request never waits on Yahoo) and the last one is kept in
-leaps_cache.json (gitignored). The watchlist is leaps_watch.json (gitignored); until it exists, the
-tracker's earnings watchlist is used.
+Two lists: your watchlist (leaps_watch.json, gitignored; until it exists, the tracker's Earnings
+watchlist), and the whole market: the Screener's ~1,000-stock scan filtered to uptrends beating SPY,
+the strongest MARKET_TOP of which get the full LEAPS check. Scans run in background threads (a request
+never waits on Yahoo); the last ones are kept in leaps_cache.json and leaps_market_cache.json (gitignored).
 """
 import json
 import math
@@ -39,8 +44,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 import earnings
-from options_data import (ET, QuoteError, _price_ok, _yf, chain_rows, expirations, greeks, option_spot,
-                          years_to_expiry, yahoo_symbol)
+from options_data import (ET, RISK_FREE_RATE, QuoteError, _price_ok, _yf, chain_rows, expirations, greeks,
+                          option_spot, spot_price, years_to_expiry, yahoo_symbol)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_FILE = os.path.join(HERE, "leaps_cache.json")
@@ -52,14 +57,14 @@ MIN_OI = 100
 MAX_SPREAD = 0.05
 EARNINGS_WARN_DAYS = 14
 FRESH_SECONDS = 4 * 3600      # a scan is reused for 4 hours unless Refresh is pressed
+RETRY_SECONDS = 300           # after a failed scan, wait 5 minutes before starting another on its own
 WORKERS = 3                   # more gets Yahoo rate limiting
 MAX_TICKERS = 60
 ALTERNATES = 4                # other candidate contracts returned per ticker
+STALE_FLOOR = 0.8             # carry (time value + dividends) below 80% of the interest on the strike = stale quote
 THIN_PENALTY = 15             # points off when no candidate is liquid (hard to get filled, hard to exit)
 
 _lock = threading.Lock()
-_data = None
-_job = {"running": False, "done": 0, "total": 0, "phase": "", "started": 0, "finished": 0, "error": None}
 
 
 # ---------- watchlist ----------
@@ -146,7 +151,8 @@ def _fundamentals(sym):
     margin = fcf / rev if fcf is not None and rev else None
     r40 = (growth + margin) * 100 if growth is not None and margin is not None else None
     e = earnings._get(sym)   # same dates as the tracker's Earnings dropdown (cached there)
-    return {"name": info.get("shortName") or info.get("longName"), "sector": info.get("sector"),
+    div = info.get("dividendRate") or info.get("trailingAnnualDividendRate") or 0.0
+    return {"name": info.get("shortName") or info.get("longName"), "sector": info.get("sector"), "div_rate": float(div),
             "mktcap": info.get("marketCap"), "rev_growth": growth, "fcf_margin": margin, "rule40": r40,
             "earnings": e.get("date"), "earnings_session": e.get("session"),
             "earnings_est": bool(e.get("estimated"))}
@@ -154,13 +160,18 @@ def _fundamentals(sym):
 
 # ---------- contracts ----------
 
-def _candidates(sym, spot_hint):
+def _candidates(sym, spot_hint, div_rate=0.0):
     today = datetime.now(ET).date()
+    try:
+        price = spot_price(sym)
+    except QuoteError:
+        price = spot_hint
+    skipped = 0
     exps = [e for e in expirations(sym) if (datetime.strptime(e, "%Y-%m-%d").date() - today).days >= MIN_DAYS]
     out = []
     for exp in exps:
         rows = chain_rows(sym, exp)["call"]
-        spot = option_spot(sym, exp) or spot_hint
+        spot = option_spot(sym, exp) or price   # the price the quotes were made at: for delta, like the Chain tab
         t = years_to_expiry(exp)
         dte = (datetime.strptime(exp, "%Y-%m-%d").date() - today).days
         for r in rows:
@@ -171,22 +182,27 @@ def _candidates(sym, spot_hint):
             cost = (r["bid"] + r["ask"]) / 2 if real else r["mark"]
             if not cost or cost <= 0:
                 continue
-            intrinsic = max(0.0, spot - r["strike"])
+            intrinsic = max(0.0, price - r["strike"])
+            divs = div_rate * t
+            carry = cost - intrinsic + divs
+            if carry < STALE_FLOOR * r["strike"] * (1 - math.exp(-RISK_FREE_RATE * t)):
+                skipped += 1      # priced under what the call can be worth: stale or placeholder quote
+                continue
             extrinsic = max(0.0, cost - intrinsic)
-            be = (r["strike"] + cost) / spot - 1
+            be = (r["strike"] + cost) / price - 1
             spread = (r["ask"] - r["bid"]) / cost if real else None
             out.append({
                 "exp": exp, "dte": dte, "strike": r["strike"], "delta": g["delta"], "theta": g["theta"],
                 "iv": r["iv"], "iv_est": r.get("iv_est", False), "est": not real,
                 "bid": r["bid"], "ask": r["ask"], "cost": cost, "contract_cost": cost * 100,
-                "intrinsic": intrinsic, "extrinsic": extrinsic,
-                "tv_year": extrinsic / t / spot, "tv_pct": extrinsic / cost,
+                "intrinsic": intrinsic, "extrinsic": extrinsic, "dividends": divs,
+                "tv_year": carry / t / price, "tv_pct": extrinsic / cost,
                 "breakeven": r["strike"] + cost, "be_pct": be, "be_year": be / t,
                 "spread": spread, "oi": r["oi"], "volume": r["volume"],
-                "leverage": g["delta"] * spot / cost,
+                "leverage": g["delta"] * price / cost,
                 "liquid": real and r["oi"] >= MIN_OI and spread is not None and spread <= MAX_SPREAD,
             })
-    return out
+    return out, skipped
 
 
 def _contract_score(c, rv):
@@ -234,7 +250,9 @@ def _analyze(sym, spy):
         row["earnings_days"] = days
         row["earnings_soon"] = 0 <= days <= EARNINGS_WARN_DAYS
     stock = _stock_score(row)
-    cands = _candidates(sym, price)
+    cands, skipped = _candidates(sym, price, row.get("div_rate") or 0.0)
+    row["skipped_stale"] = skipped
+    row["div_yield"] = (row.get("div_rate") or 0.0) / price if price else None
     for c in cands:
         c["parts"], c["iv_hv"] = _contract_score(c, row["rv"])
         c["score"] = sum(c["parts"].values())
@@ -255,27 +273,93 @@ def _analyze(sym, spy):
 
 
 # ---------- scan ----------
+# Two lists, each scanned in its own background thread and cached on disk:
+#   watch:  the tickers in leaps_watch.json (or the Earnings watchlist)
+#   market: the strongest uptrending stocks from the Screener's ~1,000-stock scan (see _market_universe)
 
-def _save():
-    tmp = CACHE_FILE + ".tmp"
+MARKET_TOP = 50               # how many market stocks get the full LEAPS check
+MARKET_MIN_CAP = 10e9
+SCREENER_WAIT = 600           # seconds to wait for the Screener's own scan when it has none
+
+_state = {
+    "watch": {"file": CACHE_FILE, "data": None, "loaded": False,
+              "job": {"running": False, "done": 0, "total": 0, "phase": "", "started": 0, "finished": 0, "error": None}},
+    "market": {"file": os.path.join(HERE, "leaps_market_cache.json"), "data": None, "loaded": False,
+               "job": {"running": False, "done": 0, "total": 0, "phase": "", "started": 0, "finished": 0, "error": None}},
+}
+
+
+def _save(st):
+    tmp = st["file"] + ".tmp"
     with open(tmp, "w") as f:
-        json.dump(_data, f)
-    os.replace(tmp, CACHE_FILE)
+        json.dump(st["data"], f)
+    os.replace(tmp, st["file"])
 
 
-def _load():
-    global _data
+def _load(st):
+    st["loaded"] = True
     try:
-        with open(CACHE_FILE) as f:
-            _data = json.load(f)
+        with open(st["file"]) as f:
+            st["data"] = json.load(f)
     except (OSError, ValueError):
-        _data = None
+        st["data"] = None
 
 
-def _scan(tickers):
-    global _data
+def _market_universe(job):
+    """The strongest uptrending stocks from the Screener's last scan: close above the 200-day SMA,
+    50-day above the 200-day, 1-year return ahead of SPY's. Ranked by the same trend + relative
+    strength points the LEAPS score uses (Rule of 40 needs a slow per-stock lookup, so it's
+    scored later, for the top MARKET_TOP only)."""
+    import screener
+    if screener._data is None:
+        screener._load()
+    if screener._data is None or not screener._fresh(screener._data["scanned_at"]):
+        job["phase"] = "Waiting for the Screener's market scan"
+        screener._start_scan(min(MARKET_MIN_CAP, screener.DEFAULT_MIN_CAP))
+        start = time.time()
+        while time.time() - start < SCREENER_WAIT:
+            time.sleep(3)
+            if not screener._job["running"] and screener._data is not None and screener._fresh(screener._data["scanned_at"]):
+                break
+            if not screener._job["running"] and screener._job.get("error"):
+                break
+    data = screener._data
+    if data is None:
+        raise QuoteError("The Screener has no market scan yet (Yahoo rate limiting?). Try again in a few minutes.")
+    rows = data["rows"]
+    spy = rows.get("SPY") or {}
+    spy12 = spy.get("chg1y")
+    sp = spy.get("spark") or []
+    spy6 = sp[-1] / sp[-27] - 1 if len(sp) >= 27 and sp[-27] else None
+    picks = []
+    for r in rows.values():
+        if r.get("type") != "stock" or (r.get("mktcap") or 0) < MARKET_MIN_CAP:
+            continue
+        if not (r.get("vs200") and r["vs200"] > 0 and r.get("sma50") and r.get("sma200") and r["sma50"] > r["sma200"]):
+            continue
+        if spy12 is None or r.get("chg1y") is None or r["chg1y"] <= spy12:
+            continue
+        w = r.get("spark") or []
+        r6 = w[-1] / w[-27] - 1 if len(w) >= 27 and w[-27] else None
+        pre = _stock_score({"vs200": r["vs200"], "sma50": r["sma50"], "sma200": r["sma200"],
+                            "vs50": r["price"] / r["sma50"] - 1, "rule40": 0,
+                            "rs6": r6 - spy6 if r6 is not None and spy6 is not None else None,
+                            "rs12": r["chg1y"] - spy12})
+        picks.append((pre["trend"] + pre["rel_strength"], r.get("mktcap") or 0, r["ticker"]))
+    picks.sort(reverse=True)
+    stats = {"screened": sum(1 for r in rows.values() if r.get("type") == "stock"), "uptrend": len(picks),
+             "screener_at": data["scanned_at"]}
+    return [t for _, _, t in picks[:MARKET_TOP]], stats
+
+
+def _scan(mode, tickers):
+    st = _state[mode]
+    job = st["job"]
     try:
-        _job.update(phase="SPY baseline", done=0, total=len(tickers))
+        stats = {}
+        if mode == "market":
+            tickers, stats = _market_universe(job)
+        job.update(phase="SPY baseline", done=0, total=len(tickers))
         spy = _closes("SPY")
         rows, failed = {}, {}
 
@@ -288,47 +372,58 @@ def _scan(tickers):
                 failed[sym] = f"{type(e).__name__}: {e}"
                 traceback.print_exc()
             with _lock:
-                _job["done"] += 1
+                job["done"] += 1
 
-        _job["phase"] = "Scanning"
+        job["phase"] = "Checking LEAPS"
         with ThreadPoolExecutor(WORKERS) as ex:
             list(ex.map(one, tickers))
         with _lock:
-            _data = {"scanned_at": time.time(), "tickers": tickers, "rows": list(rows.values()), "failed": failed}
-            _save()
-            _job.update(running=False, finished=time.time(), error=None, phase="")
+            st["data"] = dict(stats, scanned_at=time.time(), tickers=tickers, rows=list(rows.values()), failed=failed)
+            _save(st)
+            job.update(running=False, finished=time.time(), error=None, phase="")
     except Exception as e:
         traceback.print_exc()
         with _lock:
-            _job.update(running=False, finished=time.time(), error=str(e), phase="")
+            job.update(running=False, finished=time.time(), error=str(e), phase="")
 
 
-def _start(tickers):
+def _start(mode, tickers):
+    job = _state[mode]["job"]
     with _lock:
-        if _job["running"]:
+        if job["running"]:
             return
-        _job.update(running=True, started=time.time(), error=None)
-    threading.Thread(target=_scan, args=(tickers,), daemon=True).start()
+        job.update(running=True, started=time.time(), error=None, done=0, total=len(tickers))
+    threading.Thread(target=_scan, args=(mode, tickers), daemon=True).start()
 
 
-def scan(refresh=False):
-    """Latest results; starts a background scan when there's none, it's stale, the watchlist changed,
-    or refresh is set. Poll while job.running is true."""
-    if _data is None:
+def scan(refresh=False, mode="watch"):
+    """Latest results for one list ("watch" or "market"); starts a background scan when there's none,
+    it's stale, the watchlist changed, or refresh is set. Poll while job.running is true."""
+    if mode not in _state:
+        raise QuoteError("mode must be watch or market")
+    st = _state[mode]
+    if not st["loaded"]:
         with _lock:
-            _load()
-    tickers = [yahoo_symbol(t) for t in watchlist()]
-    data = _data
-    stale = (data is None or time.time() - data["scanned_at"] > FRESH_SECONDS
-             or sorted(data.get("tickers", [])) != sorted(tickers))
-    if (stale or refresh) and not _job["running"]:
-        _start(tickers)
+            _load(st)
+    watch = [yahoo_symbol(t) for t in watchlist()]
+    data = st["data"]
+    stale = data is None or time.time() - data["scanned_at"] > FRESH_SECONDS
+    if mode == "watch" and data is not None and sorted(data.get("tickers", [])) != sorted(watch):
+        stale = True
+    job = st["job"]
+    failed_lately = job["error"] and time.time() - job["finished"] < RETRY_SECONDS   # e.g. Yahoo rate limiting
+    if (refresh or (stale and not failed_lately)) and not job["running"]:
+        _start(mode, watch if mode == "watch" else [])
     with _lock:
-        job = dict(_job)
-    base = {"watchlist": tickers, "job": job, "stale": stale,
+        job = dict(st["job"])
+    base = {"mode": mode, "watchlist": watch, "job": job, "stale": stale,
             "settings": {"min_days": MIN_DAYS, "delta_lo": DELTA_LO, "delta_hi": DELTA_HI, "min_oi": MIN_OI,
-                         "max_spread": MAX_SPREAD, "earnings_warn_days": EARNINGS_WARN_DAYS}}
+                         "max_spread": MAX_SPREAD, "earnings_warn_days": EARNINGS_WARN_DAYS,
+                         "market_top": MARKET_TOP, "market_min_cap": MARKET_MIN_CAP}}
     if data is None:
         return dict(base, status="loading", rows=[], failed={})
     rows = sorted(data["rows"], key=lambda r: -r["score"])
-    return dict(base, status="ok", rows=rows, failed=data.get("failed", {}), scanned_at=data["scanned_at"])
+    for r in rows:
+        r["watched"] = r["ticker"] in watch
+    extra = {k: data[k] for k in ("screened", "uptrend", "screener_at") if k in data}
+    return dict(base, **extra, status="ok", rows=rows, failed=data.get("failed", {}), scanned_at=data["scanned_at"])
