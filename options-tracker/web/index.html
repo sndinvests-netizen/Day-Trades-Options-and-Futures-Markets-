@@ -202,6 +202,14 @@ button.danger.primary:hover { filter: brightness(1.06); background: linear-gradi
 .closed-month > summary::before { content: "▸"; color: var(--muted); transition: transform .15s; }
 .closed-month[open] > summary::before { transform: rotate(90deg); }
 .closed-month > summary .note { font-weight: 400; }
+/* Position notes: collapsed to one short line; click to read the full note. */
+details.pos-note { margin-top: 2px; font-size: 12px; color: var(--muted); max-width: 340px; }
+details.pos-note > summary { cursor: pointer; list-style: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+details.pos-note > summary::-webkit-details-marker { display: none; }
+details.pos-note > summary::before { content: "▸ "; }
+details.pos-note[open] > summary::before { content: "▾ "; }
+details.pos-note[open] > summary .pv { display: none; }
+details.pos-note > div { white-space: normal; margin-top: 2px; }
 .closed-month > summary .mo-pl { margin-left: auto; }
 .fng a { color: var(--btn-border); }
 .fng summary { cursor: pointer; color: var(--muted); font-weight: 600; }
@@ -631,6 +639,7 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
               <button type="button" data-mode="split">Calls &amp; puts</button>
             </div>
             <span id="gexAsof"></span>
+            <button type="button" class="small" id="gexTv" disabled title="Open this ticker on TradingView in Chrome">📈 Chart</button>
           </div>
         </div>
         <div id="gexErr" class="note hidden"></div>
@@ -1854,6 +1863,8 @@ function renderGex() {
   const d = gexData;
   if (!d) return;
   $("#gexTitle").textContent = `Gamma exposure (GEX) · ${d.ticker}`;
+  $("#gexTv").disabled = false;
+  $("#gexTv").title = `Open ${d.ticker} on TradingView in Chrome`;
   $("#gexAsof").textContent = "Updated " + new Date(d.as_of).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   const away = k => k == null ? "" : `${pct((k - d.spot) / d.spot)} from price`;
   const pos = d.net_gex >= 0;
@@ -2757,7 +2768,7 @@ function renderTrades() {
           if (p.length === 1) {
             const t = p[0], s = t.stats;
             return `<tr><td class="left">${t.id}</td>
-              <td class="left">${targetDot(profitTarget(p))}<b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp || ""}${t.rolled_from ? `<div><span class="pill">rolled from #${t.rolled_from}</span> ${chainNote(t)}</div>` : ""}${t.notes ? `<div class="note">${esc(t.notes)}</div>` : ""}${targetNote(profitTarget(p))}</td>
+              <td class="left">${targetDot(profitTarget(p))}<b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp || ""}${t.rolled_from ? `<div><span class="pill">rolled from #${t.rolled_from}</span> ${chainNote(t)}</div>` : ""}${noteFold(posKey(p), t.notes)}${targetNote(profitTarget(p))}</td>
               <td style="white-space:nowrap">${buttons}</td>${roiCell(p)}
               ${legCells(t)}<td>${f2(s.breakeven)}</td><td>${usd(s.max_profit)}</td><td>${usd(s.max_loss)}</td>
               <td class="left">${alertHtml(alertsOf(p))}</td>
@@ -2771,7 +2782,7 @@ function renderTrades() {
           const delta = p.reduce((s, t) => s + (t.live && t.live.position_delta != null ? t.live.position_delta : 0), 0);
           const dtes = p.map(t => t.dte).filter(x => x != null);
           const headRow = `<tr class="pos-head"><td class="left">P${p[0].group}</td>
-            <td class="left">${targetDot(profitTarget(p))}<b>${esc(p[0].ticker)}</b> ${esc(p[0].strategy)} <span class="note">· ${p.length} legs${p[0].notes ? " · " + esc(p[0].notes) : ""}</span>${targetNote(profitTarget(p))}</td>
+            <td class="left">${targetDot(profitTarget(p))}<b>${esc(p[0].ticker)}</b> ${esc(p[0].strategy)} <span class="note">· ${p.length} legs</span>${noteFold(posKey(p), p[0].notes)}${targetNote(profitTarget(p))}</td>
             <td style="white-space:nowrap">${buttons}</td>${roiCell(p)}
             <td class="left">${net >= 0 ? "Debit" : "Credit"}</td><td></td><td>${usd(Math.abs(net))}</td><td>${spot ? f2(spot) : "–"}</td><td></td>
             <td>${usd(Math.abs(now))}</td><td class="${signed(un)}">${usd(un, true)}</td>
@@ -2796,12 +2807,31 @@ function renderTrades() {
 }
 /* Wide open-position tables get a second scrollbar above them, kept in step with the bottom one,
    so you can slide sideways without scrolling down to the end of the table. */
+// Notes on open positions start collapsed. Remember which ones are open so the live refresh doesn't close them.
+const openNotes = new Set();
+const noteFold = (key, n) => n ? `<details class="pos-note" data-note-key="${key}"${openNotes.has(key) ? " open" : ""}><summary>Notes<span class="pv"> · ${esc(n.length > 40 ? n.slice(0, 40) + "…" : n)}</span></summary><div class="note">${esc(n)}</div></details>` : "";
+document.addEventListener("toggle", e => {
+  const d = e.target;
+  if (!(d instanceof HTMLDetailsElement) || !d.dataset.noteKey) return;
+  d.open ? openNotes.add(d.dataset.noteKey) : openNotes.delete(d.dataset.noteKey);
+}, true);
+
 function syncTopBars(root) {
   root.querySelectorAll(".scroll-top").forEach(top => {
     const box = top.nextElementSibling, table = box.querySelector("table");
     const size = () => { top.firstElementChild.style.width = table.scrollWidth + "px"; top.style.display = table.scrollWidth > box.clientWidth + 1 ? "" : "none"; };
     size();
-    const link = (a, b) => a.addEventListener("scroll", () => { if (b.scrollLeft !== a.scrollLeft) b.scrollLeft = a.scrollLeft; });
+    // One-way: the bar under the mouse leads and the other only follows. Before, each bar copied the other on
+    // every scroll, so they kept correcting each other (Retina scroll positions are fractional and never
+    // matched exactly), which made the table judder and look blurry while sliding sideways.
+    let lead = null;
+    const link = (a, b) => {
+      for (const ev of ["pointerenter", "pointerdown", "wheel", "touchstart", "focus"]) a.addEventListener(ev, () => { lead = a; }, { passive: true });
+      a.addEventListener("scroll", () => {
+        if (lead && lead !== a) return;
+        if (Math.abs(b.scrollLeft - a.scrollLeft) >= 1) b.scrollLeft = a.scrollLeft;
+      });
+    };
     link(top, box); link(box, top);
     new ResizeObserver(size).observe(box);
   });
@@ -2920,6 +2950,14 @@ document.addEventListener("click", async e => {
   try { await api("/api/open-chart", { symbol: a.dataset.tv }); }
   catch (err) { toast(`Couldn't open ${a.dataset.tv} in Chrome: ${err.message}`, false); }
 });
+
+// GEX panel's Chart button: same Chrome-only route as the screener sparklines.
+$("#gexTv").onclick = async () => {
+  if (!gexData) return;
+  const sym = gexData.ticker.replace("^", "").replace("-", ".");
+  try { await api("/api/open-chart", { symbol: sym }); }
+  catch (err) { toast(`Couldn't open ${sym} in Chrome: ${err.message}`, false); }
+};
 
 $("#closed").onclick = e => { const b = e.target.closest("button[data-del-id]"); if (b) openDelete(+b.dataset.delId); };
 
