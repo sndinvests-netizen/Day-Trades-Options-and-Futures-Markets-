@@ -296,6 +296,14 @@ class Handler(BaseHTTPRequestHandler):
                 tracker.save(DB, trades)
             return {"old": old, "new": new}
 
+        def add_to():
+            with db_lock:
+                trades = tracker.load(DB)
+                t = tracker.add_to_trade(trades, num(body, "id", int), num(body, "contracts", int),
+                                         num(body, "premium"), num(body, "fees"), body.get("added") or None)
+                tracker.save(DB, trades)
+            return t
+
         def add_position():
             legs = [{"type": l.get("type"), "side": l.get("side"), "strike": num(l, "strike"),
                      "exp": l.get("exp") or None, "premium": num(l, "premium"),
@@ -342,6 +350,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(close)
         elif path == "/api/trades/roll":
             self.guard(roll)
+        elif path == "/api/trades/add-to":
+            self.guard(add_to)
         elif path == "/api/positions":
             self.guard(add_position)
         elif path == "/api/vix/levels":

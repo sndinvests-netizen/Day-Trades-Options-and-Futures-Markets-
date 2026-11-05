@@ -381,6 +381,44 @@ def close_position(trades, legs, fees=None, closed=None):
     return out
 
 
+def add_to_trade(trades, trade_id, contracts, premium, fees=None, added=None):
+    """Average into an open long option (e.g. buy more of a LEAPS call on a dip) and return it.
+
+    The leg keeps its id, strike, expiration, open date and Hop/Skip/Leap group. Its contract
+    count grows, its premium becomes the weighted average price paid, and the new order's fees
+    are added to its fees, so P&L, breakeven, partial closes and the report all use the average.
+    Every buy is kept in "adds" ([{date, contracts, premium, fees}], the first one is the opening
+    buy) so the history can be shown.
+    """
+    t = next((x for x in trades if x["id"] == trade_id), None)
+    if t is None:
+        raise TradeError(f"No trade #{trade_id}")
+    if t["status"] != "open":
+        raise TradeError(f"Trade #{t['id']} is already {t['status']}")
+    if kind(t) == "stock" or t.get("group") or t["side"] != "buy":
+        raise TradeError("Only a single long (bought) option can be added to")
+    if not contracts or contracts < 1:
+        raise TradeError("Add at least 1 contract")
+    if premium is None or premium <= 0:
+        raise TradeError("Price per share needed (above 0)")
+    try:
+        added = parse_date(added) if added else date.today()
+    except ValueError:
+        raise TradeError("dates must be YYYY-MM-DD")
+    if added > parse_date(t["exp"]):
+        raise TradeError("That date is after the option expires")
+    if fees is None:
+        fees = opening_fees(t["ticker"], [{"type": kind(t), "side": "buy", "premium": premium, "contracts": contracts}])
+    if not t.get("adds"):
+        t["adds"] = [{"date": t["opened"], "contracts": t["contracts"], "premium": t["premium"], "fees": t["fees"]}]
+    t["adds"] = t["adds"] + [{"date": added.isoformat(), "contracts": contracts, "premium": premium, "fees": round(fees, 2)}]
+    n = t["contracts"] + contracts
+    t["premium"] = round((t["premium"] * t["contracts"] + premium * contracts) / n, 4)
+    t["contracts"] = n
+    t["fees"] = round(t["fees"] + fees, 2)
+    return t
+
+
 def split_trade(trades, t, n):
     """Split n contracts off open trade t into a new trade record and return the new record.
 

@@ -972,6 +972,23 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
   </form>
 </dialog>
 
+<dialog id="addToDlg">
+  <form id="addToForm" method="dialog">
+    <h2 id="addToTitle">Add to position</h2>
+    <p class="note">Buy more of this contract (for example a LEAPS on a dip). The new contracts are merged into the position at the
+      weighted average price, so P&amp;L and breakeven use your average cost. Price per share is prefilled at the current mid.</p>
+    <div class="grid2">
+      <label>Contracts to add <input name="contracts" type="number" min="1" step="1" value="1" required></label>
+      <label>Price per share <input name="premium" type="number" step="any" min="0.01" required></label>
+      <label>Fees ($ total) <input name="fees" type="number" step="any" min="0" placeholder="auto: Robinhood fees"><span class="note feeest"></span></label>
+      <label>Bought on <input name="added" type="date"></label>
+    </div>
+    <p class="note" id="addToSummary"></p>
+    <div class="formerr" id="addToErr"></div>
+    <div class="actions"><button class="ghost" type="button" data-close>Cancel</button><button class="primary" type="submit">Add</button></div>
+  </form>
+</dialog>
+
 <dialog id="closePosDlg">
   <form id="closePosForm" method="dialog">
     <h2 id="closePosTitle">Close position</h2>
@@ -2764,11 +2781,11 @@ function renderTrades() {
       const sub = { Hop: "90 days or less at open", Skip: "91–360 days at open", Leap: "over 360 days at open" }[cat];
       return `<h3>${cat} <span class="note" style="text-transform:none;letter-spacing:0">${sub}</span></h3><div class="scroll-top"><div></div></div><div class="scroll"><table>${head}<tbody>` +
         ps.map(p => {
-          const buttons = `<button class="ghost small" data-builder="${posKey(p)}">Builder</button> <button class="ghost small" data-close-key="${posKey(p)}">Close</button> ${p.length === 1 && p[0].type !== "stock" ? `<button class="ghost small" data-roll-id="${p[0].id}" title="Close this leg and open a new strike or expiration in one step">Roll</button> ` : ""}<button class="ghost small" data-partial-key="${posKey(p)}" title="Buy back or sell some of the contracts and keep the rest open">Partial</button> <button class="ghost small danger" data-del-id="${p[0].id}" title="Delete a trade logged by mistake">Delete</button>`;
+          const buttons = `<button class="ghost small" data-builder="${posKey(p)}">Builder</button> <button class="ghost small" data-close-key="${posKey(p)}">Close</button> ${p.length === 1 && p[0].type !== "stock" && p[0].side === "buy" ? `<button class="ghost small" data-addto-id="${p[0].id}" title="Buy more of this contract on a dip and average your cost">Add</button> ` : ""}${p.length === 1 && p[0].type !== "stock" ? `<button class="ghost small" data-roll-id="${p[0].id}" title="Close this leg and open a new strike or expiration in one step">Roll</button> ` : ""}<button class="ghost small" data-partial-key="${posKey(p)}" title="Buy back or sell some of the contracts and keep the rest open">Partial</button> <button class="ghost small danger" data-del-id="${p[0].id}" title="Delete a trade logged by mistake">Delete</button>`;
           if (p.length === 1) {
             const t = p[0], s = t.stats;
             return `<tr><td class="left">${t.id}</td>
-              <td class="left">${targetDot(profitTarget(p))}<b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp || ""}${t.rolled_from ? `<div><span class="pill">rolled from #${t.rolled_from}</span> ${chainNote(t)}</div>` : ""}${noteFold(posKey(p), t.notes)}${targetNote(profitTarget(p))}</td>
+              <td class="left">${targetDot(profitTarget(p))}<b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp || ""}${t.rolled_from ? `<div><span class="pill">rolled from #${t.rolled_from}</span> ${chainNote(t)}</div>` : ""}${addsNote(t)}${noteFold(posKey(p), t.notes)}${targetNote(profitTarget(p))}</td>
               <td style="white-space:nowrap">${buttons}</td>${roiCell(p)}
               ${legCells(t)}<td>${f2(s.breakeven)}</td><td>${usd(s.max_profit)}</td><td>${usd(s.max_loss)}</td>
               <td class="left">${alertHtml(alertsOf(p))}</td>
@@ -2902,6 +2919,7 @@ $("#openGroups").onclick = e => {
   if (b.dataset.builder) openInBuilder(positionByKey(b.dataset.builder));
   if (b.dataset.partialKey) return openPartial(positionByKey(b.dataset.partialKey));
   if (b.dataset.rollId) return openClose(+b.dataset.rollId, "rolled");
+  if (b.dataset.addtoId) return openAddTo(+b.dataset.addtoId);
   if (b.dataset.closeKey) {
     const p = positionByKey(b.dataset.closeKey);
     if (p.length === 1) openClose(p[0].id); else openClosePosition(p);
@@ -3224,6 +3242,51 @@ $("#partialForm").onsubmit = async e => {
   } catch (err) { $("#partialErr").textContent = err.message; }
 };
 
+/* ---- add to a long option: average in on a dip ---- */
+let addToId = null;
+function addsNote(t) {
+  if (!t.adds || t.adds.length < 2) return "";
+  const hist = t.adds.map(a => `${a.date}: ${a.contracts} @ ${f2(a.premium)}`).join("\n");
+  return `<div><span class="pill" title="${esc(hist)}">avg of ${t.adds.length} buys</span> <span class="note">${t.adds.map(a => `${a.contracts} @ ${f2(a.premium)}`).join(" · ")}</span></div>`;
+}
+function openAddTo(id) {
+  const t = tradeData.open.find(x => x.id === id);
+  if (!t) return;
+  addToId = id;
+  const f = $("#addToForm");
+  f.reset();
+  f.elements.added.value = today();
+  if (t.live) f.elements.premium.value = t.live.mark.toFixed(2);
+  $("#addToTitle").textContent = `Add to #${t.id}: ${t.ticker} ${t.label} ${t.exp || ""}`;
+  $("#addToErr").textContent = "";
+  updateAddToSummary();
+  $("#addToDlg").showModal();
+  feeAddTo();
+}
+function updateAddToSummary() {
+  const t = tradeData.open.find(x => x.id === addToId), e = $("#addToForm").elements;
+  if (!t) return;
+  const n = Math.max(0, Math.floor(+e.contracts.value || 0)), px = +e.premium.value || 0;
+  if (!n || !px) { $("#addToSummary").textContent = "Enter contracts and price."; return; }
+  const total = t.contracts + n, avg = (t.premium * t.contracts + px * n) / total;
+  const be = t.type === "call" ? t.strike + avg : t.strike - avg;
+  const dip = (px - t.premium) / t.premium;
+  $("#addToSummary").innerHTML = `Now ${t.contracts} @ ${f2(t.premium)} → <b>${total} contracts @ ${f2(avg)} avg</b> ` +
+    `(this buy is <span class="${signed(dip)}">${pct(dip, 1)}</span> vs your current avg). ` +
+    `New breakeven at expiration <b>${f2(be)}</b> (was ${f2(t.type === "call" ? t.strike + t.premium : t.strike - t.premium)}). ` +
+    `Cost of this buy: ${usd(px * 100 * n)} + fees.`;
+}
+$("#addToForm").oninput = updateAddToSummary;
+$("#addToForm").onsubmit = async e => {
+  e.preventDefault();
+  const v = Object.fromEntries(new FormData(e.target));
+  try {
+    await api("/api/trades/add-to", { id: addToId, contracts: v.contracts, premium: v.premium, fees: v.fees, added: v.added });
+    $("#addToDlg").close();
+    loadTrades();
+  } catch (err) { $("#addToErr").textContent = err.message; }
+};
+
 /* ---- broker fees: blank Fees = Robinhood's fees, worked out by the server (fees.py) ---- */
 const closeSide = s => s === "buy" ? "sell" : "buy";
 function wireFees(form, getOrder) {
@@ -3265,6 +3328,10 @@ const feeClosePos = wireFees($("#closePosForm"), () => ({ ticker: closingLegs[0]
     const expired = +v === 0 && t.type !== "stock";
     return { type: t.type, action: closeSide(t.side), price: v, contracts: expired ? 0 : t.contracts };
   }) }));
+const feeAddTo = wireFees($("#addToForm"), () => {
+  const t = tradeData.open.find(x => x.id === addToId), e = $("#addToForm").elements;
+  return t ? { ticker: t.ticker, legs: [{ type: t.type, action: "buy", price: e.premium.value, contracts: e.contracts.value }] } : null;
+});
 const feePartial = wireFees($("#partialForm"), () => ({ ticker: partialLegs[0]?.ticker || "",
   legs: partialLegs.map(t => ({ type: t.type, action: closeSide(t.side),
     price: document.querySelector(`#partialLegs [data-px="${t.id}"]`)?.value,
