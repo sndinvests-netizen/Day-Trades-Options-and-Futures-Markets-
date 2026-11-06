@@ -456,6 +456,20 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
 #scrTable td.tk { text-align: left; }
 #scrTable th, #scrTable td { padding: 5px 6px; }   /* compact, so the extra RSI columns don't push Open interest off the edge */
 #scrTable .spark { width: 72px; }
+/* Screener uses the LEAPS Finder look */
+#scrTable { min-width: 760px; }
+#scrTable td, #scrTable th { padding: 8px 10px; }
+#scrTable td.left, #scrTable th.left { text-align: left; }
+#scrTable tbody tr { cursor: pointer; }
+#scrTable tbody tr.sel td { background-color: var(--itm); }
+#scrTable tbody tr.in { animation: lpIn .35s ease both; }
+@media (prefers-reduced-motion: reduce) { #scrTable tbody tr.in { animation: none; } }
+#scrTable th.sticky, #scrTable td.sticky { position: sticky; left: 0; background: var(--panel); z-index: 1; }
+#scrTable th.sticky { z-index: 3; }
+#scrTable tbody tr:hover td.sticky, #lpTable tbody tr:hover td.sticky { background-color: var(--hover); }
+#scrTable .spark { width: 96px; }
+.lp-dot.ok { background: var(--up); }
+.lp-filters input.scr-num { width: 64px; padding: 4px 6px; text-align: right; }
 /* LEAPS Finder: one filter bar, a 7-column table, and a slide-in detail panel */
 .lp-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .lp-top h2 { margin: 0; }
@@ -830,38 +844,43 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
   <!-- ===== Screener: stocks sitting at support ===== -->
   <section id="view-screener" class="hidden">
     <div class="panel">
-      <div class="row" style="margin-bottom:8px">
-        <h2 style="margin:0">Stocks at support</h2>
-        <div><button class="ghost small" type="button" id="scrRefresh" title="Rescan now (prices, support levels and open interest)">Refresh</button></div>
+      <div class="lp-top">
+        <h2>Stocks at support</h2>
+        <span class="grow"></span>
+        <span class="lp-meta" id="scrCount"></span>
+        <button class="ghost small" type="button" id="scrSave" title="Remember these filters in this browser">Save screen</button>
+        <button class="ghost small" type="button" id="scrClear" title="Back to the default filters">Clear</button>
+        <button class="ghost small" type="button" id="scrRefresh" title="Rescan now (prices, support levels and open interest)">Rescan</button>
+        <button class="ghost small" type="button" id="scrCsv" title="Download the rows below as a CSV file">CSV</button>
       </div>
-      <form class="scr-chips" id="scrForm" autocomplete="off">
-        <label class="scr-chip" title="Total option open interest (calls + puts) across every listed expiration">Options open interest ≥
-          <input id="scrOi" type="number" min="0" step="10" inputmode="decimal"><span class="u">K contracts</span></label>
-        <label class="scr-chip" title="Market capitalization from Yahoo Finance">Market cap ≥
-          <input id="scrCap" type="number" min="2" step="1" inputmode="decimal"><span class="u">$B</span></label>
-        <label class="scr-chip" title="How far above its support level the stock may close and still count as at support">Within
-          <input id="scrNear" type="number" min="0.1" max="25" step="0.5" inputmode="decimal"><span class="u">% above support</span></label>
-        <label class="scr-chip" title="Only stocks sitting on this support level: 50-day MA, 200-day MA, or either one. Any = nearest support of every kind (swing lows and both MAs)">Level
+      <form class="lp-filters" id="scrForm" autocomplete="off">
+        <label for="scrQ">Find <input type="search" id="scrQ" placeholder="Ticker, name or sector"></label>
+        <label for="scrLevel" title="Only stocks sitting on this support level: 50-day MA, 200-day MA, or either one. Any = nearest support of every kind (swing lows and both MAs)">Level
           <select id="scrLevel"><option value="any">Any support</option><option value="50d">50-day MA</option><option value="200d">200-day MA</option><option value="ma">50 or 200-day MA</option></select></label>
-        <label class="scr-chip" title="Daily AND weekly 14-period RSI: Oversold = both below 40, Overbought = both above 70. While an RSI filter is on, 'At support only' is ignored (the At support column still shows)">RSI
+        <label for="scrNear" title="How far above its support level the stock may close and still count as at support">Within
+          <input id="scrNear" type="number" min="0.1" max="25" step="0.5" inputmode="decimal" class="scr-num"> %</label>
+        <label for="scrRsi" title="Daily AND weekly 14-period RSI: Oversold = both below 40, Overbought = both above 70. While an RSI filter is on, 'At support only' is ignored">RSI
           <select id="scrRsi"><option value="any">Any</option><option value="oversold">Oversold (D &amp; W &lt; 40)</option><option value="overbought">Overbought (D &amp; W &gt; 70)</option></select></label>
-        <button type="button" class="chip" id="scrStocks" aria-pressed="true" title="Stocks only, or stocks plus 25 big optionable ETFs">Type: Stocks only</button>
-        <button type="button" class="chip" id="scrAtSup" aria-pressed="true" title="Show only stocks at support, or everything scanned with the At support flag (open interest is looked up only for stocks at support; the rest show – and are kept regardless of the open interest filter)">At support only</button>
-        <span class="scr-sep"></span>
-        <button type="button" class="ghost small" id="scrSave" title="Remember these filters in this browser">Save screen</button>
-        <button type="button" class="ghost small" id="scrClear" title="Back to the default filters">Clear all</button>
-        <button type="button" class="ghost small" id="scrCsv" title="Download the rows below as a CSV file">Download CSV</button>
+        <label for="scrCap" title="Market capitalization from Yahoo Finance">Cap ≥ $
+          <input id="scrCap" type="number" min="2" step="1" inputmode="decimal" class="scr-num">B</label>
+        <label for="scrOi" title="Total option open interest (calls + puts) across every listed expiration">OI ≥
+          <input id="scrOi" type="number" min="0" step="10" inputmode="decimal" class="scr-num">K</label>
+        <button type="button" class="chip" id="scrStocks" aria-pressed="true" title="Stocks only, or stocks plus 25 big optionable ETFs">Stocks only</button>
+        <button type="button" class="chip" id="scrAtSup" aria-pressed="true" title="Show only stocks at support, or everything scanned with the At support flag">At support only</button>
+        <button type="submit" class="hidden">Apply</button>
       </form>
-      <div class="scr-count note" id="scrCount"></div>
+      <div class="lp-progress" aria-hidden="true"><i id="scrProg"></i></div>
     </div>
     <div id="scrErr" class="err hidden"></div>
-    <div class="panel">
+    <div class="panel lp-st">
       <div id="scrBody"><div class="note empty">Open the Screener to scan.</div></div>
+      <div class="lp-legend" id="scrLegend"></div>
       <p class="note">Support = the nearest level at or below the last close among swing lows from the last 12 months of daily lows
         (a low that is the lowest of the 5 bars on each side; swing lows within 1.5% are one level, and touches counts them) and the 200- and 50-day moving averages.
         <b>At support</b> = the close is 0% to the distance you set above that level, and no close in the last 5 sessions was more than 2% below it.
-        Prices from Yahoo Finance; the scan refreshes after each session close and hourly while the market is open. Click a ticker to open its chain.</p>
+        Prices from Yahoo Finance; the scan refreshes after each session close and hourly while the market is open. Click a row for details.</p>
     </div>
+    <aside class="lp-drawer lp-st" id="scrDrawer" aria-label="Stock detail" aria-hidden="true"></aside>
   </section>
 
   <section id="view-leaps" class="hidden">
@@ -3423,19 +3442,22 @@ const feePartial = wireFees($("#partialForm"), () => ({ ticker: partialLegs[0]?.
     contracts: document.querySelector(`#partialLegs [data-qty="${t.id}"]`)?.value || 0 })) }));
 
 /* ================= screener: stocks at support ================= */
+// Same look as the LEAPS Finder: one filter bar, a 7-column table with a support map, and a slide-in detail panel.
 const SCR_DEFAULTS = { min_oi: 100, min_cap: 10, near: 3, stocks_only: true, at_support: true, level: "any", rsi: "any" };   // K contracts, $B, %
 let scr = { ...SCR_DEFAULTS, ...store.get("screen", {}) }, scrData = null, scrTimer = null, scrSeq = 0, scrDebounce = null;
 let scrSort = store.get("scrSort", { k: "mktcap", dir: -1 });
+let scrQ = "", scrSel = null, scrSeen = new Set();
 const capFmt = x => x == null ? "–" : x >= 1e12 ? "$" + (x / 1e12).toFixed(2) + "T" : x >= 1e9 ? "$" + (x / 1e9).toFixed(x >= 1e11 ? 0 : 1) + "B" : "$" + (x / 1e6).toFixed(0) + "M";
 const oiFmt = x => x == null ? "–" : x >= 1e6 ? (x / 1e6).toFixed(2) + "M" : x >= 1e3 ? (x / 1e3).toFixed(0) + "K" : String(x);
 const sgnPct = (x, d = 1) => x == null ? "–" : (x > 0 ? "+" : "") + (x * 100).toFixed(d) + "%";
 const SUP_NAME = { "swing low": "Swing low", "200D": "200-day MA", "50D": "50-day MA" };
+const scrRsiCls = v => v == null ? "" : v < 40 ? "up" : v > 70 ? "down" : "";   // oversold green, overbought red
 
 function scrSync() {
   $("#scrOi").value = scr.min_oi; $("#scrCap").value = scr.min_cap; $("#scrNear").value = scr.near; $("#scrLevel").value = scr.level || "any"; $("#scrRsi").value = scr.rsi || "any";
-  for (const [id, on, yes, no] of [["#scrStocks", scr.stocks_only, "Type: Stocks only", "Type: Stocks + ETFs"],
+  for (const [id, on, yes, no] of [["#scrStocks", scr.stocks_only, "Stocks only", "Stocks + ETFs"],
                                    ["#scrAtSup", scr.at_support, "At support only", "All scanned"]]) {
-    $(id).classList.toggle("on", on); $(id).setAttribute("aria-pressed", on); $(id).textContent = on ? yes : no;
+    $(id).setAttribute("aria-pressed", on); $(id).textContent = on ? yes : no;
   }
 }
 function scrRead() {
@@ -3451,7 +3473,7 @@ async function loadScreener(refresh) {
   const seq = ++scrSeq;
   const q = new URLSearchParams({ min_cap: scr.min_cap * 1e9, min_oi: scr.min_oi * 1e3, near: scr.near,
                                   stocks_only: scr.stocks_only, at_support: scr.at_support, level: scr.level || "any", rsi: scr.rsi || "any" });
-  if (refresh) q.set("refresh", "1");
+  if (refresh) { q.set("refresh", "1"); scrSeen = new Set(); }
   if (!scrData) $("#scrBody").innerHTML = `<div class="note empty">Loading the screener…</div>`;
   try {
     const d = await api("/api/screener?" + q);
@@ -3459,6 +3481,7 @@ async function loadScreener(refresh) {
     scrData = d;
     $("#scrErr").classList.add("hidden");
     renderScreener();
+    scrDrawer(true);
     const j = d.job;
     // keep polling while a scan runs or open interest is still coming in
     if ((j.running || d.stale || d.oi_pending) && tabOn("screener") && !(j.error && !j.running))
@@ -3480,42 +3503,61 @@ function spark(xs) {
     <path d="M0,${H} L${pts.join(" L")} L${W},${H} Z"/><polyline points="${pts.join(" ")}"/></svg>`;
 }
 
-function scrCols() {
-  const d = scrData;
-  return [
-    ["ticker", "Ticker", "left"], ["sector", "Sector", "left"], ["price", "Price"], ["day_pct", "Day %"], ["mktcap", "Mkt cap"],
-    ["chg1y", "Trend (1Y)", "", "Weekly closes over the last year: green if up over the year, red if down. Sorts by 1-year change."],
-    ["at_support", "At support", "", `Close 0% to ${scr.near}% above support, and no close more than 2% below it in the last 5 sessions`],
-    ["support", "Support"], ["support_type", "Support type", "left", "Swing low (with how many swing lows make up the level), 200-day or 50-day moving average"],
-    ["dist", "Above support", "", "How far the last close is above the support level"],
-    ["off_high", "Off 52w high"], ["vs200", "vs 200D", "", "Last close vs the 200-day simple moving average"],
-    ["rsi_d", "RSI D", "", "Daily 14-period RSI (Wilder)"], ["rsi_w", "RSI W", "", "Weekly 14-period RSI (Wilder), counting the current week so far"],
-    ["oi", "Open interest", "", d.oi_note || ""],
-  ];
-}
+const SCR_COLS = () => [
+  ["ticker", "Ticker", "left sticky"],
+  ["day_pct", "Price", "", "Last price and today's change. Sorts by today's change"],
+  ["chg1y", "Trend (1Y)", "", "Weekly closes over the last year. Sorts by 1-year change. Click to open on TradingView in Chrome"],
+  ["support", "Support", "left", "The nearest support under the price and what it is (swing low ×touches, 50-day or 200-day MA)"],
+  ["dist", "Support → 52w high", "left", "▮ support · ┊ 50-day · ┆ 200-day · ● price · right end = 52-week high. Green zone = at support. Sorts by distance above support"],
+  ["rsi_d", "RSI D / W", "", "Daily / weekly 14-period RSI. Under 40 green (oversold), over 70 red (overbought). Sorts by daily"],
+  ["oi", "Open int.", "", "Total option open interest, calls + puts, every expiration"],
+];
 function scrRows() {
-  const { k, dir } = scrSort, rows = [...scrData.rows];
+  const { k, dir } = scrSort, q = scrQ;
   const val = r => k === "at_support" ? (r.at_support ? 1 : 0) : r[k];
-  return rows.sort((a, b) => {
+  return scrData.rows.filter(r => !q || (r.ticker + " " + (r.name || "") + " " + (r.sector || "")).toLowerCase().includes(q)).sort((a, b) => {
     const x = val(a), y = val(b);
     if (x == null || y == null) return x == null ? (y == null ? 0 : 1) : -1;   // blanks last either way
     return (typeof x === "string" ? x.localeCompare(y) : x - y) * dir;
   });
 }
 
+// support map: support on the left, the 50/200-day MAs, the price, and the 52-week high on the right
+function scrMap(r, w = 180, h = 26) {
+  const marks = [r.support, r.sma50, r.sma200, r.price].filter(v => v != null);
+  if (!marks.length || r.high52 == null) return "–";
+  const lo = Math.min(...marks) * 0.985, hi = Math.max(r.high52, r.price) * 1.005;
+  const x = v => 4 + (v - lo) / (hi - lo) * (w - 8), y = h / 2;
+  const zone = r.support != null ? `<rect x="${x(r.support)}" y="${y - 6}" width="${Math.max(2, x(r.support * (1 + scr.near / 100)) - x(r.support))}" height="12" rx="3" fill="var(--up)" opacity=".18"/>` : "";
+  const tick = (v, dash, col, wd = 1.5) => v == null ? "" : `<line x1="${x(v)}" x2="${x(v)}" y1="${y - 8}" y2="${y + 8}" stroke="${col}" stroke-width="${wd}"${dash ? ` stroke-dasharray="${dash}"` : ""}/>`;
+  return `<svg class="lp-bebar" style="width:${w}px" viewBox="0 0 ${w} ${h}" role="img" aria-label="Support ${f2(r.support)}, price ${f2(r.price)}, 52-week high ${f2(r.high52)}">
+    ${zone}
+    <line x1="4" x2="${w - 4}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="2"/>
+    ${r.support != null ? `<line x1="${x(r.support)}" x2="${x(r.price)}" y1="${y}" y2="${y}" stroke="${r.at_support ? "var(--up)" : "var(--muted)"}" stroke-width="2.5"/>` : ""}
+    ${tick(r.sma50, "2 2", "var(--lp-contract)")}${tick(r.sma200, "4 2", "var(--lp-stock)")}
+    ${tick(r.support, "", "var(--up)", 3)}
+    <line x1="${w - 4}" x2="${w - 4}" y1="${y - 5}" y2="${y + 5}" stroke="var(--muted)" stroke-width="2"/>
+    <circle cx="${x(r.price)}" cy="${y}" r="4" fill="var(--text)"/></svg>`;
+}
+
 function renderScreener() {
   const d = scrData, j = d.job;
   const bits = [];
-  if (d.status === "loading") bits.push(`<span><b>Scanning…</b></span>`);
-  else bits.push(`<span><b>${int(d.matches)}</b> matches of ${int(d.scanned)} scanned</span>`);
-  if (d.scanned_at) bits.push(`<span>updated ${new Date(d.scanned_at * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}${d.last_date ? ` (prices through ${esc(d.last_date)})` : ""}</span>`);
-  if (j.running) bits.push(`<span>${esc(j.phase)}${j.total ? ` ${int(j.done)} of ${int(j.total)}` : ""}…</span>`);
-  else if (d.stale && !j.error) bits.push(`<span>refresh starting…</span>`);
-  if (d.oi_pending) bits.push(`<span>checking option open interest for ${int(d.oi_pending)} more…</span>`);
-  if (d.oi_errors) bits.push(`<span title="Yahoo didn't return option data for these (often rate limiting); they are retried after 30 minutes">${int(d.oi_errors)} open interest lookups failed</span>`);
+  const rows = d.status === "loading" ? [] : scrRows();
+  if (d.status === "loading") bits.push(`<b>Scanning…</b>`);
+  else bits.push(`${int(rows.length)} shown · ${int(d.matches)} matches of ${int(d.scanned)} scanned`);
+  if (d.scanned_at) bits.push(`updated ${new Date(d.scanned_at * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}${d.last_date ? ` (prices through ${esc(d.last_date)})` : ""}`);
+  if (j.running) bits.push(`${esc(j.phase)}${j.total ? ` ${int(j.done)} of ${int(j.total)}` : ""}…`);
+  else if (d.stale && !j.error) bits.push(`refresh starting…`);
+  if (d.oi_pending) bits.push(`checking open interest for ${int(d.oi_pending)} more…`);
+  if (d.oi_errors) bits.push(`<span title="Yahoo didn't return option data for these (often rate limiting); they are retried after 30 minutes">${int(d.oi_errors)} OI lookups failed</span>`);
   if (j.error && !j.running) bits.push(`<span class="warn">Last scan failed: ${esc(j.error)}</span>`);
   if (d.source && !d.source.startsWith("Yahoo")) bits.push(`<span class="warn">Universe: ${esc(d.source)}</span>`);
-  $("#scrCount").innerHTML = bits.join("");
+  $("#scrCount").innerHTML = bits.join(" · ");
+  $("#scrProg").style.width = j.running && j.total ? (j.done / j.total * 100) + "%" : d.oi_pending ? "100%" : "0";
+  $("#scrLegend").innerHTML = `<span><i style="background:var(--up)"></i>support and the at-support zone (within ${scr.near}%)</span>
+    <span><i style="background:var(--lp-contract)"></i>50-day MA</span><span><i style="background:var(--lp-stock)"></i>200-day MA</span>
+    <span>● price · right end = 52-week high</span><span><span class="lp-dot ok"></span> at support</span><span><span class="lp-dot down"></span> below 200-day</span>`;
   if (d.status === "loading") {
     $("#scrBody").innerHTML = `<div class="note empty">Scanning about 1,000 US stocks over $${scr.min_cap}B: ${esc(j.phase || "starting")}${j.total ? ` (${int(j.done)} of ${int(j.total)})` : ""}…<br>The first scan takes about a minute, then open interest fills in.</div>`;
     return;
@@ -3524,29 +3566,93 @@ function renderScreener() {
     $("#scrBody").innerHTML = `<div class="note empty">${d.oi_pending ? "Checking open interest for the stocks at support…" : "No stocks match these filters. Try a wider distance from support or a lower open interest."}</div>`;
     return;
   }
-  const cols = scrCols();
-  const head = `<thead><tr>${cols.map(([k, label, cls, tip]) => `<th data-k="${k}" class="${cls || ""}${scrSort.k === k ? " sorted" : ""}"${tip ? ` title="${esc(tip)}"` : ""}
+  if (!SCR_COLS().some(c => c[0] === scrSort.k) && scrSort.k !== "mktcap") scrSort = { k: "mktcap", dir: -1 };   // a saved sort from the old table
+  const head = `<thead><tr>${SCR_COLS().map(([k, label, cls, tip]) => `<th data-k="${k}" class="${cls || ""}${scrSort.k === k ? " sorted" : ""}"${tip ? ` title="${esc(tip)}"` : ""}
     aria-sort="${scrSort.k === k ? (scrSort.dir > 0 ? "ascending" : "descending") : "none"}">${label}${scrSort.k === k ? (scrSort.dir > 0 ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead>`;
-  const body = scrRows().map(r => {
-    const supTip = r.support == null ? "Price is below every support level" :
-      `${SUP_NAME[r.support_type] || r.support_type} at ${f2(r.support)}${r.touches ? `, ${r.touches} swing low${r.touches > 1 ? "s" : ""} in the last 12 months` : ""}`;
+  const body = rows.length ? rows.map(r => {
+    const fresh = !scrSeen.has(r.ticker);
+    scrSeen.add(r.ticker);
+    const dots = (r.at_support ? `<span class="lp-dot ok" title="At support"></span>` : "")
+      + (r.vs200 != null && r.vs200 < 0 ? `<span class="lp-dot down" title="Below the 200-day MA"></span>` : "")
+      + (r.type === "etf" ? `<span class="lp-dot muted" title="ETF"></span>` : "");
     const oiTip = r.oi == null ? (r.oi_error ? "Lookup failed: " + r.oi_error : r.at_support ? "Checking…" : "Not checked: open interest is looked up only for stocks at support") :
       `Calls ${int(r.oi_calls)} · puts ${int(r.oi_puts)} · ${r.oi_exps} expirations${r.oi_date ? " · as of " + r.oi_date : ""}`;
-    return `<tr><td class="tk"><button type="button" class="tk-btn" data-t="${esc(r.ticker)}" title="Open ${esc(r.ticker)} in the Chain tab">${esc(r.ticker)}</button>
-        ${r.name && r.name !== r.ticker ? `<span class="tk-name" title="${esc(r.name)}">${esc(r.name)}</span>` : ""}</td>
-      <td class="left">${esc(r.sector || "–")}</td><td>${f2(r.price)}</td>
-      <td class="${signed(r.day_pct)}">${sgnPct(r.day_pct, 2)}</td><td>${capFmt(r.mktcap)}</td>
-      <td class="${signed(r.chg1y)}" ><a class="spark-link" role="link" data-tv="${esc(r.ticker.replace("-", "."))}" title="1-year change ${sgnPct(r.chg1y)}. Click to open ${esc(r.ticker)} on TradingView in Chrome">${spark(r.spark)}</a></td>
-      <td>${r.at_support ? `<span class="hit">Yes</span>` : `<span class="note">No</span>`}</td>
-      <td title="${esc(supTip)}">${r.support == null ? "–" : f2(r.support)}</td>
-      <td class="left" title="${esc(supTip)}">${r.support_type ? esc(SUP_NAME[r.support_type] || r.support_type) + (r.touches ? ` <span class="note">×${r.touches}</span>` : "") : "–"}</td>
-      <td>${r.dist == null ? "–" : pct(r.dist, 2)}</td>
-      <td class="${signed(r.off_high)}">${sgnPct(r.off_high)}</td><td class="${signed(r.vs200)}">${sgnPct(r.vs200)}</td>
-      <td>${r.rsi_d == null ? "–" : r.rsi_d.toFixed(0)}</td><td>${r.rsi_w == null ? "–" : r.rsi_w.toFixed(0)}</td>
+    return `<tr tabindex="0" data-t="${esc(r.ticker)}" class="${scrSel === r.ticker ? "sel" : ""}${fresh ? " in" : ""}">
+      <td class="left sticky lp-tk"><b>${esc(r.ticker)}</b><span class="lp-dots">${dots}</span>
+        <span class="tk-name" title="${esc(r.name || "")}">${esc(r.name && r.name !== r.ticker ? r.name : "")}${r.mktcap ? ` · ${capFmt(r.mktcap)}` : ""}</span></td>
+      <td><span class="lp-call">${f2(r.price)}<small class="${signed(r.day_pct)}">${sgnPct(r.day_pct, 2)}</small></span></td>
+      <td class="${signed(r.chg1y)}"><a class="spark-link" role="link" data-tv="${esc(r.ticker.replace("-", "."))}" title="1-year change ${sgnPct(r.chg1y)}. Click to open ${esc(r.ticker)} on TradingView in Chrome">${spark(r.spark)}</a></td>
+      <td class="left">${r.support == null ? `<span class="note">below every level</span>` : `<span class="lp-call">${f2(r.support)}<small>${esc(SUP_NAME[r.support_type] || r.support_type)}${r.touches ? ` ×${r.touches}` : ""} · ${sgnPct(r.dist, 1)} above</small></span>`}</td>
+      <td class="left">${scrMap(r)}</td>
+      <td><span class="${scrRsiCls(r.rsi_d)}">${r.rsi_d == null ? "–" : r.rsi_d.toFixed(0)}</span> <span class="note">/</span> <span class="${scrRsiCls(r.rsi_w)}">${r.rsi_w == null ? "–" : r.rsi_w.toFixed(0)}</span></td>
       <td title="${esc(oiTip)}">${r.oi == null ? `<span class="note">${r.oi_error ? "failed" : r.at_support ? "…" : "–"}</span>` : oiFmt(r.oi)}</td></tr>`;
-  }).join("");
+  }).join("") : `<tr><td colspan="7" class="note empty" style="text-align:center">Nothing matches “${esc(scrQ)}”.</td></tr>`;
+  const sc = $("#scrBody .scroll"), x0 = sc?.scrollLeft || 0;
   $("#scrBody").innerHTML = `<div class="scroll"><table id="scrTable">${head}<tbody>${body}</tbody></table></div>`;
+  $("#scrBody .scroll").scrollLeft = x0;
 }
+
+/* ---------- detail panel ---------- */
+function scrChart(r) {
+  const s = r.spark || [];
+  if (s.length < 2) return "";
+  const W = 400, H = 150, pl = 4, pr = 52, pt = 8, pb = 8;
+  const lines = [["Support", r.support, "var(--up)", ""], ["50-day", r.sma50, "var(--lp-contract)", "4 3"], ["200-day", r.sma200, "var(--lp-stock)", "6 3"], ["52w high", r.high52, "var(--muted)", "2 3"]].filter(l => l[1] != null);
+  const vals = [...s, ...lines.map(l => l[1])], lo = Math.min(...vals) * 0.98, hi = Math.max(...vals) * 1.02;
+  const X = i => pl + i / (s.length - 1) * (W - pl - pr), Y = v => pt + (hi - v) / (hi - lo) * (H - pt - pb);
+  const d = s.map((v, i) => `${i ? "L" : "M"}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join("");
+  const col = s[s.length - 1] >= s[0] ? "var(--up)" : "var(--down)";
+  // labels on the right edge, nudged apart when two levels sit close together
+  const lab = lines.map(l => ({ l, y: Y(l[1]) })).sort((a, b) => a.y - b.y);
+  for (let i = 1; i < lab.length; i++) if (lab[i].y - lab[i - 1].y < 11) lab[i].y = lab[i - 1].y + 11;
+  return `<svg class="lp-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="One-year weekly closes with support and moving averages">
+    <path d="${d} L${X(s.length - 1)} ${H - pb} L${pl} ${H - pb}Z" fill="${col}" opacity=".10"/><path d="${d}" fill="none" stroke="${col}" stroke-width="2"/>
+    ${lines.map(([n, v, c, dash]) => `<line x1="${pl}" x2="${W - pr}" y1="${Y(v)}" y2="${Y(v)}" stroke="${c}" stroke-width="${n === "Support" ? 2 : 1.5}"${dash ? ` stroke-dasharray="${dash}"` : ""}/>`).join("")}
+    ${lab.map(({ l, y }) => `<text x="${W - pr + 4}" y="${y + 3}" font-size="10" fill="${l[2]}">${l[0] === "52w high" ? "high" : l[0] === "Support" ? "sup" : l[0].replace("-day", "d")} ${l[1] >= 1000 ? Math.round(l[1]) : f2(l[1])}</text>`).join("")}
+    <circle cx="${X(s.length - 1)}" cy="${Y(s[s.length - 1])}" r="3.5" fill="${col}"/></svg>`;
+}
+
+function scrDrawer(quiet) {
+  const el = $("#scrDrawer"), r = scrSel && scrData && scrData.rows ? scrData.rows.find(x => x.ticker === scrSel) : null;
+  el.classList.toggle("open", !!r);
+  el.setAttribute("aria-hidden", r ? "false" : "true");
+  if (!r) { if (scrSel && quiet && scrData?.status === "ok") scrSel = null; return; }
+  const ladder = [["52-week high", r.high52], ["200-day MA", r.sma200], ["50-day MA", r.sma50], [`Support (${SUP_NAME[r.support_type] || r.support_type || "–"}${r.touches ? " ×" + r.touches : ""})`, r.support]]
+    .filter(l => l[1] != null).sort((a, b) => b[1] - a[1]);
+  const pc = r.oi_calls && r.oi_puts ? r.oi_puts / r.oi_calls : null;
+  const callShare = r.oi_calls && r.oi ? r.oi_calls / r.oi * 100 : null;
+  const scrollTop = el.scrollTop;
+  el.innerHTML = `
+    <div class="lp-dh"><div style="flex:1;min-width:0"><h3>${esc(r.ticker)}</h3><div class="sub">${esc(r.name && r.name !== r.ticker ? r.name : "")}${r.sector ? " · " + esc(r.sector) : ""}${r.mktcap ? " · " + capFmt(r.mktcap) : ""}</div>
+      <div class="px">${f2(r.price)} <span class="${signed(r.day_pct)}" style="font-size:12px">${sgnPct(r.day_pct, 2)} today</span> <span class="${signed(r.chg1y)}" style="font-size:12px">${sgnPct(r.chg1y)} 1Y</span></div></div>
+      <button class="ghost small" type="button" id="scrClose" aria-label="Close detail">✕</button></div>
+    <div class="lp-sec"><h4>${r.at_support ? "At support" : r.support != null ? "Above support" : "Below every support level"}</h4>
+      <div class="lp-stats">
+        <div class="lp-stat"><div class="k">Support</div><div class="v">${r.support == null ? "–" : f2(r.support)}</div></div>
+        <div class="lp-stat"><div class="k">Above it</div><div class="v">${r.dist == null ? "–" : sgnPct(r.dist, 2)}</div></div>
+        <div class="lp-stat"><div class="k">Off 52w high</div><div class="v ${signed(r.off_high)}">${sgnPct(r.off_high)}</div></div>
+        <div class="lp-stat"><div class="k">vs 200-day</div><div class="v ${signed(r.vs200)}">${sgnPct(r.vs200)}</div></div>
+        <div class="lp-stat"><div class="k">RSI daily</div><div class="v ${scrRsiCls(r.rsi_d)}">${r.rsi_d == null ? "–" : r.rsi_d.toFixed(0)}</div></div>
+        <div class="lp-stat"><div class="k">RSI weekly</div><div class="v ${scrRsiCls(r.rsi_w)}">${r.rsi_w == null ? "–" : r.rsi_w.toFixed(0)}</div></div>
+      </div></div>
+    <div class="lp-sec"><h4>One year, weekly closes</h4><a class="spark-link" role="link" data-tv="${esc(r.ticker.replace("-", "."))}" title="Open ${esc(r.ticker)} on TradingView in Chrome">${scrChart(r)}</a></div>
+    <div class="lp-sec"><h4>Levels from the price</h4><div class="lp-parts">
+      ${ladder.map(([n, v]) => `<span>${esc(n)}</span><span>${f2(v)} · ${sgnPct(v / r.price - 1)}</span>`).join("")}</div></div>
+    <div class="lp-sec"><h4>Options open interest</h4>
+      ${r.oi == null ? `<div class="lp-callout">${r.oi_error ? "Lookup failed: " + esc(r.oi_error) : r.at_support ? "Checking…" : "Looked up only for stocks at support."}</div>` : `
+      <div class="lp-split" title="Calls vs puts"><i style="width:${callShare}%;background:var(--up)"></i><i style="width:${100 - callShare}%;background:var(--down)"></i></div>
+      <div class="lp-parts"><span>Total</span><span>${int(r.oi)}</span><span>Calls</span><span>${int(r.oi_calls)}</span><span>Puts</span><span>${int(r.oi_puts)}</span>
+        <span>Put / call</span><span>${pc == null ? "–" : pc.toFixed(2)}</span><span>Expirations</span><span>${r.oi_exps ?? "–"}${r.oi_date ? " · " + esc(r.oi_date) : ""}</span></div>`}</div>
+    <div class="lp-actions">
+      <button class="primary small" type="button" data-chain="${esc(r.ticker)}">Open chain</button>
+      <button class="ghost small" type="button" data-tvb="${esc(r.ticker.replace("-", "."))}">TradingView</button>
+      ${r.type === "stock" ? `<button class="ghost small" type="button" data-leap="${esc(r.ticker)}" title="Add to your LEAPS watchlist and open the LEAPS Finder">+ LEAPS watch</button>` : ""}
+    </div>
+    <p class="note" style="margin:0">A technical screen, not advice.</p>`;
+  el.scrollTop = scrollTop;
+}
+function scrOpenRow(t) { scrSel = scrSel === t ? null : t; renderScreener(); scrDrawer(); }
+function scrClose() { if (!scrSel) return; scrSel = null; renderScreener(); scrDrawer(); }
 
 function scrCsv() {
   if (!scrData || !scrData.rows.length) return toast("Nothing to download yet.", false);
@@ -3563,6 +3669,7 @@ function scrCsv() {
 
 $("#scrForm").onsubmit = e => { e.preventDefault(); scrRead(); loadScreener(); };
 for (const id of ["#scrOi", "#scrCap", "#scrNear"]) $(id).addEventListener("input", scrChanged);
+$("#scrQ").oninput = e => { scrQ = e.target.value.trim().toLowerCase(); if (scrData && scrData.status === "ok") renderScreener(); };
 $("#scrLevel").onchange = () => { scr.level = $("#scrLevel").value; loadScreener(); };
 $("#scrRsi").onchange = () => { scr.rsi = $("#scrRsi").value; loadScreener(); };
 $("#scrStocks").onclick = () => { scr.stocks_only = !scr.stocks_only; scrSync(); loadScreener(); };
@@ -3575,13 +3682,36 @@ $("#scrBody").onclick = e => {
   const th = e.target.closest("th[data-k]");
   if (th) {
     const k = th.dataset.k;
-    scrSort = scrSort.k === k ? { k, dir: -scrSort.dir } : { k, dir: ["ticker", "sector", "support_type", "dist", "off_high"].includes(k) ? 1 : -1 };
+    scrSort = scrSort.k === k ? { k, dir: -scrSort.dir } : { k, dir: ["ticker", "support", "dist"].includes(k) ? 1 : -1 };
     store.set("scrSort", scrSort);
     return renderScreener();
   }
-  const b = e.target.closest(".tk-btn");
-  if (b) { $("#ticker").value = b.dataset.t; showTab("chain"); loadChain(b.dataset.t); }
+  if (e.target.closest("a.spark-link")) return;   // the Trend sparkline opens TradingView instead
+  const tr = e.target.closest("tr[data-t]");
+  if (tr) scrOpenRow(tr.dataset.t);
 };
+$("#scrBody").onkeydown = e => { const tr = e.target.closest("tr[data-t]"); if (tr && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); scrOpenRow(tr.dataset.t); } };
+$("#scrDrawer").onclick = async e => {
+  if (e.target.closest("#scrClose")) return scrClose();
+  const ch = e.target.closest("button[data-chain]");
+  if (ch) { const tk = ch.dataset.chain; scrClose(); $("#ticker").value = tk; showTab("chain"); return loadChain(tk); }
+  const tv = e.target.closest("button[data-tvb]");
+  if (tv) { try { await api("/api/open-chart", { symbol: tv.dataset.tvb }); } catch (err) { toast(`Couldn't open ${tv.dataset.tvb} in Chrome: ${err.message}`, false); } return; }
+  const lw = e.target.closest("button[data-leap]");
+  if (lw) {
+    const t = lw.dataset.leap;
+    try {
+      const cur = lpData?.watchlist || (await api(`/api/leaps?mode=watch&term=leap`)).watchlist;
+      if (!cur.includes(t)) await api("/api/leaps/watch", { tickers: [...cur, t], term: "leap" });
+      scrClose();
+      if (lpMode !== "watch") lpSetMode("watch");
+      lpData = null; showTab("leaps");
+      $("#lpQ").value = t; lpF.q = t.toLowerCase();
+      toast(`${t} is on your LEAPS watchlist. Scanning…`, false);
+    } catch (err) { toast("Couldn't add it: " + err.message, false); }
+  }
+};
+document.addEventListener("keydown", e => { if (e.key === "Escape" && scrSel) scrClose(); });
 scrSync();
 
 /* ================= LEAPS finder ================= */
