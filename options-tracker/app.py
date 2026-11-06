@@ -18,6 +18,7 @@ import traceback
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
+from urllib.parse import quote as _urlquote
 
 import tracker
 import earnings
@@ -416,7 +417,32 @@ tell window 1 to set t to make new tab with properties {URL:(item 1 of argv)}
 return ((id of window 1) as text) & "|" & ((id of t) as text)
 end tell
 end run"""
+_TV_SETURL = """on run argv
+tell application "Google Chrome" to set URL of (tab id ((item 2 of argv) as integer) of window id ((item 1 of argv) as integer)) to (item 3 of argv)
+end run"""
 _TV_SYM = "(window.TradingViewApi && TradingViewApi.activeChart && TradingViewApi.activeChart().symbol()) || ''"
+
+
+def _tv_eval(tab, expr, wait=4.0):
+    """Run `expr` in the TradingView page itself and return its JSON-able value.
+    AppleScript's `execute javascript` runs in an isolated world that can't see TradingViewApi, and the page's
+    CSP blocks injected <script> tags, so the code goes in as a javascript: URL (page world) and leaves its
+    result in a data attribute that the isolated world can read back."""
+    w, t = tab
+    _osa(_TV_EXEC, w, t, "delete document.documentElement.dataset.cx; 'ok'")
+    code = ("void((function(){var r;try{r={v:(%s)}}catch(e){r={e:String(e)}}"
+            "document.documentElement.dataset.cx=JSON.stringify(r)})())" % expr)
+    _osa(_TV_SETURL, w, t, "javascript:" + _urlquote(code, safe=""))
+    end = time.time() + wait
+    while time.time() < end:
+        out = _osa(_TV_EXEC, w, t, "document.documentElement.dataset.cx || ''")
+        if out and out != "missing value":
+            r = json.loads(out)
+            if "e" in r:
+                raise QuoteError("TradingView: " + r["e"])
+            return r.get("v")
+        time.sleep(0.25)
+    raise QuoteError("TradingView page didn't answer")
 
 
 def tv_line(symbol, price, label, kind):
@@ -441,7 +467,7 @@ def tv_line(symbol, price, label, kind):
             if len(parts) != 2:
                 continue
             try:
-                cur = _osa(_TV_EXEC, parts[0], parts[1], _TV_SYM)
+                cur = _tv_eval(parts, _TV_SYM, wait=2) or ""
             except QuoteError as e:
                 if "Allow JavaScript" in str(e):
                     raise
@@ -457,7 +483,7 @@ def tv_line(symbol, price, label, kind):
             while True:
                 time.sleep(1)
                 try:
-                    cur = _osa(_TV_EXEC, tab[0], tab[1], _TV_SYM)
+                    cur = _tv_eval(tab, _TV_SYM, wait=1.5) or ""
                 except QuoteError as e:
                     if "Allow JavaScript" in str(e):
                         raise
@@ -479,11 +505,11 @@ def tv_line(symbol, price, label, kind):
     overrides: {linecolor: %s, textcolor: %s, linewidth: 2, linestyle: 0, fontsize: 12, showLabel: true, horzLabelsAlign: "right"}});
   return "ok";
 })()""" % (json.dumps(label), json.dumps(prefix), repr(price), json.dumps(color), json.dumps(color))
-        _osa(_TV_EXEC, tab[0], tab[1], js)
+        _tv_eval(tab, js)
         time.sleep(0.8)
         check = "(function(){const c=TradingViewApi.activeChart();return c.getAllShapes().filter(s=>{try{return (c.getShapeById(s.id).getProperties()||{}).text===%s}catch(e){return false}}).length})()" % json.dumps(label)
-        n = _osa(_TV_EXEC, tab[0], tab[1], check)
-        if n.strip() in ("", "0"):
+        n = _tv_eval(tab, check)
+        if not n:
             raise QuoteError("TradingView didn't accept the line; is the chart fully loaded?")
     return {"drawn": label, "symbol": sym, "price": price}
 
