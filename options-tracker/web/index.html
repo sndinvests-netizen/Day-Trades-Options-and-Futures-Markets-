@@ -640,6 +640,7 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
 .lp-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
 .lp-dot.warn { background: #e0a526; } .lp-dot.down { background: var(--down); } .lp-dot.muted { background: var(--muted); }
 .lp-star { color: #e0a526; margin-right: 3px; }
+.lp-look { font-size: 10px; font-weight: 700; color: #5fa4e8; border: 1px solid #5fa4e8; border-radius: 5px; padding: 0 5px; margin-left: 6px; vertical-align: 1px; }
 .lp-add { font-size: 11px; padding: 1px 7px; margin-left: 6px; }
 .lp-call { font-weight: 600; }
 .lp-call small { display: block; font-weight: 400; font-size: 11px; color: var(--muted); }
@@ -4610,6 +4611,8 @@ function lpSetMode(m) {
 }
 function lpShow(d) {
   lpData = d;
+  lpInject();
+  lpMaybeLookup();
   lpOther[d.term] = d;
   $("#lpErr").classList.add("hidden");
   if (document.activeElement !== $("#lpTickers")) $("#lpTickers").value = d.watchlist.join(", ");
@@ -4640,7 +4643,7 @@ function lpRows() {
   const { k, dir } = lpSort, f = lpF;
   return lpData.rows.filter(r => {
     const c = r.best;
-    if (f.q && !(r.ticker + " " + (r.name || "")).toLowerCase().includes(f.q)) return false;
+    if (f.q && !(r.ticker + " " + (r.name || "")).toLowerCase().includes(f.q) && !r.ticker.toLowerCase().includes(f.q.replace(/\./g, "-"))) return false;
     if (r.score < f.min) return false;
     if (f.maxCost && (!c || c.contract_cost > f.maxCost)) return false;
     if (f.thin && (!c || !c.liquid)) return false;
@@ -4720,18 +4723,19 @@ function renderLeaps() {
       + (c && c.est ? `<span class="lp-dot muted" title="No live two-sided quote: Black-Scholes estimate"></span>` : "")
       + (!(r.vs200 > 0) ? `<span class="lp-dot down" title="Below the 200-day SMA"></span>` : "")
       + (r.sma50 && r.sma200 && r.sma50 < r.sma200 ? `<span class="lp-dot down" title="50-day SMA under the 200-day"></span>` : "");
-    const star = d.mode === "market" && r.watched ? `<span class="lp-star" title="On your LEAPS watchlist">★</span>` : "";
-    const add = d.mode === "market" && !r.watched ? `<button type="button" class="ghost small lp-add" data-w="${esc(r.ticker)}" title="Add ${esc(r.ticker)} to your LEAPS watchlist">+ Watch</button>` : "";
+    const star = (d.mode === "market" || r.lookup) && r.watched ? `<span class="lp-star" title="On your LEAPS watchlist">★</span>` : "";
+    const look = r.lookup ? `<span class="lp-look" title="Looked up from the Find box: not in this ${d.mode === "market" ? "market scan" : "watchlist"}">looked up</span>` : "";
+    const add = (d.mode === "market" || r.lookup) && !r.watched ? `<button type="button" class="ghost small lp-add" data-w="${esc(r.ticker)}" title="Add ${esc(r.ticker)} to your LEAPS watchlist">+ Watch</button>` : "";
     const soon = lpSoon(r);
     return `<tr tabindex="0" data-t="${esc(r.ticker)}" class="${lpSel === r.ticker ? "sel" : ""}${fresh ? " in" : ""}">
-      <td class="left sticky lp-tk">${star}<b>${esc(r.ticker)}</b><span class="lp-dots">${dots}</span>${add}${r.name ? `<span class="tk-name" title="${esc(r.name)}">${esc(r.name)}</span>` : ""}</td>
+      <td class="left sticky lp-tk">${star}<b>${esc(r.ticker)}</b><span class="lp-dots">${dots}</span>${look}${add}${r.name ? `<span class="tk-name" title="${esc(r.name)}">${esc(r.name)}</span>` : ""}</td>
       <td>${lpRing(r)}</td>
       <td class="left">${c ? `<span class="lp-call">${esc(lpMon(c.exp))} ${f2(c.strike)}C<small>${c.dte}d · ${lpTerm === "leap" ? "" : lpPct(c.otm_pct, 0) + " OTM · "}Δ ${c.delta.toFixed(2)}</small></span>` : `<span class="note">${esc(r.note || "No candidate")}</span>`}</td>
       <td>${c ? lpMoney(c.contract_cost) : "–"}</td>
       <td class="${m.cls}">${m.txt}</td>
       <td class="left">${lpBeBar(r, c)}</td>
       <td><span class="lp-earn${soon ? " soon" : ""}" title="${r.earnings_est ? "Estimated date" : "Confirmed"}${r.earnings_session ? " · " + esc(r.earnings_session) : ""}">${r.earnings ? esc(new Date(r.earnings + "T12:00").toLocaleDateString([], { month: "short", day: "numeric" })) + (soon ? ` · ${r.earnings_days}d` : "") : "–"}</span></td></tr>`;
-  }).join("") : `<tr><td colspan="7" class="note empty" style="text-align:center">No tickers match these filters.</td></tr>`;
+  }).join("") : `<tr><td colspan="7" class="note empty" style="text-align:center">${lpLookMsg() || "No tickers match these filters."}</td></tr>`;
   const sc = $("#lpBody .scroll"), x0 = sc?.scrollLeft || 0;
   $("#lpBody").innerHTML = `<div class="scroll"><table id="lpTable">${head}<tbody>${body}</tbody></table></div>`;
   $("#lpBody .scroll").scrollLeft = x0;
@@ -4837,7 +4841,7 @@ function lpDrawer(quiet) {
       ${c ? `<button class="primary small" type="button" data-b="${esc(r.ticker)}|${c.exp}|${c.strike}">Open in Builder</button>` : ""}
       <button class="ghost small" type="button" data-chain="${esc(r.ticker)}">Chain</button>
       <button class="ghost small" type="button" data-tvb="${esc(r.ticker.replace("-", "."))}">TradingView</button>
-      ${lpData.mode === "market" && !r.watched ? `<button class="ghost small" type="button" data-w="${esc(r.ticker)}">+ Watch</button>` : ""}
+      ${(lpData.mode === "market" || r.lookup) && !r.watched ? `<button class="ghost small" type="button" data-w="${esc(r.ticker)}">+ Watch</button>` : ""}
     </div>
     <p class="note" style="margin:0">A scanner, not advice. Check the chain before you trade.</p>`;
   el.scrollTop = scrollTop;
@@ -4906,7 +4910,46 @@ function lpSetTerm(t) {
   loadLeaps();
 }
 $("#lpTerm").onclick = e => { const b = e.target.closest("button[data-term]"); if (b) lpSetTerm(b.dataset.term); };
-$("#lpQ").oninput = e => { lpF.q = e.target.value.trim().toLowerCase(); if (lpData) renderLeaps(); };
+$("#lpQ").oninput = e => {
+  lpF.q = e.target.value.trim().toLowerCase();
+  if (lpData) renderLeaps();
+  clearTimeout(lpLookTimer);
+  lpLookTimer = setTimeout(lpMaybeLookup, 600);
+};
+$("#lpQ").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); clearTimeout(lpLookTimer); lpMaybeLookup(); } };
+
+/* Find box: a ticker that isn't in the current list gets its own LEAPS Finder check and joins the table */
+const lpLook = {};          // "term|TICKER" -> row, {error}, or "loading"
+let lpLookTimer = null;
+const lpLookQ = () => { const q = ($("#lpQ").value || "").trim().toUpperCase().replace(/\./g, "-"); return /^[A-Z][A-Z0-9-]{0,7}$/.test(q) ? q : null; };
+function lpInject() {
+  if (!lpData) return;
+  for (const [key, v] of Object.entries(lpLook)) {
+    const [term, t] = key.split("|");
+    if (term !== lpData.term || !v || v === "loading" || v.error) continue;
+    if (!lpData.rows.some(r => r.ticker === t)) lpData.rows.push(v);
+  }
+}
+function lpLookMsg() {
+  const t = lpLookQ();
+  if (!t || !lpData) return "";
+  const v = lpLook[lpData.term + "|" + t];
+  return v === "loading" ? `Looking up ${esc(t)}: checking its calls…` : v && v.error ? esc(v.error.startsWith(t) ? v.error : `${t}: ${v.error}`) : "";
+}
+async function lpMaybeLookup() {
+  const t = lpLookQ();
+  if (!t || !lpData || lpData.rows.some(r => r.ticker === t)) return;
+  const term = lpData.term, key = term + "|" + t;
+  if (lpLook[key]) { lpInject(); return renderLeaps(); }
+  lpLook[key] = "loading";
+  renderLeaps();
+  try {
+    const d = await api(`/api/leaps/one?ticker=${encodeURIComponent(t)}&term=${term}`);
+    lpLook[key] = d.row;
+    lpLook[term + "|" + d.row.ticker] = d.row;
+  } catch (err) { lpLook[key] = { error: err.message }; }
+  if (lpData && lpData.term === term) { lpInject(); renderLeaps(); lpDrawer(); }
+}
 $("#lpMin").oninput = e => { lpF.min = +e.target.value; $("#lpMinV").textContent = lpF.min; lpSaveFilters(); if (lpData) renderLeaps(); };
 $("#lpMaxCost").onchange = e => { lpF.maxCost = +e.target.value; lpSaveFilters(); if (lpData) renderLeaps(); };
 for (const [id, key] of [["#lpFThin", "thin"], ["#lpFEarn", "earn"], ["#lpFTrend", "trend"]]) {

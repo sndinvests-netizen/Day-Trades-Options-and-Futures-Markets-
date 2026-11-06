@@ -42,6 +42,7 @@ never waits on Yahoo); the last ones are kept in leaps_cache.json and leaps_mark
 import json
 import math
 import os
+import re
 import threading
 import time
 import traceback
@@ -520,3 +521,30 @@ def scan(refresh=False, mode="watch", term="leap"):
         r["watched"] = r["ticker"] in watch
     extra = {k: data[k] for k in ("screened", "uptrend", "screener_at") if k in data}
     return dict(base, **extra, status="ok", rows=rows, failed=data.get("failed", {}), scanned_at=data["scanned_at"])
+
+
+# ---------- one ticker, on demand ----------
+# The Find box looks up any ticker that isn't in the current list (e.g. a stock outside the market top 50).
+_one_cache = {}
+_spy_cache = [0.0, None]
+
+
+def lookup(ticker, term="leap"):
+    """Full LEAPS Finder check for a single ticker and term, cached for FRESH_SECONDS."""
+    term = term or "leap"
+    if term not in TERMS:
+        raise QuoteError("term must be " + ", ".join(TERMS))
+    sym = yahoo_symbol(str(ticker or "").strip().upper())
+    if not re.fullmatch(r"[A-Z0-9.^=-]{1,12}", sym):
+        raise QuoteError("Enter a ticker")
+    hit = _one_cache.get((sym, term))
+    if hit and time.time() - hit[0] < FRESH_SECONDS:
+        row = hit[1]
+    else:
+        if _spy_cache[1] is None or time.time() - _spy_cache[0] > FRESH_SECONDS:
+            _spy_cache[:] = [time.time(), _closes("SPY")]
+        row = _analyze(sym, _spy_cache[1], term)
+        row["lookup"] = True
+        _one_cache[(sym, term)] = (time.time(), row)
+    row["watched"] = sym in [yahoo_symbol(t) for t in watchlist()]
+    return {"term": term, "row": row}

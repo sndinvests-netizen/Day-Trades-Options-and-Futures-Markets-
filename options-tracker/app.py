@@ -244,6 +244,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(lambda: news_feed(q.get("tickers", "")))
         elif url.path == "/api/screener":
             self.guard(lambda: screener_feed(q))
+        elif url.path == "/api/leaps/one":
+            self.guard(lambda: leaps.lookup(q.get("ticker"), q.get("term") or "leap"))
         elif url.path == "/api/leaps":
             self.guard(lambda: leaps.scan(q.get("refresh") == "1", q.get("mode") or "watch", q.get("term") or "leap"))
         else:
