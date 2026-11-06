@@ -101,12 +101,12 @@ def save_earnings_watch(tickers):
     return earnings_feed()
 
 
-def save_leaps_watch(tickers):
+def save_leaps_watch(tickers, term=None):
     try:
         leaps.save_watchlist(tickers)
     except ValueError as e:
         raise tracker.TradeError(str(e))
-    return leaps.scan()
+    return leaps.scan(term=term or "leap")
 
 
 def screener_feed(q):
@@ -241,7 +241,7 @@ class Handler(BaseHTTPRequestHandler):
         elif url.path == "/api/screener":
             self.guard(lambda: screener_feed(q))
         elif url.path == "/api/leaps":
-            self.guard(lambda: leaps.scan(q.get("refresh") == "1", q.get("mode") or "watch"))
+            self.guard(lambda: leaps.scan(q.get("refresh") == "1", q.get("mode") or "watch", q.get("term") or "leap"))
         else:
             self.send(404, {"error": "not found"})
 
@@ -359,7 +359,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/earnings/watch":
             self.guard(lambda: save_earnings_watch(body.get("tickers")))
         elif path == "/api/leaps/watch":
-            self.guard(lambda: save_leaps_watch(body.get("tickers")))
+            self.guard(lambda: save_leaps_watch(body.get("tickers"), body.get("term")))
         elif path == "/api/positions/close":
             self.guard(close_position)
         elif path == "/api/open-chart":

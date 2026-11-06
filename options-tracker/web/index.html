@@ -805,6 +805,11 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
           <button type="button" data-mode="watch">My watchlist</button>
           <button type="button" data-mode="market" title="The strongest uptrending stocks over $10B from the Screener's market scan">Whole market</button>
         </div>
+        <div class="tabs mini" id="lpTerm" role="group" aria-label="Which calls">
+          <button type="button" data-term="leap" title="365+ days out, deep in the money (delta 0.70-0.85)">LEAPS</button>
+          <button type="button" data-term="otm10" title="Hop/Skip: about 90 days out (85-150), strike about 10% above the stock price">90d +10% OTM</button>
+          <button type="button" data-term="otm20" title="Hop/Skip: about 90 days out (85-150), strike about 20% above the stock price">90d +20% OTM</button>
+        </div>
         <div><button class="ghost small" type="button" id="lpRefresh" title="Rescan now">Refresh</button>
           <button class="ghost small" type="button" id="lpCsv" title="Download the rows below as a CSV file">Download CSV</button></div>
       </div>
@@ -3500,7 +3505,7 @@ $("#scrBody").onclick = e => {
 scrSync();
 
 /* ================= LEAPS finder ================= */
-let lpData = null, lpTimer = null, lpSeq = 0, lpOpen = new Set(), lpMode = store.get("lpMode", "watch");
+let lpData = null, lpTimer = null, lpSeq = 0, lpOpen = new Set(), lpMode = store.get("lpMode", "watch"), lpTerm = store.get("lpTerm", "leap");
 let lpSort = store.get("lpSort", { k: "score", dir: -1 });
 const lpPct = (x, d = 1) => x == null ? "–" : (x * 100).toFixed(d) + "%";
 const lpMoney = x => x == null ? "–" : "$" + Math.round(x).toLocaleString();
@@ -3511,8 +3516,8 @@ async function loadLeaps(refresh) {
   const seq = ++lpSeq;
   if (!lpData) $("#lpBody").innerHTML = `<div class="note empty">Loading the LEAPS scan…</div>`;
   try {
-    const d = await api(`/api/leaps?mode=${lpMode}` + (refresh ? "&refresh=1" : ""));
-    if (seq !== lpSeq || d.mode !== lpMode) return;
+    const d = await api(`/api/leaps?mode=${lpMode}&term=${lpTerm}` + (refresh ? "&refresh=1" : ""));
+    if (seq !== lpSeq || d.mode !== lpMode || d.term !== lpTerm) return;
     lpShow(d);
   } catch (err) {
     if (seq !== lpSeq) return;
@@ -3525,6 +3530,7 @@ function lpSetMode(m) {
   for (const b of document.querySelectorAll("#lpMode button")) b.classList.toggle("on", b.dataset.mode === m);
   $("#lpForm").classList.toggle("hidden", m !== "watch");
   $("#lpRefresh").textContent = m === "market" ? "Scan market" : "Refresh";
+  for (const b of document.querySelectorAll("#lpTerm button")) b.classList.toggle("on", b.dataset.term === lpTerm);
   lpData = null; lpOpen.clear();
   $("#lpBody").innerHTML = `<div class="note empty">Loading…</div>`; $("#lpCount").innerHTML = "";
 }
@@ -3551,6 +3557,18 @@ const LP_COLS = [
   ["b.spread", "Spread", "", "(ask − bid) ÷ mid"], ["b.oi", "OI", "", "Open interest on this contract"],
   ["earnings", "Earnings", "", "Next report; flagged when it's within 14 days"], ["act", "", ""],
 ];
+const LP_OTM_SWAP = {
+  "b.exp": ["b.exp", "Best call", "left", "The best-scoring liquid call about 90 days out near the target out-of-the-money strike"],
+  "b.tv_year": ["b.be_sigma", "BE vs 1σ", "", "Breakeven move ÷ the stock's 1-sigma move to expiration (1-year realized vol × √time). Under 1 = breakeven inside a normal move; over 2 = a long shot"],
+};
+const lpCols = () => lpTerm === "leap" ? LP_COLS : LP_COLS.map(c => LP_OTM_SWAP[c[0]] || (c[0] === "score" ? ["score", "Score", "",
+  "0-100: stock 40 (trend 15, relative strength 15, Rule of 40 10) + contract 60 (breakeven vs 1-sigma move 25, IV vs realized vol 15, spread 10, open interest 10), minus 15 when no contract is liquid. Hover a score for its breakdown"] : c));
+const LP_PART_NAMES = { time_value: ["time value", 25], breakeven: ["breakeven", 10], iv_hv: ["IV/HV", 10], spread: ["spread", 10], oi: ["OI", 5], be_sigma: ["breakeven vs 1σ", 25] };
+const lpPartsTip = (b) => Object.entries(b.parts).map(([k, v]) => {
+  const [n, w] = LP_PART_NAMES[k] || [k, ""];
+  const max = lpTerm === "leap" ? w : { be_sigma: 25, iv_hv: 15, spread: 10, oi: 10 }[k];
+  return `${n} ${v.toFixed(1)}/${max}`;
+}).join(", ");
 const lpVal = (r, k) => k.startsWith("b.") ? (r.best ? r.best[k.slice(2)] : null) : r[k];
 
 function lpRows() {
@@ -3564,7 +3582,8 @@ function lpRows() {
 function lpContractCells(c) {
   return `<td>${lpMoney(c.contract_cost)}${c.est ? ` <span class="lp-tag warn" title="No live two-sided quote: Black-Scholes estimate">est</span>` : ""}</td>
     <td>${c.delta.toFixed(2)}</td>
-    <td class="${c.tv_year <= 0.06 ? "up" : c.tv_year >= 0.12 ? "down" : ""}" title="Time value $${f2(c.extrinsic)}${c.dividends ? ` + dividends given up $${f2(c.dividends)}` : ""} per share">${lpPct(c.tv_year)}</td>
+    ${lpTerm === "leap" ? `<td class="${c.tv_year <= 0.06 ? "up" : c.tv_year >= 0.12 ? "down" : ""}" title="Time value $${f2(c.extrinsic)}${c.dividends ? ` + dividends given up $${f2(c.dividends)}` : ""} per share">${lpPct(c.tv_year)}</td>`
+      : `<td class="${c.be_sigma == null ? "" : c.be_sigma <= 1 ? "up" : c.be_sigma >= 2 ? "down" : ""}" title="Strike ${lpPct(c.otm_pct)} out of the money; premium is ${lpPct(c.tv_year)} of the stock price per year">${c.be_sigma == null ? "–" : c.be_sigma.toFixed(2) + "σ"}</td>`}
     <td title="Breakeven ${f2(c.breakeven)} · ${lpPct(c.be_year)} per year">${sgnPct(c.be_pct)}</td>
     <td>${c.leverage.toFixed(1)}×</td>
     <td>${lpPct(c.iv, 0)}${c.iv_est ? `<span class="lp-tag" title="IV borrowed from a nearby strike or realized vol">est</span>` : ""}</td>
@@ -3573,7 +3592,7 @@ function lpContractCells(c) {
     <td>${int(c.oi)}</td>`;
 }
 function lpContractLabel(r, c) {
-  return `${esc(lpExp(c.exp))} ${f2(c.strike)}C <span class="note">${c.dte}d</span>`;
+  return `${esc(lpExp(c.exp))} ${f2(c.strike)}C <span class="note">${c.dte}d${c.otm_pct != null ? ` · ${lpPct(c.otm_pct, 0)} OTM` : ""}</span>`;
 }
 function renderLeaps() {
   const d = lpData, j = d.job, st = d.settings;
@@ -3588,20 +3607,23 @@ function renderLeaps() {
   if (failed.length) bits.push(`<span class="warn" title="${esc(failed.map(([t, e]) => t + ": " + e).join("\n"))}">${failed.length} failed: ${esc(failed.map(f => f[0]).join(", "))}</span>`);
   if (j.error && !j.running) bits.push(`<span class="warn">Last scan failed: ${esc(j.error)}</span>`);
   $("#lpCount").innerHTML = bits.join("");
-  $("#lpHow").innerHTML = `Candidates: calls expiring ${st.min_days}+ days out with delta ${st.delta_lo.toFixed(2)}–${st.delta_hi.toFixed(2)}.
+  $("#lpHow").innerHTML = st.term && st.term !== "leap" ? `Candidates: calls ${st.short_min_days}–${st.short_max_days} days out (Hop/Skip) with the strike within ±${lpPct(st.otm_band, 0)} of ${lpPct(st.otm, 0)} above the stock price.
+    Liquid = open interest ≥ ${st.min_oi} and spread ≤ ${lpPct(st.max_spread, 0)}; the best-scoring liquid one is shown, with up to 4 alternates under ▸.
+    These are all premium: a bet on a move, not a stock replacement. BE vs 1σ compares the move needed to break even with the stock's normal move by expiration.
+    Costs are mids, delayed about 15 min; “est” = Black-Scholes estimate. A scanner, not advice: check the chain before you trade.` : `Candidates: calls expiring ${st.min_days}+ days out with delta ${st.delta_lo.toFixed(2)}–${st.delta_hi.toFixed(2)}.
     Liquid = open interest ≥ ${st.min_oi} and spread ≤ ${lpPct(st.max_spread, 0)}; the best-scoring liquid one is shown, with up to 4 alternates under ▸.
     Time value/yr includes the dividends a call holder gives up. Quotes priced below what the call can be worth (stale or placeholder) are skipped. Costs are mids, delayed about 15 min; “est” = Black-Scholes estimate where Yahoo has no live quote. A scanner, not advice: check the chain before you trade.`;
   if (d.mode === "market") $("#lpHow").innerHTML = `Whole market: stocks over $${(st.market_min_cap / 1e9).toFixed(0)}B from the Screener's scan that close above their 200-day SMA, with the 50-day above the 200-day and a 1-year return ahead of SPY's,
-    ranked by trend and strength; the top ${st.market_top} get the full LEAPS check. ★ = on your watchlist; + Watch adds one. ` + $("#lpHow").innerHTML;
+    ranked by trend and strength; the top ${st.market_top} get the full ${st.term && st.term !== "leap" ? "contract" : "LEAPS"} check. ★ = on your watchlist; + Watch adds one. ` + $("#lpHow").innerHTML;
   if (d.status === "loading") { $("#lpBody").innerHTML = `<div class="note empty">${d.mode === "market" ? `Scanning the market: ${esc(j.phase || "starting")}${j.total ? ` (${int(j.done)} of ${int(j.total)})` : ""}… about a minute.` : `Scanning ${int(d.watchlist.length)} tickers (about 2 seconds each)…`}</div>`; return; }
   if (!d.rows.length) { $("#lpBody").innerHTML = `<div class="note empty">Nothing scored yet.</div>`; return; }
-  const head = `<thead><tr>${LP_COLS.map(([k, label, cls, tip]) => k === "act" ? `<th></th>` : `<th data-k="${k}" class="${cls || ""}${lpSort.k === k ? " sorted" : ""}"${tip ? ` title="${esc(tip)}"` : ""}
+  const head = `<thead><tr>${lpCols().map(([k, label, cls, tip]) => k === "act" ? `<th></th>` : `<th data-k="${k}" class="${cls || ""}${lpSort.k === k ? " sorted" : ""}"${tip ? ` title="${esc(tip)}"` : ""}
     aria-sort="${lpSort.k === k ? (lpSort.dir > 0 ? "ascending" : "descending") : "none"}">${label}${lpSort.k === k ? (lpSort.dir > 0 ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead>`;
   const body = lpRows().map(r => {
     const b = r.best, sc = Math.round(r.score), open = lpOpen.has(r.ticker);
     const sp = r.stock_parts, bp = b ? b.parts : {};
     const scoreTip = `Stock ${r.stock_score.toFixed(0)}/40: trend ${sp.trend.toFixed(0)}/15, relative strength ${sp.rel_strength.toFixed(1)}/15, Rule of 40 ${sp.rule40.toFixed(1)}/10` +
-      (b ? `\nContract ${b.score.toFixed(0)}/60: time value ${bp.time_value.toFixed(1)}/25, breakeven ${bp.breakeven.toFixed(1)}/10, IV/HV ${bp.iv_hv.toFixed(1)}/10, spread ${bp.spread.toFixed(1)}/10, OI ${bp.oi.toFixed(1)}/5` : "\nNo contract found") +
+      (b ? `\nContract ${b.score.toFixed(0)}/60: ${lpPartsTip(b)}` : "\nNo contract found") +
       (r.penalty ? `\nThin: −${r.penalty} (no contract with OI ≥ ${lpData.settings.min_oi} and spread ≤ ${lpPct(lpData.settings.max_spread, 0)})` : "");
     const trendTags = `${r.vs200 > 0 ? "" : `<span class="lp-tag warn" title="Below the 200-day SMA">&lt;200D</span>`}${r.sma50 && r.sma200 && r.sma50 < r.sma200 ? `<span class="lp-tag warn" title="50-day SMA under the 200-day">50&lt;200</span>` : ""}`;
     const earn = r.earnings ? `<span class="${r.earnings_soon ? "lp-tag warn" : "note"}" title="${r.earnings_est ? "Estimated date" : "Confirmed"}${r.earnings_session ? " · " + r.earnings_session : ""}">${esc(new Date(r.earnings + "T12:00").toLocaleDateString([], { month: "short", day: "numeric" }))}${r.earnings_soon ? ` · ${r.earnings_days}d` : ""}</span>` : "–";
@@ -3643,12 +3665,12 @@ async function lpToBuilder(ticker, exp, strike) {
 function lpCsv() {
   if (!lpData || !lpData.rows.length) return toast("Nothing to download yet.", false);
   const cols = ["ticker", "name", "score", "stock_score", "price", "vs200", "vs50", "ret6", "ret12", "rs6", "rs12", "rule40", "rev_growth", "fcf_margin", "rv", "earnings",
-                "b.exp", "b.dte", "b.strike", "b.cost", "b.contract_cost", "b.delta", "b.iv", "b.iv_hv", "b.tv_year", "b.breakeven", "b.be_pct", "b.leverage", "b.spread", "b.oi", "b.est", "b.liquid", "b.score"];
+                "b.exp", "b.dte", "b.strike", "b.otm_pct", "b.be_sigma", "b.cost", "b.contract_cost", "b.delta", "b.iv", "b.iv_hv", "b.tv_year", "b.breakeven", "b.be_pct", "b.leverage", "b.spread", "b.oi", "b.est", "b.liquid", "b.score"];
   const cell = v => v == null ? "" : typeof v === "number" ? String(+v.toFixed(6)) : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
   const csv = [cols.map(c => c.replace("b.", "leaps_")).join(","), ...lpRows().map(r => cols.map(c => cell(lpVal(r, c))).join(","))].join("\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-  a.download = `leaps-finder-${today()}.csv`;
+  a.download = `leaps-finder-${lpTerm === "leap" ? "" : lpTerm + "-"}${today()}.csv`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
@@ -3656,14 +3678,15 @@ function lpCsv() {
 $("#lpForm").onsubmit = async e => {
   e.preventDefault();
   const tickers = $("#lpTickers").value.split(/[\s,]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
-  try { lpShow(await api("/api/leaps/watch", { tickers })); toast("LEAPS watchlist saved. Scanning…", false); }
+  try { lpShow(await api("/api/leaps/watch", { tickers, term: lpTerm })); toast("LEAPS watchlist saved. Scanning…", false); }
   catch (err) { toast("Couldn't save the watchlist: " + err.message, false); }
 };
 $("#lpRefresh").onclick = () => loadLeaps(true);
+$("#lpTerm").onclick = e => { const b = e.target.closest("button[data-term]"); if (b && b.dataset.term !== lpTerm) { lpTerm = b.dataset.term; store.set("lpTerm", lpTerm); lpSetMode(lpMode); loadLeaps(); } };
 $("#lpMode").onclick = e => { const b = e.target.closest("button[data-mode]"); if (b && b.dataset.mode !== lpMode) { lpSetMode(b.dataset.mode); loadLeaps(); } };
 async function lpWatchAdd(t) {
   try {
-    const d = await api("/api/leaps/watch", { tickers: [...(lpData?.watchlist || []), t] });
+    const d = await api("/api/leaps/watch", { tickers: [...(lpData?.watchlist || []), t], term: lpTerm });
     if (lpData) { lpData.watchlist = d.watchlist; for (const r of lpData.rows) r.watched = d.watchlist.includes(r.ticker); renderLeaps(); }
     toast(`${t} added to your LEAPS watchlist.`, false);
   } catch (err) { toast("Couldn't add it: " + err.message, false); }
@@ -3674,7 +3697,7 @@ $("#lpBody").onclick = e => {
   const th = e.target.closest("th[data-k]");
   if (th) {
     const k = th.dataset.k;
-    lpSort = lpSort.k === k ? { k, dir: -lpSort.dir } : { k, dir: ["ticker", "b.exp", "b.tv_year", "b.be_pct", "b.iv", "b.iv_hv", "b.spread", "earnings"].includes(k) ? 1 : -1 };
+    lpSort = lpSort.k === k ? { k, dir: -lpSort.dir } : { k, dir: ["ticker", "b.exp", "b.tv_year", "b.be_sigma", "b.be_pct", "b.iv", "b.iv_hv", "b.spread", "earnings"].includes(k) ? 1 : -1 };
     store.set("lpSort", lpSort);
     return renderLeaps();
   }

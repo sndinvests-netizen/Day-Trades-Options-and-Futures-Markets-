@@ -27,6 +27,11 @@ Score (0-100) = stock 40 (trend 15, relative strength 15, Rule of 40 10)
               + contract 60 (time value/yr 25, breakeven/yr 10, IV/HV 10, spread 10, open interest 5)
               - 15 when no candidate contract is liquid.
 
+Short-term OTM terms (owner request 2026-11-05: "skips or hops, 90 days, 10% / 20% out of the money"):
+the same stock score, but the contract pass looks at calls SHORT_MIN_DAYS-SHORT_MAX_DAYS out with the strike
+nearest 10% (or 20%) above the stock price (within OTM_BAND). These are all premium, so time value/yr doesn't
+apply; the contract score (60) = breakeven vs the stock's 1-sigma move to expiry 25, IV/HV 15, spread 10, OI 10.
+
 Earnings within EARNINGS_WARN_DAYS days are flagged, not scored. It's a scanner, not advice.
 
 Two lists: your watchlist (leaps_watch.json, gitignored; until it exists, the tracker's Earnings
@@ -62,6 +67,14 @@ WORKERS = 3                   # more gets Yahoo rate limiting
 MAX_TICKERS = 60
 ALTERNATES = 4                # other candidate contracts returned per ticker
 STALE_FLOOR = 0.8             # carry (time value + dividends) below 80% of the interest on the strike = stale quote
+SHORT_MIN_DAYS, SHORT_MAX_DAYS = 85, 150   # "90-day" contracts: Hop/Skip boundary, a few monthly expirations
+OTM_BAND = 0.03               # strike within +-3% of the target (e.g. 7%-13% OTM for the 10% term)
+SHORT_MAX_SPREAD = 0.10       # OTM premiums are small, so allow a wider spread before "thin"
+TERMS = {
+    "leap":  {"label": "LEAPS (365+ days, deep ITM)"},
+    "otm10": {"label": "90-day calls, 10% OTM", "otm": 0.10},
+    "otm20": {"label": "90-day calls, 20% OTM", "otm": 0.20},
+}
 THIN_PENALTY = 15             # points off when no candidate is liquid (hard to get filled, hard to exit)
 
 _lock = threading.Lock()
@@ -160,7 +173,9 @@ def _fundamentals(sym):
 
 # ---------- contracts ----------
 
-def _candidates(sym, spot_hint, div_rate=0.0):
+def _candidates(sym, spot_hint, div_rate=0.0, term="leap"):
+    if term != "leap":
+        return _otm_candidates(sym, spot_hint, TERMS[term]["otm"])
     today = datetime.now(ET).date()
     try:
         price = spot_price(sym)
@@ -205,6 +220,62 @@ def _candidates(sym, spot_hint, div_rate=0.0):
     return out, skipped
 
 
+def _otm_candidates(sym, spot_hint, otm):
+    """Calls SHORT_MIN_DAYS-SHORT_MAX_DAYS out, strike within OTM_BAND of price x (1 + otm)."""
+    today = datetime.now(ET).date()
+    try:
+        price = spot_price(sym)
+    except QuoteError:
+        price = spot_hint
+    target = price * (1 + otm)
+    exps = [e for e in expirations(sym)
+            if SHORT_MIN_DAYS <= (datetime.strptime(e, "%Y-%m-%d").date() - today).days <= SHORT_MAX_DAYS]
+    out = []
+    for exp in exps:
+        rows = chain_rows(sym, exp)["call"]
+        spot = option_spot(sym, exp) or price
+        t = years_to_expiry(exp)
+        dte = (datetime.strptime(exp, "%Y-%m-%d").date() - today).days
+        for r in rows:
+            if abs(r["strike"] / target - 1) > OTM_BAND:
+                continue
+            g = greeks("call", spot, r["strike"], t, r["iv"])
+            if not g:
+                continue
+            real = _price_ok(r)
+            cost = (r["bid"] + r["ask"]) / 2 if real else r["mark"]
+            if not cost or cost <= 0:
+                continue
+            be = (r["strike"] + cost) / price - 1
+            spread = (r["ask"] - r["bid"]) / cost if real else None
+            out.append({
+                "exp": exp, "dte": dte, "strike": r["strike"], "delta": g["delta"], "theta": g["theta"],
+                "iv": r["iv"], "iv_est": r.get("iv_est", False), "est": not real,
+                "bid": r["bid"], "ask": r["ask"], "cost": cost, "contract_cost": cost * 100,
+                "intrinsic": 0.0, "extrinsic": cost, "dividends": 0.0,
+                "otm_pct": r["strike"] / price - 1,
+                "tv_year": cost / t / price, "tv_pct": 1.0,
+                "breakeven": r["strike"] + cost, "be_pct": be, "be_year": be / t, "t": t,
+                "spread": spread, "oi": r["oi"], "volume": r["volume"],
+                "leverage": g["delta"] * price / cost,
+                "liquid": real and r["oi"] >= MIN_OI and spread is not None and spread <= SHORT_MAX_SPREAD,
+            })
+    return out, 0
+
+
+def _otm_score(c, rv):
+    iv_hv = c["iv"] / rv if rv else None
+    sig = rv * math.sqrt(c["t"]) if rv else None          # the stock's 1-sigma move to expiry
+    c["be_sigma"] = c["be_pct"] / sig if sig else None
+    parts = {
+        "be_sigma": 25 * (_lin(c["be_sigma"], 0.75, 2.5) if c["be_sigma"] is not None else 0.0),
+        "iv_hv": 15 * (_lin(iv_hv, 1.0, 1.6) if iv_hv is not None else 0.5),
+        "spread": 10 * (_lin(c["spread"], 0.03, 0.20) if c["spread"] is not None else 0.0),
+        "oi": 10 * (_lin(math.log10(max(c["oi"], 1)), 3, 1)),
+    }
+    return parts, iv_hv
+
+
 def _contract_score(c, rv):
     iv_hv = c["iv"] / rv if rv else None
     parts = {
@@ -228,7 +299,7 @@ def _stock_score(s):
 
 # ---------- one ticker ----------
 
-def _analyze(sym, spy):
+def _analyze(sym, spy, term="leap"):
     sym = yahoo_symbol(sym)
     closes = _closes(sym)
     price = closes[-1]
@@ -250,11 +321,11 @@ def _analyze(sym, spy):
         row["earnings_days"] = days
         row["earnings_soon"] = 0 <= days <= EARNINGS_WARN_DAYS
     stock = _stock_score(row)
-    cands, skipped = _candidates(sym, price, row.get("div_rate") or 0.0)
+    cands, skipped = _candidates(sym, price, row.get("div_rate") or 0.0, term)
     row["skipped_stale"] = skipped
     row["div_yield"] = (row.get("div_rate") or 0.0) / price if price else None
     for c in cands:
-        c["parts"], c["iv_hv"] = _contract_score(c, row["rv"])
+        c["parts"], c["iv_hv"] = (_contract_score if term == "leap" else _otm_score)(c, row["rv"])
         c["score"] = sum(c["parts"].values())
     liquid = [c for c in cands if c["liquid"]]
     pool = liquid or cands
@@ -266,9 +337,10 @@ def _analyze(sym, spy):
                candidates=len(cands), liquid_count=len(liquid), penalty=penalty,
                score=max(0.0, sum(stock.values()) + (best["score"] if best else 0) - penalty))
     if not cands:
-        row["note"] = f"No calls {MIN_DAYS}+ days out with delta {DELTA_LO:.2f}-{DELTA_HI:.2f}"
+        row["note"] = (f"No calls {MIN_DAYS}+ days out with delta {DELTA_LO:.2f}-{DELTA_HI:.2f}" if term == "leap" else
+                       f"No calls {SHORT_MIN_DAYS}-{SHORT_MAX_DAYS} days out near {TERMS[term]['otm']:.0%} OTM")
     elif not liquid:
-        row["note"] = f"None liquid (OI >= {MIN_OI}, spread <= {MAX_SPREAD:.0%}); best shown anyway"
+        row["note"] = f"None liquid (OI >= {MIN_OI}, spread <= {(MAX_SPREAD if term == 'leap' else SHORT_MAX_SPREAD):.0%}); best shown anyway"
     return row
 
 
@@ -281,12 +353,16 @@ MARKET_TOP = 50               # how many market stocks get the full LEAPS check
 MARKET_MIN_CAP = 10e9
 SCREENER_WAIT = 600           # seconds to wait for the Screener's own scan when it has none
 
-_state = {
-    "watch": {"file": CACHE_FILE, "data": None, "loaded": False,
-              "job": {"running": False, "done": 0, "total": 0, "phase": "", "started": 0, "finished": 0, "error": None}},
-    "market": {"file": os.path.join(HERE, "leaps_market_cache.json"), "data": None, "loaded": False,
-               "job": {"running": False, "done": 0, "total": 0, "phase": "", "started": 0, "finished": 0, "error": None}},
-}
+def _new_state(mode, term):
+    if term == "leap":   # the original cache files, so existing scans carry over
+        f = CACHE_FILE if mode == "watch" else os.path.join(HERE, "leaps_market_cache.json")
+    else:
+        f = os.path.join(HERE, f"leaps_{mode}_{term}_cache.json")
+    return {"file": f, "data": None, "loaded": False,
+            "job": {"running": False, "done": 0, "total": 0, "phase": "", "started": 0, "finished": 0, "error": None}}
+
+
+_state = {(m, t): _new_state(m, t) for m in ("watch", "market") for t in TERMS}
 
 
 def _save(st):
@@ -352,8 +428,8 @@ def _market_universe(job):
     return [t for _, _, t in picks[:MARKET_TOP]], stats
 
 
-def _scan(mode, tickers):
-    st = _state[mode]
+def _scan(mode, term, tickers):
+    st = _state[(mode, term)]
     job = st["job"]
     try:
         stats = {}
@@ -365,7 +441,7 @@ def _scan(mode, tickers):
 
         def one(sym):
             try:
-                rows[sym] = _analyze(sym, spy)
+                rows[sym] = _analyze(sym, spy, term)
             except QuoteError as e:
                 failed[sym] = str(e)
             except Exception as e:   # one bad ticker shouldn't sink the scan
@@ -374,7 +450,7 @@ def _scan(mode, tickers):
             with _lock:
                 job["done"] += 1
 
-        job["phase"] = "Checking LEAPS"
+        job["phase"] = "Checking LEAPS" if term == "leap" else "Checking " + TERMS[term]["label"]
         with ThreadPoolExecutor(WORKERS) as ex:
             list(ex.map(one, tickers))
         with _lock:
@@ -387,21 +463,23 @@ def _scan(mode, tickers):
             job.update(running=False, finished=time.time(), error=str(e), phase="")
 
 
-def _start(mode, tickers):
-    job = _state[mode]["job"]
+def _start(mode, term, tickers):
+    job = _state[(mode, term)]["job"]
     with _lock:
         if job["running"]:
             return
         job.update(running=True, started=time.time(), error=None, done=0, total=len(tickers))
-    threading.Thread(target=_scan, args=(mode, tickers), daemon=True).start()
+    threading.Thread(target=_scan, args=(mode, term, tickers), daemon=True).start()
 
 
-def scan(refresh=False, mode="watch"):
-    """Latest results for one list ("watch" or "market"); starts a background scan when there's none,
-    it's stale, the watchlist changed, or refresh is set. Poll while job.running is true."""
-    if mode not in _state:
-        raise QuoteError("mode must be watch or market")
-    st = _state[mode]
+def scan(refresh=False, mode="watch", term="leap"):
+    """Latest results for one list ("watch" or "market") and term ("leap", "otm10", "otm20"); starts a
+    background scan when there's none, it's stale, the watchlist changed, or refresh is set.
+    Poll while job.running is true."""
+    term = term or "leap"
+    if (mode, term) not in _state:
+        raise QuoteError("mode must be watch or market; term must be " + ", ".join(TERMS))
+    st = _state[(mode, term)]
     if not st["loaded"]:
         with _lock:
             _load(st)
@@ -413,12 +491,14 @@ def scan(refresh=False, mode="watch"):
     job = st["job"]
     failed_lately = job["error"] and time.time() - job["finished"] < RETRY_SECONDS   # e.g. Yahoo rate limiting
     if (refresh or (stale and not failed_lately)) and not job["running"]:
-        _start(mode, watch if mode == "watch" else [])
+        _start(mode, term, watch if mode == "watch" else [])
     with _lock:
         job = dict(st["job"])
-    base = {"mode": mode, "watchlist": watch, "job": job, "stale": stale,
-            "settings": {"min_days": MIN_DAYS, "delta_lo": DELTA_LO, "delta_hi": DELTA_HI, "min_oi": MIN_OI,
-                         "max_spread": MAX_SPREAD, "earnings_warn_days": EARNINGS_WARN_DAYS,
+    base = {"mode": mode, "term": term, "watchlist": watch, "job": job, "stale": stale,
+            "terms": {k: v["label"] for k, v in TERMS.items()},
+            "settings": {"term": term, "otm": TERMS[term].get("otm"), "short_min_days": SHORT_MIN_DAYS,
+                         "short_max_days": SHORT_MAX_DAYS, "otm_band": OTM_BAND, "min_days": MIN_DAYS, "delta_lo": DELTA_LO, "delta_hi": DELTA_HI, "min_oi": MIN_OI,
+                         "max_spread": MAX_SPREAD if term == "leap" else SHORT_MAX_SPREAD, "earnings_warn_days": EARNINGS_WARN_DAYS,
                          "market_top": MARKET_TOP, "market_min_cap": MARKET_MIN_CAP}}
     if data is None:
         return dict(base, status="loading", rows=[], failed={})

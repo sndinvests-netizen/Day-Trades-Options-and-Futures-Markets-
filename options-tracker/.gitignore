@@ -17,3 +17,5 @@ leaps_watch.json
 leaps_market_cache.json
 leaps_market_cache.json.tmp
 trades.json.before-*
+leaps_*_cache.json
+leaps_*_cache.json.tmp
