@@ -13,6 +13,7 @@ import os
 import re
 import subprocess
 import threading
+import time
 import traceback
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -364,6 +365,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(close_position)
         elif path == "/api/open-chart":
             self.guard(lambda: open_chart(body.get("symbol")))
+        elif path == "/api/tv-line":
+            self.guard(lambda: tv_line(body.get("symbol"), body.get("price"), body.get("label"), body.get("kind")))
         else:
             self.send(404, {"error": "not found"})
 
@@ -377,6 +380,112 @@ def open_chart(symbol):
     if subprocess.run(["open", "-a", "Google Chrome", url], capture_output=True).returncode:
         raise QuoteError("couldn't open Google Chrome")
     return {"opened": url}
+
+
+TV_LAYOUT = "https://www.tradingview.com/chart/8Ie4duiG/"   # the owner's "Option Layout" chart
+TV_COLORS = {"call": "#f23645", "put": "#089981", "flip": "#2962ff", "strike": "#787b86"}
+_tv_lock = threading.Lock()
+
+
+def _osa(script, *args, timeout=20):
+    r = subprocess.run(["osascript", "-e", script, *[str(a) for a in args]], capture_output=True, text=True, timeout=timeout)
+    if r.returncode:
+        err = r.stderr.strip()
+        if "Allow JavaScript from Apple Events" in err:
+            raise QuoteError("Chrome blocks this until you turn on View > Developer > Allow JavaScript from Apple Events (one time)")
+        raise QuoteError("Chrome: " + (err.split("execution error:")[-1].strip() or "AppleScript failed"))
+    return r.stdout.strip()
+
+
+_TV_TABS = """tell application "Google Chrome"
+set out to ""
+repeat with w in windows
+repeat with t in tabs of w
+if URL of t contains "tradingview.com/chart" then set out to out & (id of w) & "|" & (id of t) & linefeed
+end repeat
+end repeat
+return out
+end tell"""
+_TV_EXEC = """on run argv
+tell application "Google Chrome" to return execute (tab id ((item 2 of argv) as integer) of window id ((item 1 of argv) as integer)) javascript (item 3 of argv)
+end run"""
+_TV_OPEN = """on run argv
+tell application "Google Chrome"
+if (count windows) = 0 then make new window
+tell window 1 to set t to make new tab with properties {URL:(item 1 of argv)}
+return ((id of window 1) as text) & "|" & ((id of t) as text)
+end tell
+end run"""
+_TV_SYM = "(window.TradingViewApi && TradingViewApi.activeChart && TradingViewApi.activeChart().symbol()) || ''"
+
+
+def tv_line(symbol, price, label, kind):
+    """Draw a labeled horizontal line on a TradingView chart of `symbol` in Chrome.
+    Uses an open TradingView tab already showing that symbol, otherwise opens the Option Layout chart on it.
+    A redraw of the same level kind (e.g. a new call wall) replaces the old line."""
+    sym = str(symbol or "").upper().replace("-", ".")
+    if not re.fullmatch(r"[A-Z0-9.^=!_]{1,15}", sym):
+        raise QuoteError("bad symbol")
+    try:
+        price = float(price)
+    except (TypeError, ValueError):
+        raise QuoteError("bad price")
+    if not 0 < price < 1e7:
+        raise QuoteError("bad price")
+    kind = kind if kind in TV_COLORS else "strike"
+    label = re.sub(r"[^\w .·()+/%:-]", "", str(label or ""))[:60] or f"{price:g}"
+    with _tv_lock:
+        tab = None
+        for line in _osa(_TV_TABS).splitlines():
+            parts = line.split("|")
+            if len(parts) != 2:
+                continue
+            try:
+                cur = _osa(_TV_EXEC, parts[0], parts[1], _TV_SYM)
+            except QuoteError as e:
+                if "Allow JavaScript" in str(e):
+                    raise
+                continue
+            if cur.split(":")[-1].upper() == sym:
+                tab = parts
+                break
+        if not tab:
+            tab = _osa(_TV_OPEN, TV_LAYOUT + "?symbol=" + sym).split("|")
+            if len(tab) != 2:
+                raise QuoteError("couldn't open a TradingView tab in Chrome")
+            deadline = time.time() + 25
+            while True:
+                time.sleep(1)
+                try:
+                    cur = _osa(_TV_EXEC, tab[0], tab[1], _TV_SYM)
+                except QuoteError as e:
+                    if "Allow JavaScript" in str(e):
+                        raise
+                    cur = ""
+                if cur.split(":")[-1].upper() == sym:
+                    time.sleep(1.5)   # let the series finish loading before drawing
+                    break
+                if time.time() > deadline:
+                    raise QuoteError(f"TradingView didn't load {sym} in time (logged out?)")
+        color = TV_COLORS[kind]
+        prefix = {"call": "Call wall", "put": "Put wall", "flip": "Gamma flip"}.get(kind)
+        js = """(function(){
+  const c = TradingViewApi.activeChart(), TEXT = %s, PREFIX = %s;
+  for (const s of c.getAllShapes()) {
+    try { const t = (c.getShapeById(s.id).getProperties() || {}).text || "";
+      if (t === TEXT || (PREFIX && t.startsWith(PREFIX + " ") && t.endsWith("(GEX)"))) c.removeEntity(s.id); } catch (e) {}
+  }
+  c.createShape({time: Math.floor(Date.now() / 1000), price: %s}, {shape: "horizontal_line", text: TEXT, lock: false,
+    overrides: {linecolor: %s, textcolor: %s, linewidth: 2, linestyle: 0, fontsize: 12, showLabel: true, horzLabelsAlign: "right"}});
+  return "ok";
+})()""" % (json.dumps(label), json.dumps(prefix), repr(price), json.dumps(color), json.dumps(color))
+        _osa(_TV_EXEC, tab[0], tab[1], js)
+        time.sleep(0.8)
+        check = "(function(){const c=TradingViewApi.activeChart();return c.getAllShapes().filter(s=>{try{return (c.getShapeById(s.id).getProperties()||{}).text===%s}catch(e){return false}}).length})()" % json.dumps(label)
+        n = _osa(_TV_EXEC, tab[0], tab[1], check)
+        if n.strip() in ("", "0"):
+            raise QuoteError("TradingView didn't accept the line; is the chart fully loaded?")
+    return {"drawn": label, "symbol": sym, "price": price}
 
 
 def main():

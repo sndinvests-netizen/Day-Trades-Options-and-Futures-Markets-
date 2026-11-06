@@ -535,6 +535,14 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
 .legs th { font-size: 11px; }
 .legs tr.sel td { background-color: var(--itm); }
 #bLegs tbody tr:hover td { background-color: var(--hover); }
+/* right-click menu (GEX levels → TradingView) */
+.ctx-menu { position: fixed; z-index: 80; min-width: 230px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.35); padding: 5px; display: grid; gap: 2px; }
+.ctx-menu[hidden] { display: none; }
+.ctx-menu .ctx-h { font-size: 11px; color: var(--muted); padding: 4px 9px 2px; text-transform: uppercase; letter-spacing: .04em; }
+.ctx-menu button { all: unset; cursor: pointer; padding: 7px 9px; border-radius: 7px; font-size: 13px; display: flex; gap: 8px; align-items: center; }
+.ctx-menu button:hover, .ctx-menu button:focus-visible { background: var(--hover); }
+.ctx-menu i { width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
 /* Chain and My Trades use the LEAPS Finder look */
 .c-top input#ticker { width: 90px; padding: 5px 8px; text-transform: uppercase; }
 .c-top select { padding: 5px 8px; }
@@ -865,6 +873,7 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
             <span><span style="color:var(--up)">╍</span> Call wall</span>
             <span><span style="color:var(--down)">╍</span> Put wall</span>
             <span><span style="color:var(--flag)">┅</span> Gamma flip</span>
+            <span>Right-click a wall or strike to draw it on your TradingView chart</span>
           </div>
           <div class="note" id="gexExpList" style="margin-top:8px"></div>
           <div class="note" style="margin-top:6px">Yahoo data, ~15 min delayed; open interest is as of the prior close; dealer positioning assumed
@@ -2378,6 +2387,47 @@ function gexOiTable(d, rows, step) {
   }
   return `<div class="gx-ladder"><table class="gx-oi"><thead><tr><th class="left">Strike</th><th>Call OI</th><th>Put OI</th><th>Total OI</th><th>Net GEX</th></tr></thead><tbody>${html}</tbody></table></div>`;
 }
+/* Right-click a GEX level (ladder row or OI table row) to draw it on the TradingView chart in Chrome */
+const ctxMenu = document.createElement("div");
+ctxMenu.className = "ctx-menu"; ctxMenu.id = "ctxMenu"; ctxMenu.setAttribute("role", "menu"); ctxMenu.hidden = true;
+document.body.appendChild(ctxMenu);
+const TV_SW = { call: "#f23645", put: "#089981", flip: "#2962ff", strike: "#787b86" };
+function ctxClose() { ctxMenu.hidden = true; }
+$("#gexBody").addEventListener("contextmenu", e => {
+  const row = e.target.closest("[data-k]");
+  const d = gexData;
+  if (!row || !d) return;
+  e.preventDefault();
+  const k = +row.dataset.k, role = gexRole(d, k, gexRows && gexRows.step);
+  const items = [];
+  if (role === "call" || role === "both") items.push(["call", d.call_wall, `Call wall ${f2(d.call_wall)}`]);
+  if (role === "put" || role === "both") items.push(["put", d.put_wall, `Put wall ${f2(d.put_wall)}`]);
+  if (role === "flip") items.push(["flip", d.gamma_flip, `Gamma flip ${f2(d.gamma_flip)}`]);
+  if (!items.some(x => Math.abs(x[1] - k) < 1e-9)) items.push(["strike", k, `${d.ticker} ${f2(k)} strike`]);
+  ctxMenu.innerHTML = `<div class="ctx-h">${esc(d.ticker)} · TradingView chart</div>` + items.map(([kind, price, label]) =>
+    `<button type="button" role="menuitem" data-kind="${kind}" data-price="${price}" data-label="${esc(label)}"><i style="background:${TV_SW[kind]}"></i>Add ${esc(label)} to chart</button>`).join("");
+  ctxMenu.hidden = false;
+  const r = ctxMenu.getBoundingClientRect();
+  ctxMenu.style.left = Math.min(e.clientX, innerWidth - r.width - 8) + "px";
+  ctxMenu.style.top = Math.min(e.clientY, innerHeight - r.height - 8) + "px";
+  ctxMenu.querySelector("button").focus();
+});
+ctxMenu.addEventListener("click", async e => {
+  const b = e.target.closest("button[data-kind]");
+  if (!b) return;
+  ctxClose();
+  const kind = b.dataset.kind, label = b.dataset.label + (kind === "strike" ? "" : " (GEX)"), sym = gexData.ticker;
+  toast(`Drawing ${b.dataset.label} on the ${sym} TradingView chart…`, false);
+  try {
+    await api("/api/tv-line", { symbol: sym, price: +b.dataset.price, label, kind });
+    toast(`Added ${b.dataset.label} to the ${sym} TradingView chart in Chrome`, false);
+  } catch (err) { toast(`Couldn't draw it: ${err.message}`, false); }
+});
+document.addEventListener("click", e => { if (!ctxMenu.hidden && !ctxMenu.contains(e.target)) ctxClose(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !ctxMenu.hidden) ctxClose(); });
+window.addEventListener("scroll", ctxClose, true);
+window.addEventListener("blur", ctxClose);
+
 function gexCenter() {
   const box = $("#gxLadder") || $("#gexChart .gx-ladder"), s = box && box.querySelector(".gx-spot, .gx-spot-tr");
   if (box && s) box.scrollTop = Math.max(0, s.offsetTop - box.clientHeight / 2);
