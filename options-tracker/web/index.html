@@ -456,24 +456,91 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
 #scrTable td.tk { text-align: left; }
 #scrTable th, #scrTable td { padding: 5px 6px; }   /* compact, so the extra RSI columns don't push Open interest off the edge */
 #scrTable .spark { width: 72px; }
+/* LEAPS Finder: one filter bar, a 7-column table, and a slide-in detail panel */
+.lp-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.lp-top h2 { margin: 0; }
+.lp-top .grow { flex: 1; }
+.lp-meta { font-size: 12px; color: var(--muted); }
+.lp-filters { display: flex; gap: 8px 12px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+.lp-filters label { flex-direction: row; align-items: center; gap: 6px; }
+.lp-filters input[type=search] { width: 140px; padding: 4px 8px; }
+.lp-filters select { padding: 4px 8px; }
+.lp-filters input[type=range] { width: 110px; box-shadow: none; background: none; border: 0; padding: 0; accent-color: #5fa4e8; }
+.chip[aria-pressed="true"] { transform: translateY(2px); color: #072c50; background: linear-gradient(180deg, var(--pri-bot), var(--pri-top));
+  border-color: var(--pri-border); box-shadow: inset 0 2px 5px rgba(13,59,102,.3); }
+.lp-progress { height: 3px; background: var(--well); border-radius: 3px; overflow: hidden; margin-top: 12px; }
+.lp-progress i { display: block; height: 100%; width: 0; background: #5fa4e8; transition: width .3s; }
+.lp-watch { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.lp-watch input { flex: 1 1 320px; min-width: 0; }
+#lpTable { min-width: 780px; }
 #lpTable th[data-k] { cursor: pointer; user-select: none; }
 #lpTable th[data-k]:hover, #lpTable th.sorted { color: var(--text); }
-#lpTable .spark { width: 72px; }
+#lpTable td, #lpTable th { padding: 8px 10px; }
 #lpTable td.left, #lpTable th.left { text-align: left; }
-.lp-score { display: inline-flex; align-items: center; gap: 7px; }
-.lp-bar { width: 54px; height: 6px; border-radius: 3px; background: var(--well); overflow: hidden; display: inline-block; }
-.lp-bar i { display: block; height: 100%; background: var(--up); }
-.lp-bar.mid i { background: #e0a526; } .lp-bar.low i { background: var(--down); }
-.lp-tag { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 5px; background: var(--well); color: var(--muted); margin-left: 4px; }
-.lp-tag.warn { background: rgba(224,165,38,.16); color: #e0a526; }
-.lp-tag.ok { background: rgba(63,197,151,.16); color: var(--up); }
-.lp-alt td { font-size: 12px; color: var(--muted); background: var(--well); }
-.lp-alt td:first-child { text-align: right; }
-.lp-watch { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
-.lp-watch input { flex: 1 1 320px; min-width: 0; }
+#lpTable tbody tr { cursor: pointer; }
+#lpTable tbody tr:hover td { background-color: var(--hover); }
+#lpTable tbody tr.sel td { background-color: var(--itm); }
+#lpTable tbody tr.in { animation: lpIn .35s ease both; }
+@keyframes lpIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { #lpTable tbody tr.in { animation: none; } .lp-progress i, .lp-drawer { transition: none; } }
+#lpTable th.sticky, #lpTable td.sticky { position: sticky; left: 0; background: var(--panel); z-index: 1; }
+#lpTable th.sticky { z-index: 3; }
+.lp-tk b { font-size: 14px; letter-spacing: .02em; }
+.lp-dots { display: inline-flex; gap: 3px; margin-left: 4px; vertical-align: 1px; }
+.lp-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.lp-dot.warn { background: #e0a526; } .lp-dot.down { background: var(--down); } .lp-dot.muted { background: var(--muted); }
 .lp-star { color: #e0a526; margin-right: 3px; }
 .lp-add { font-size: 11px; padding: 1px 7px; margin-left: 6px; }
-.lp-exp { font: inherit; background: none; border: 0; color: var(--muted); cursor: pointer; padding: 0 4px; }
+.lp-call { font-weight: 600; }
+.lp-call small { display: block; font-weight: 400; font-size: 11px; color: var(--muted); }
+.lp-earn { font-size: 12px; color: var(--muted); }
+.lp-earn.soon { color: #e0a526; font-weight: 700; }
+.lp-ring { position: relative; width: 38px; height: 38px; display: inline-block; vertical-align: middle; }
+.lp-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.lp-ring span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+.lp-bebar { width: 170px; height: 26px; display: block; }
+.lp-legend { display: flex; gap: 6px 16px; flex-wrap: wrap; font-size: 11px; color: var(--muted); margin-top: 10px; }
+.lp-legend i { display: inline-block; width: 10px; height: 8px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+.lp-st { --lp-stock: #8b6cf6; --lp-contract: #4d8fe8; }
+/* detail panel: slides in from the right; bottom sheet on phones */
+.lp-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100vw); z-index: 60; background: var(--panel);
+  border-left: 1px solid var(--line); box-shadow: -10px 0 30px rgba(0,0,0,.25); padding: 18px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 16px; transform: translateX(105%); transition: transform .22s ease; }
+.lp-drawer.open { transform: none; }
+@media (max-width: 640px) { .lp-drawer { top: auto; left: 0; width: auto; max-height: 82vh; border-left: 0; border-top: 1px solid var(--line);
+  border-radius: 16px 16px 0 0; transform: translateY(105%); } .lp-drawer.open { transform: none; } }
+.lp-dh { display: flex; gap: 12px; align-items: flex-start; }
+.lp-dh h3 { margin: 0; font-size: 22px; }
+.lp-dh .sub { font-size: 12px; color: var(--muted); }
+.lp-dh .px { font-size: 15px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.lp-sec h4 { margin: 0 0 8px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.lp-split { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--well); }
+.lp-split i { display: block; height: 100%; }
+.lp-parts { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; font-size: 12px; margin-top: 8px; }
+.lp-parts span:nth-child(even) { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.lp-cmp { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.lp-cmp button { font: inherit; color: var(--text); text-align: left; background: var(--well); border: 1px solid var(--line); border-radius: 9px;
+  padding: 8px; display: grid; gap: 2px; cursor: pointer; min-width: 0; }
+.lp-cmp button[aria-pressed="true"] { border-color: var(--pri-border); background: var(--itm); }
+.lp-cmp .t { font-size: 11px; color: var(--muted); }
+.lp-cmp .s { font-size: 18px; font-weight: 700; }
+.lp-cmp .c { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lp-cmp .k { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.lp-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.lp-stat { background: var(--well); border-radius: 8px; padding: 6px 9px; }
+.lp-stat .k { font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.lp-stat .v { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.lp-chart { width: 100%; height: auto; display: block; }
+.lp-callout { font-size: 12px; color: var(--muted); background: var(--well); border-radius: 8px; padding: 8px 10px; margin-top: 6px; }
+.lp-callout b { color: var(--text); }
+.lp-grid { display: grid; gap: 3px; font-size: 11px; }
+.lp-grid .hd { color: var(--muted); text-align: center; padding: 2px 0; }
+.lp-grid .rh { color: var(--muted); text-align: right; padding: 6px 4px 0 0; }
+.lp-cell { font: inherit; font-size: 11px; color: var(--text); border: 0; border-radius: 6px; padding: 7px 2px; cursor: pointer; text-align: center; }
+.lp-cell.best { outline: 2px solid var(--pri-edge); outline-offset: -2px; font-weight: 700; }
+.lp-cell.none { background: var(--well); color: var(--muted); cursor: default; }
+.lp-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 480px) { .lp-cmp { grid-template-columns: 1fr; } .lp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .tk-btn { font: inherit; background: none; border: 0; padding: 0; cursor: pointer; color: var(--text); font-weight: 700; text-align: left; }
 .tk-btn:hover { color: var(--pri-edge); text-decoration: underline; }
 .tk-name { display: block; font-size: 11.5px; color: var(--muted); max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
@@ -799,32 +866,45 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
 
   <section id="view-leaps" class="hidden">
     <div class="panel">
-      <div class="row" style="margin-bottom:8px">
-        <h2 style="margin:0">LEAPS Finder</h2>
+      <div class="lp-top">
+        <h2>LEAPS Finder</h2>
         <div class="tabs mini" id="lpMode" role="group" aria-label="What to scan">
           <button type="button" data-mode="watch">My watchlist</button>
           <button type="button" data-mode="market" title="The strongest uptrending stocks over $10B from the Screener's market scan">Whole market</button>
         </div>
         <div class="tabs mini" id="lpTerm" role="group" aria-label="Which calls">
           <button type="button" data-term="leap" title="365+ days out, deep in the money (delta 0.70-0.85)">LEAPS</button>
-          <button type="button" data-term="otm10" title="Hop/Skip: about 90 days out (85-150), strike about 10% above the stock price">90d +10% OTM</button>
-          <button type="button" data-term="otm20" title="Hop/Skip: about 90 days out (85-150), strike about 20% above the stock price">90d +20% OTM</button>
+          <button type="button" data-term="otm10" title="Hop/Skip: about 90 days out (85-150), strike about 10% above the stock price">90d +10%</button>
+          <button type="button" data-term="otm20" title="Hop/Skip: about 90 days out (85-150), strike about 20% above the stock price">90d +20%</button>
         </div>
-        <div><button class="ghost small" type="button" id="lpRefresh" title="Rescan now">Refresh</button>
-          <button class="ghost small" type="button" id="lpCsv" title="Download the rows below as a CSV file">Download CSV</button></div>
+        <span class="grow"></span>
+        <span class="lp-meta" id="lpCount"></span>
+        <button class="ghost small" type="button" id="lpEdit" aria-expanded="false">Edit list</button>
+        <button class="ghost small" type="button" id="lpRefresh" title="Rescan now">Rescan</button>
+        <button class="ghost small" type="button" id="lpCsv" title="Download the rows below as a CSV file">CSV</button>
       </div>
-      <form class="lp-watch" id="lpForm" autocomplete="off">
-        <label for="lpTickers" class="note">Watchlist</label>
+      <form class="lp-watch hidden" id="lpForm" autocomplete="off">
         <input id="lpTickers" type="text" spellcheck="false" placeholder="AAPL, MSFT, NVDA" aria-label="LEAPS watchlist tickers, comma separated">
-        <button type="submit" class="small">Save &amp; scan</button>
+        <button type="submit" class="primary small">Save &amp; scan</button>
       </form>
-      <div class="scr-count note" id="lpCount"></div>
+      <div class="lp-filters">
+        <label for="lpQ">Find <input type="search" id="lpQ" placeholder="Ticker or name"></label>
+        <label for="lpMin">Min score <input type="range" id="lpMin" min="0" max="90" step="5" value="0"> <b id="lpMinV">0</b></label>
+        <label for="lpMaxCost">Max cost
+          <select id="lpMaxCost"><option value="0">Any</option><option value="500">$500</option><option value="1000">$1K</option><option value="2500">$2.5K</option><option value="5000">$5K</option><option value="10000">$10K</option><option value="25000">$25K</option></select></label>
+        <button type="button" class="chip" id="lpFThin" aria-pressed="false">Hide thin</button>
+        <button type="button" class="chip" id="lpFEarn" aria-pressed="false">Hide earnings ≤ 14d</button>
+        <button type="button" class="chip" id="lpFTrend" aria-pressed="false">Above 200-day only</button>
+      </div>
+      <div class="lp-progress" aria-hidden="true"><i id="lpProg"></i></div>
     </div>
     <div id="lpErr" class="err hidden"></div>
-    <div class="panel">
+    <div class="panel lp-st">
       <div id="lpBody"><div class="note empty">Open the LEAPS tab to scan your watchlist.</div></div>
+      <div class="lp-legend" id="lpLegend"></div>
       <p class="note" id="lpHow"></p>
     </div>
+    <aside class="lp-drawer lp-st" id="lpDrawer" aria-label="Contract detail" aria-hidden="true"></aside>
   </section>
   </main>
 
@@ -3505,16 +3585,24 @@ $("#scrBody").onclick = e => {
 scrSync();
 
 /* ================= LEAPS finder ================= */
-let lpData = null, lpTimer = null, lpSeq = 0, lpOpen = new Set(), lpMode = store.get("lpMode", "watch"), lpTerm = store.get("lpTerm", "leap");
+// One filter bar, a 7-column table (score ring, breakeven bar) and a slide-in detail panel per ticker.
+const LP_TERMS = { leap: "LEAPS", otm10: "90d +10% OTM", otm20: "90d +20% OTM" };
+let lpData = null, lpTimer = null, lpSeq = 0, lpMode = store.get("lpMode", "watch"), lpTerm = store.get("lpTerm", "leap");
 let lpSort = store.get("lpSort", { k: "score", dir: -1 });
+let lpF = Object.assign({ q: "", min: 0, maxCost: 0, thin: false, earn: false, trend: false }, store.get("lpFilters", {}), { q: "" });
+let lpSel = null, lpPick = null, lpSeen = new Set(), lpOther = {};   // lpOther: the other terms' scans, for "Which call fits"
 const lpPct = (x, d = 1) => x == null ? "–" : (x * 100).toFixed(d) + "%";
 const lpMoney = x => x == null ? "–" : "$" + Math.round(x).toLocaleString();
-const lpExp = e => new Date(e + "T12:00").toLocaleDateString([], { month: "short", year: "numeric" });
+const lpMon = e => new Date(e + "T12:00").toLocaleDateString([], { month: "short", year: "2-digit" }).replace(" ", " '");
+const lpCss = v => getComputedStyle(document.querySelector(".lp-st") || document.documentElement).getPropertyValue(v).trim();
+const lpSigma = (r, dte) => r.rv ? r.rv * Math.sqrt(dte / 365) : null;
+const lpBest = r => (lpSel === r.ticker && lpPick) ? lpPick : r.best;
+const lpSoon = r => r.earnings_days != null && r.earnings_days >= 0 && r.earnings_days <= (lpData?.settings.earnings_warn_days ?? 14);
 
 async function loadLeaps(refresh) {
   clearTimeout(lpTimer);
   const seq = ++lpSeq;
-  if (!lpData) $("#lpBody").innerHTML = `<div class="note empty">Loading the LEAPS scan…</div>`;
+  if (!lpData) $("#lpBody").innerHTML = `<div class="note empty">Loading the scan…</div>`;
   try {
     const d = await api(`/api/leaps?mode=${lpMode}&term=${lpTerm}` + (refresh ? "&refresh=1" : ""));
     if (seq !== lpSeq || d.mode !== lpMode || d.term !== lpTerm) return;
@@ -3528,136 +3616,260 @@ async function loadLeaps(refresh) {
 function lpSetMode(m) {
   lpMode = m; store.set("lpMode", m);
   for (const b of document.querySelectorAll("#lpMode button")) b.classList.toggle("on", b.dataset.mode === m);
-  $("#lpForm").classList.toggle("hidden", m !== "watch");
-  $("#lpRefresh").textContent = m === "market" ? "Scan market" : "Refresh";
   for (const b of document.querySelectorAll("#lpTerm button")) b.classList.toggle("on", b.dataset.term === lpTerm);
-  lpData = null; lpOpen.clear();
-  $("#lpBody").innerHTML = `<div class="note empty">Loading…</div>`; $("#lpCount").innerHTML = "";
+  $("#lpEdit").classList.toggle("hidden", m !== "watch");
+  if (m !== "watch") $("#lpForm").classList.add("hidden");
+  $("#lpRefresh").textContent = m === "market" ? "Scan market" : "Rescan";
+  lpData = null; lpSeen = new Set(); lpOther = {}; lpPick = null;
+  $("#lpBody").innerHTML = `<div class="note empty">Loading…</div>`; $("#lpCount").innerHTML = ""; $("#lpProg").style.width = "0";
 }
 function lpShow(d) {
   lpData = d;
+  lpOther[d.term] = d;
   $("#lpErr").classList.add("hidden");
   if (document.activeElement !== $("#lpTickers")) $("#lpTickers").value = d.watchlist.join(", ");
   renderLeaps();
+  lpDrawer();
   if ((d.job.running || d.stale) && tabOn("leaps") && !(d.job.error && !d.job.running))
     lpTimer = setTimeout(() => loadLeaps(), 2500);
 }
 
-const LP_COLS = [
-  ["ticker", "Ticker", "left"], ["score", "Score", "", "0-100: stock 40 (trend 15, relative strength 15, Rule of 40 10) + contract 60 (time value/yr 25, breakeven/yr 10, IV vs realized vol 10, spread 10, open interest 5), minus 15 when no LEAPS is liquid. Hover a score for its breakdown"],
-  ["price", "Price"], ["ret12", "Trend (1Y)", "", "Weekly closes over the last year; sorts by 1-year return. Click to open on TradingView in Chrome"],
-  ["vs200", "vs 200D", "", "Last close vs the 200-day SMA"], ["rs6", "vs SPY 6M", "", "6-month return minus SPY's"],
-  ["rule40", "Rule of 40", "", "Revenue growth % + free-cash-flow margin % (Yahoo). 40+ passes"],
-  ["b.exp", "Best LEAPS", "left", "Deep in-the-money call with the least time value per year among liquid contracts"],
-  ["b.contract_cost", "Cost", "", "Per contract (100 shares), at the mid"], ["b.delta", "Delta"],
-  ["b.tv_year", "Time value/yr", "", "(Time value + dividends you give up) per year, as a % of the stock price: what holding the call costs you vs owning the shares. Under ~6% is cheap"],
-  ["b.be_pct", "Breakeven", "", "Move the stock needs by expiration to break even (strike + cost)"],
-  ["b.leverage", "Leverage", "", "Delta × price ÷ cost: stock exposure per dollar of premium"],
-  ["b.iv", "IV"], ["b.iv_hv", "IV / HV", "", "Contract IV over the stock's 1-year realized volatility. Under 1.1 = LEAPS priced cheaply; Yahoo has no free IV history for a true IV rank"],
-  ["b.spread", "Spread", "", "(ask − bid) ÷ mid"], ["b.oi", "OI", "", "Open interest on this contract"],
-  ["earnings", "Earnings", "", "Next report; flagged when it's within 14 days"], ["act", "", ""],
+const LP_COLS = () => [
+  ["ticker", "Ticker", "left sticky"],
+  ["score", "Score", "", "0-100: stock 40 (purple) + contract 60 (blue), minus 15 when no contract is liquid. Open a row for the breakdown"],
+  ["b.dte", lpTerm === "leap" ? "Best LEAPS" : "Best call", "left", lpTerm === "leap" ? "Deep in-the-money call with the best contract score among liquid ones" : "Best-scoring liquid call about 90 days out near the target strike"],
+  ["b.contract_cost", "Cost", "", "Per contract (100 shares), at the mid"],
+  lpTerm === "leap" ? ["b.tv_year", "Time value/yr", "", "(Time value + dividends you give up) per year, as a % of the stock price. Under ~6% is cheap"]
+                    : ["b.be_sigma", "BE vs 1σ", "", "Breakeven move ÷ the stock's normal 1σ move by expiration. Under 1 = inside a normal move; over 2 = a long shot"],
+  ["b.be_pct", "Price → breakeven", "left", "● price · | strike · ◆ breakeven, over the shaded 1σ move by expiration. Sorts by the move needed"],
+  ["earnings_days", "Earnings", "", "Next report; flagged within 14 days"],
 ];
-const LP_OTM_SWAP = {
-  "b.exp": ["b.exp", "Best call", "left", "The best-scoring liquid call about 90 days out near the target out-of-the-money strike"],
-  "b.tv_year": ["b.be_sigma", "BE vs 1σ", "", "Breakeven move ÷ the stock's 1-sigma move to expiration (1-year realized vol × √time). Under 1 = breakeven inside a normal move; over 2 = a long shot"],
+const lpVal = (r, k) => k.startsWith("b.") ? (lpBest(r) ? lpBest(r)[k.slice(2)] : null) : r[k];
+const lpMetric = c => {
+  if (!c) return { txt: "–", cls: "" };
+  if (lpTerm === "leap") return { txt: lpPct(c.tv_year), cls: c.tv_year <= 0.06 ? "up" : c.tv_year >= 0.12 ? "down" : "" };
+  return { txt: c.be_sigma == null ? "–" : c.be_sigma.toFixed(2) + "σ", cls: c.be_sigma == null ? "" : c.be_sigma <= 1 ? "up" : c.be_sigma >= 2 ? "down" : "" };
 };
-const lpCols = () => lpTerm === "leap" ? LP_COLS : LP_COLS.map(c => LP_OTM_SWAP[c[0]] || (c[0] === "score" ? ["score", "Score", "",
-  "0-100: stock 40 (trend 15, relative strength 15, Rule of 40 10) + contract 60 (breakeven vs 1-sigma move 25, IV vs realized vol 15, spread 10, open interest 10), minus 15 when no contract is liquid. Hover a score for its breakdown"] : c));
-const LP_PART_NAMES = { time_value: ["time value", 25], breakeven: ["breakeven", 10], iv_hv: ["IV/HV", 10], spread: ["spread", 10], oi: ["OI", 5], be_sigma: ["breakeven vs 1σ", 25] };
-const lpPartsTip = (b) => Object.entries(b.parts).map(([k, v]) => {
-  const [n, w] = LP_PART_NAMES[k] || [k, ""];
-  const max = lpTerm === "leap" ? w : { be_sigma: 25, iv_hv: 15, spread: 10, oi: 10 }[k];
-  return `${n} ${v.toFixed(1)}/${max}`;
-}).join(", ");
-const lpVal = (r, k) => k.startsWith("b.") ? (r.best ? r.best[k.slice(2)] : null) : r[k];
 
 function lpRows() {
-  const { k, dir } = lpSort, rows = [...lpData.rows];
-  return rows.sort((a, b) => {
+  const { k, dir } = lpSort, f = lpF;
+  return lpData.rows.filter(r => {
+    const c = r.best;
+    if (f.q && !(r.ticker + " " + (r.name || "")).toLowerCase().includes(f.q)) return false;
+    if (r.score < f.min) return false;
+    if (f.maxCost && (!c || c.contract_cost > f.maxCost)) return false;
+    if (f.thin && (!c || !c.liquid)) return false;
+    if (f.earn && lpSoon(r)) return false;
+    if (f.trend && !(r.vs200 > 0)) return false;
+    return true;
+  }).sort((a, b) => {
     const x = lpVal(a, k), y = lpVal(b, k);
     if (x == null || y == null) return x == null ? (y == null ? 0 : 1) : -1;
     return (typeof x === "string" ? x.localeCompare(y) : x - y) * dir;
   });
 }
-function lpContractCells(c) {
-  return `<td>${lpMoney(c.contract_cost)}${c.est ? ` <span class="lp-tag warn" title="No live two-sided quote: Black-Scholes estimate">est</span>` : ""}</td>
-    <td>${c.delta.toFixed(2)}</td>
-    ${lpTerm === "leap" ? `<td class="${c.tv_year <= 0.06 ? "up" : c.tv_year >= 0.12 ? "down" : ""}" title="Time value $${f2(c.extrinsic)}${c.dividends ? ` + dividends given up $${f2(c.dividends)}` : ""} per share">${lpPct(c.tv_year)}</td>`
-      : `<td class="${c.be_sigma == null ? "" : c.be_sigma <= 1 ? "up" : c.be_sigma >= 2 ? "down" : ""}" title="Strike ${lpPct(c.otm_pct)} out of the money; premium is ${lpPct(c.tv_year)} of the stock price per year">${c.be_sigma == null ? "–" : c.be_sigma.toFixed(2) + "σ"}</td>`}
-    <td title="Breakeven ${f2(c.breakeven)} · ${lpPct(c.be_year)} per year">${sgnPct(c.be_pct)}</td>
-    <td>${c.leverage.toFixed(1)}×</td>
-    <td>${lpPct(c.iv, 0)}${c.iv_est ? `<span class="lp-tag" title="IV borrowed from a nearby strike or realized vol">est</span>` : ""}</td>
-    <td class="${c.iv_hv == null ? "" : c.iv_hv <= 1.1 ? "up" : c.iv_hv >= 1.4 ? "down" : ""}">${c.iv_hv == null ? "–" : c.iv_hv.toFixed(2)}</td>
-    <td class="${c.spread != null && c.spread > lpData.settings.max_spread ? "down" : ""}">${c.spread == null ? "–" : lpPct(c.spread)}</td>
-    <td>${int(c.oi)}</td>`;
+
+function lpRing(r) {
+  const st = Math.min(40, r.stock_score), ct = Math.max(0, r.score - st), C = 2 * Math.PI * 15;
+  const a = C * st / 100, b = C * ct / 100;
+  return `<span class="lp-ring" title="Stock ${st.toFixed(0)}/40 · contract ${ct.toFixed(0)}/60${r.penalty ? ` (−${r.penalty} thin)` : ""}">
+    <svg viewBox="0 0 38 38" aria-hidden="true"><circle cx="19" cy="19" r="15" fill="none" stroke="var(--well)" stroke-width="4"/>
+    <circle cx="19" cy="19" r="15" fill="none" stroke="var(--lp-stock)" stroke-width="4" stroke-dasharray="${a} ${C}"/>
+    <circle cx="19" cy="19" r="15" fill="none" stroke="var(--lp-contract)" stroke-width="4" stroke-dasharray="${b} ${C}" stroke-dashoffset="${-a}"/></svg>
+    <span>${Math.round(r.score)}</span></span>`;
 }
-function lpContractLabel(r, c) {
-  return `${esc(lpExp(c.exp))} ${f2(c.strike)}C <span class="note">${c.dte}d${c.otm_pct != null ? ` · ${lpPct(c.otm_pct, 0)} OTM` : ""}</span>`;
+
+function lpBeBar(r, c, w = 170, h = 26) {
+  if (!c) return "";
+  const p = r.price, sg = lpSigma(r, c.dte), up = sg ? p * (1 + sg) : p;
+  const lo = Math.min(p, c.strike) * 0.97, hi = Math.max(c.breakeven, up) * 1.03;
+  const x = v => 4 + (v - lo) / (hi - lo) * (w - 8), y = h / 2;
+  const col = c.breakeven <= up ? "var(--up)" : "var(--down)";
+  return `<svg class="lp-bebar" viewBox="0 0 ${w} ${h}" role="img" aria-label="Price ${f2(p)}, strike ${f2(c.strike)}, breakeven ${f2(c.breakeven)}">
+    ${sg ? `<rect x="${x(p)}" y="${y - 6}" width="${Math.max(0, x(up) - x(p))}" height="12" rx="3" fill="var(--up)" opacity=".16"/>` : ""}
+    <line x1="4" x2="${w - 4}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="2"/>
+    <line x1="${x(p)}" x2="${x(c.breakeven)}" y1="${y}" y2="${y}" stroke="${col}" stroke-width="2.5"/>
+    <line x1="${x(c.strike)}" x2="${x(c.strike)}" y1="${y - 7}" y2="${y + 7}" stroke="var(--muted)" stroke-width="2"/>
+    <circle cx="${x(p)}" cy="${y}" r="4" fill="var(--text)"/>
+    <path d="M${x(c.breakeven)} ${y - 6} l5 6 l-5 6 l-5 -6z" fill="${col}"/></svg>`;
 }
+
 function renderLeaps() {
   const d = lpData, j = d.job, st = d.settings;
+  if (!LP_COLS().some(c => c[0] === lpSort.k)) lpSort = { k: "score", dir: -1 };   // a saved sort from the old 18-column table
+  const rows = lpRows();
   const bits = [];
-  if (d.status === "loading" || j.running) bits.push(`<span><b>Scanning…</b> ${int(j.done)} of ${int(j.total)}</span>`);
-  if (d.status === "ok") bits.push(d.mode === "market"
-    ? `<span><b>${int(d.rows.length)}</b> scored: the strongest of ${int(d.uptrend)} uptrending stocks over $${(st.market_min_cap / 1e9).toFixed(0)}B beating SPY, from ${int(d.screened)} screened</span>`
-    : `<span><b>${int(d.rows.length)}</b> of ${int(d.watchlist.length)} scored</span>`);
-  if (j.running && j.phase) bits.push(`<span>${esc(j.phase)}…</span>`);
-  if (d.scanned_at) bits.push(`<span>updated ${new Date(d.scanned_at * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>`);
+  if (d.status === "loading" || j.running) bits.push(`<b>Scanning…</b> ${int(j.done)} of ${int(j.total)}${j.phase ? " · " + esc(j.phase) : ""}`);
+  bits.push(d.mode === "market" && d.status === "ok"
+    ? `${int(rows.length)} shown · best of ${int(d.uptrend)} uptrending over $${(st.market_min_cap / 1e9).toFixed(0)}B (${int(d.screened)} screened)`
+    : `${int(rows.length)} of ${int(d.rows.length)} shown`);
+  if (d.scanned_at) bits.push(`updated ${new Date(d.scanned_at * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`);
   const failed = Object.entries(d.failed || {});
-  if (failed.length) bits.push(`<span class="warn" title="${esc(failed.map(([t, e]) => t + ": " + e).join("\n"))}">${failed.length} failed: ${esc(failed.map(f => f[0]).join(", "))}</span>`);
+  if (failed.length) bits.push(`<span class="warn" title="${esc(failed.map(([t, e]) => t + ": " + e).join("\n"))}">${failed.length} failed</span>`);
   if (j.error && !j.running) bits.push(`<span class="warn">Last scan failed: ${esc(j.error)}</span>`);
-  $("#lpCount").innerHTML = bits.join("");
-  $("#lpHow").innerHTML = st.term && st.term !== "leap" ? `Candidates: calls ${st.short_min_days}–${st.short_max_days} days out (Hop/Skip) with the strike within ±${lpPct(st.otm_band, 0)} of ${lpPct(st.otm, 0)} above the stock price.
-    Liquid = open interest ≥ ${st.min_oi} and spread ≤ ${lpPct(st.max_spread, 0)}; the best-scoring liquid one is shown, with up to 4 alternates under ▸.
-    These are all premium: a bet on a move, not a stock replacement. BE vs 1σ compares the move needed to break even with the stock's normal move by expiration.
-    Costs are mids, delayed about 15 min; “est” = Black-Scholes estimate. A scanner, not advice: check the chain before you trade.` : `Candidates: calls expiring ${st.min_days}+ days out with delta ${st.delta_lo.toFixed(2)}–${st.delta_hi.toFixed(2)}.
-    Liquid = open interest ≥ ${st.min_oi} and spread ≤ ${lpPct(st.max_spread, 0)}; the best-scoring liquid one is shown, with up to 4 alternates under ▸.
-    Time value/yr includes the dividends a call holder gives up. Quotes priced below what the call can be worth (stale or placeholder) are skipped. Costs are mids, delayed about 15 min; “est” = Black-Scholes estimate where Yahoo has no live quote. A scanner, not advice: check the chain before you trade.`;
-  if (d.mode === "market") $("#lpHow").innerHTML = `Whole market: stocks over $${(st.market_min_cap / 1e9).toFixed(0)}B from the Screener's scan that close above their 200-day SMA, with the 50-day above the 200-day and a 1-year return ahead of SPY's,
-    ranked by trend and strength; the top ${st.market_top} get the full ${st.term && st.term !== "leap" ? "contract" : "LEAPS"} check. ★ = on your watchlist; + Watch adds one. ` + $("#lpHow").innerHTML;
-  if (d.status === "loading") { $("#lpBody").innerHTML = `<div class="note empty">${d.mode === "market" ? `Scanning the market: ${esc(j.phase || "starting")}${j.total ? ` (${int(j.done)} of ${int(j.total)})` : ""}… about a minute.` : `Scanning ${int(d.watchlist.length)} tickers (about 2 seconds each)…`}</div>`; return; }
-  if (!d.rows.length) { $("#lpBody").innerHTML = `<div class="note empty">Nothing scored yet.</div>`; return; }
-  const head = `<thead><tr>${lpCols().map(([k, label, cls, tip]) => k === "act" ? `<th></th>` : `<th data-k="${k}" class="${cls || ""}${lpSort.k === k ? " sorted" : ""}"${tip ? ` title="${esc(tip)}"` : ""}
+  $("#lpCount").innerHTML = bits.join(" · ");
+  $("#lpProg").style.width = j.running && j.total ? (j.done / j.total * 100) + "%" : "0";
+
+  $("#lpHow").innerHTML = (st.term && st.term !== "leap"
+    ? `Candidates: calls ${st.short_min_days}–${st.short_max_days} days out (Hop/Skip) with the strike within ±${lpPct(st.otm_band, 0)} of ${lpPct(st.otm, 0)} above the stock price. These are all premium: a bet on a move, not a stock replacement.`
+    : `Candidates: calls ${st.min_days}+ days out with delta ${st.delta_lo.toFixed(2)}–${st.delta_hi.toFixed(2)}. Time value/yr includes the dividends a call holder gives up; stale quotes priced below what the call can be worth are skipped.`)
+    + ` Liquid = open interest ≥ ${st.min_oi} and spread ≤ ${lpPct(st.max_spread, 0)}. Costs are mids, delayed about 15 min.`
+    + (d.mode === "market" ? ` Whole market: stocks over $${(st.market_min_cap / 1e9).toFixed(0)}B above their 200-day with the 50-day over the 200-day and a 1-year return ahead of SPY; the top ${st.market_top} get the full check. ★ = on your watchlist.` : "")
+    + ` A scanner, not advice: check the chain before you trade.`;
+  $("#lpLegend").innerHTML = `<span><i style="background:var(--lp-stock)"></i>stock score (of 40)</span><span><i style="background:var(--lp-contract)"></i>contract score (of 60)</span>
+    <span>● price · | strike · ◆ breakeven · <i style="background:var(--up);opacity:.25"></i>normal 1σ move by expiration</span>
+    <span><span class="lp-dot warn"></span> thin</span><span><span class="lp-dot muted"></span> estimated price</span><span><span class="lp-dot down"></span> below 200-day</span>`;
+
+  if (!d.rows.length) {
+    $("#lpBody").innerHTML = `<div class="note empty">${d.status === "loading"
+      ? (d.mode === "market" ? `Scanning the market: ${esc(j.phase || "starting")}… about a minute.` : `Scanning ${int(d.watchlist.length)} tickers (about 2 seconds each)…`)
+      : "Nothing scored yet."}</div>`;
+    return;
+  }
+  const head = `<thead><tr>${LP_COLS().map(([k, label, cls, tip]) => `<th data-k="${k}" class="${cls || ""}${lpSort.k === k ? " sorted" : ""}"${tip ? ` title="${esc(tip)}"` : ""}
     aria-sort="${lpSort.k === k ? (lpSort.dir > 0 ? "ascending" : "descending") : "none"}">${label}${lpSort.k === k ? (lpSort.dir > 0 ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead>`;
-  const body = lpRows().map(r => {
-    const b = r.best, sc = Math.round(r.score), open = lpOpen.has(r.ticker);
-    const sp = r.stock_parts, bp = b ? b.parts : {};
-    const scoreTip = `Stock ${r.stock_score.toFixed(0)}/40: trend ${sp.trend.toFixed(0)}/15, relative strength ${sp.rel_strength.toFixed(1)}/15, Rule of 40 ${sp.rule40.toFixed(1)}/10` +
-      (b ? `\nContract ${b.score.toFixed(0)}/60: ${lpPartsTip(b)}` : "\nNo contract found") +
-      (r.penalty ? `\nThin: −${r.penalty} (no contract with OI ≥ ${lpData.settings.min_oi} and spread ≤ ${lpPct(lpData.settings.max_spread, 0)})` : "");
-    const trendTags = `${r.vs200 > 0 ? "" : `<span class="lp-tag warn" title="Below the 200-day SMA">&lt;200D</span>`}${r.sma50 && r.sma200 && r.sma50 < r.sma200 ? `<span class="lp-tag warn" title="50-day SMA under the 200-day">50&lt;200</span>` : ""}`;
-    const earn = r.earnings ? `<span class="${r.earnings_soon ? "lp-tag warn" : "note"}" title="${r.earnings_est ? "Estimated date" : "Confirmed"}${r.earnings_session ? " · " + r.earnings_session : ""}">${esc(new Date(r.earnings + "T12:00").toLocaleDateString([], { month: "short", day: "numeric" }))}${r.earnings_soon ? ` · ${r.earnings_days}d` : ""}</span>` : "–";
-    const alts = b && r.alternates.length ? `<button type="button" class="lp-exp" data-x="${esc(r.ticker)}" aria-expanded="${open}" title="Other candidate contracts">${open ? "▾" : "▸"}</button>` : "";
-    const star = d.mode === "market" ? (r.watched ? `<span class="lp-star" title="On your LEAPS watchlist">★</span>` : "") : "";
+  const body = rows.length ? rows.map(r => {
+    const c = lpBest(r), m = lpMetric(c), fresh = !lpSeen.has(r.ticker);
+    lpSeen.add(r.ticker);
+    const dots = (c && !c.liquid ? `<span class="lp-dot warn" title="${esc(r.note || "Thin: not liquid")}"></span>` : "")
+      + (c && c.est ? `<span class="lp-dot muted" title="No live two-sided quote: Black-Scholes estimate"></span>` : "")
+      + (!(r.vs200 > 0) ? `<span class="lp-dot down" title="Below the 200-day SMA"></span>` : "")
+      + (r.sma50 && r.sma200 && r.sma50 < r.sma200 ? `<span class="lp-dot down" title="50-day SMA under the 200-day"></span>` : "");
+    const star = d.mode === "market" && r.watched ? `<span class="lp-star" title="On your LEAPS watchlist">★</span>` : "";
     const add = d.mode === "market" && !r.watched ? `<button type="button" class="ghost small lp-add" data-w="${esc(r.ticker)}" title="Add ${esc(r.ticker)} to your LEAPS watchlist">+ Watch</button>` : "";
-    const main = `<tr><td class="tk left">${alts}${star}<button type="button" class="tk-btn" data-t="${esc(r.ticker)}" title="Open ${esc(r.ticker)} in the Chain tab">${esc(r.ticker)}</button>${add}
-        ${r.name ? `<span class="tk-name" title="${esc(r.name)}">${esc(r.name)}</span>` : ""}</td>
-      <td title="${esc(scoreTip)}"><span class="lp-score"><b>${sc}</b><span class="lp-bar ${sc >= 70 ? "" : sc >= 50 ? "mid" : "low"}"><i style="width:${Math.max(0, Math.min(100, sc))}%"></i></span></span></td>
-      <td>${f2(r.price)}</td>
-      <td class="${signed(r.ret12)}"><a class="spark-link" role="link" data-tv="${esc(r.ticker.replace("-", "."))}" title="1-year return ${sgnPct(r.ret12)}. Click to open ${esc(r.ticker)} on TradingView in Chrome">${spark(r.spark)}</a></td>
-      <td class="${signed(r.vs200)}">${sgnPct(r.vs200)}${trendTags}</td>
-      <td class="${signed(r.rs6)}">${sgnPct(r.rs6)}</td>
-      <td class="${r.rule40 == null ? "" : r.rule40 >= 40 ? "up" : "down"}" title="Revenue growth ${lpPct(r.rev_growth)} + FCF margin ${lpPct(r.fcf_margin)}">${r.rule40 == null ? "–" : r.rule40.toFixed(0)}</td>
-      ${b ? `<td class="left">${lpContractLabel(r, b)}${b.liquid ? "" : `<span class="lp-tag warn" title="${esc(r.note || "Not liquid")}">thin</span>`}</td>${lpContractCells(b)}`
-          : `<td class="left note" colspan="10">${esc(r.note || "No candidate")}</td>`}
-      <td>${earn}</td>
-      <td>${b ? `<button type="button" class="ghost small" data-b="${esc(r.ticker)}|${b.exp}|${b.strike}" title="Open this call in the Builder">Builder</button>` : ""}</td></tr>`;
-    const altRows = open && b ? r.alternates.map(c => `<tr class="lp-alt"><td colspan="7">alternate</td>
-      <td class="left">${lpContractLabel(r, c)}${c.liquid ? "" : `<span class="lp-tag warn">thin</span>`} <span class="note">score ${c.score.toFixed(0)}/60</span></td>${lpContractCells(c)}<td></td>
-      <td><button type="button" class="ghost small" data-b="${esc(r.ticker)}|${c.exp}|${c.strike}">Builder</button></td></tr>`).join("") : "";
-    return main + altRows;
-  }).join("");
-  const x0 = $("#lpBody .scroll")?.scrollLeft || 0;   // keep the sideways position across re-renders
-  $("#lpBody").innerHTML = `<div class="scroll-top"><div></div></div><div class="scroll"><table id="lpTable">${head}<tbody>${body}</tbody></table></div>`;
-  syncTopBars($("#lpBody"));
-  $("#lpBody .scroll").scrollLeft = x0; $("#lpBody .scroll-top").scrollLeft = x0;
+    const soon = lpSoon(r);
+    return `<tr tabindex="0" data-t="${esc(r.ticker)}" class="${lpSel === r.ticker ? "sel" : ""}${fresh ? " in" : ""}">
+      <td class="left sticky lp-tk">${star}<b>${esc(r.ticker)}</b><span class="lp-dots">${dots}</span>${add}${r.name ? `<span class="tk-name" title="${esc(r.name)}">${esc(r.name)}</span>` : ""}</td>
+      <td>${lpRing(r)}</td>
+      <td class="left">${c ? `<span class="lp-call">${esc(lpMon(c.exp))} ${f2(c.strike)}C<small>${c.dte}d · ${lpTerm === "leap" ? "" : lpPct(c.otm_pct, 0) + " OTM · "}Δ ${c.delta.toFixed(2)}</small></span>` : `<span class="note">${esc(r.note || "No candidate")}</span>`}</td>
+      <td>${c ? lpMoney(c.contract_cost) : "–"}</td>
+      <td class="${m.cls}">${m.txt}</td>
+      <td class="left">${lpBeBar(r, c)}</td>
+      <td><span class="lp-earn${soon ? " soon" : ""}" title="${r.earnings_est ? "Estimated date" : "Confirmed"}${r.earnings_session ? " · " + esc(r.earnings_session) : ""}">${r.earnings ? esc(new Date(r.earnings + "T12:00").toLocaleDateString([], { month: "short", day: "numeric" })) + (soon ? ` · ${r.earnings_days}d` : "") : "–"}</span></td></tr>`;
+  }).join("") : `<tr><td colspan="7" class="note empty" style="text-align:center">No tickers match these filters.</td></tr>`;
+  const sc = $("#lpBody .scroll"), x0 = sc?.scrollLeft || 0;
+  $("#lpBody").innerHTML = `<div class="scroll"><table id="lpTable">${head}<tbody>${body}</tbody></table></div>`;
+  $("#lpBody .scroll").scrollLeft = x0;
 }
+
+/* ---------- detail panel ---------- */
+function lpPayoff(r, c) {
+  const W = 400, H = 170, pl = 46, pr = 8, pt = 10, pb = 22;
+  const p = r.price, sg = lpSigma(r, c.dte) || 0.2;
+  const lo = Math.min(c.strike, p) * 0.75, hi = Math.max(c.breakeven, p * (1 + 2 * sg)) * 1.08;
+  const pnl = s => (Math.max(0, s - c.strike) - c.cost) * 100;
+  const yMin = pnl(lo), yMax = Math.max(pnl(hi), c.contract_cost * 0.5);
+  const X = s => pl + (s - lo) / (hi - lo) * (W - pl - pr), Y = v => pt + (yMax - v) / (yMax - yMin) * (H - pt - pb);
+  const k = v => Math.abs(v) >= 1000 ? (v / 1000).toFixed(1) + "K" : Math.round(v);
+  const txt = (x, y, s, a = "middle", col = "var(--muted)") => `<text x="${x}" y="${y}" text-anchor="${a}" font-size="10" fill="${col}">${s}</text>`;
+  const bandL = Math.max(pl, X(p * (1 - sg)));
+  return `<svg class="lp-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Profit and loss at expiration for one contract">
+    <rect x="${bandL}" y="${pt}" width="${Math.max(0, X(p * (1 + sg)) - bandL)}" height="${H - pt - pb}" fill="var(--well)"/>
+    <line x1="${pl}" x2="${W - pr}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--line)" stroke-width="1.5"/>
+    ${txt(pl - 6, Y(0) + 3, "$0", "end")}${txt(pl - 6, Y(yMin) + 3, "−$" + k(c.contract_cost), "end", "var(--down)")}${txt(pl - 6, pt + 8, "+$" + k(yMax), "end", "var(--up)")}
+    <polyline points="${[lo, c.strike, hi].map(s => `${X(s).toFixed(1)},${Y(pnl(s)).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--lp-contract)" stroke-width="2.5" stroke-linejoin="round"/>
+    <line x1="${X(p)}" x2="${X(p)}" y1="${pt}" y2="${H - pb}" stroke="var(--text)" stroke-dasharray="3 3"/>
+    <circle cx="${X(c.breakeven)}" cy="${Y(0)}" r="4" fill="var(--lp-contract)"/>
+    ${txt(X(lo), H - 6, lo.toFixed(0), "start")}${txt(X(p), H - 6, "now " + p.toFixed(0))}${txt(X(c.breakeven), H - 6 - (Math.abs(X(c.breakeven) - X(p)) < 50 ? 11 : 0), "BE " + c.breakeven.toFixed(0))}${txt(X(hi), H - 6, hi.toFixed(0), "end")}
+  </svg>`;
+}
+
+function lpCandGrid(r, c) {
+  const all = [r.best, ...(r.alternates || [])].filter(Boolean);
+  if (all.length < 2) return "";
+  const exps = [...new Set(all.map(a => a.exp))].sort(), ks = [...new Set(all.map(a => a.strike))].sort((a, b) => a - b);
+  const mx = Math.max(...all.map(a => a.score)), mn = Math.min(...all.map(a => a.score));
+  const cells = exps.map(e => `<span class="rh">${esc(lpMon(e))}</span>` + ks.map(k => {
+    const a = all.find(z => z.exp === e && z.strike === k);
+    if (!a) return `<span class="lp-cell none">·</span>`;
+    const f = mx > mn ? (a.score - mn) / (mx - mn) : 1;
+    return `<button type="button" class="lp-cell${c.exp === a.exp && c.strike === a.strike ? " best" : ""}" data-pick="${a.exp}|${a.strike}"
+      style="background:color-mix(in srgb, var(--lp-contract) ${Math.round(12 + f * 50)}%, var(--well))"
+      title="${esc(lpMon(a.exp))} ${a.strike}C · score ${a.score.toFixed(0)}/60 · ${lpMoney(a.contract_cost)}${a.liquid ? "" : " · thin"}">${a.score.toFixed(0)}</button>`;
+  }).join("")).join("");
+  return `<div class="lp-sec"><h4>All candidates (contract score of 60) · click one to swap it in</h4>
+    <div class="lp-grid" style="grid-template-columns:52px repeat(${ks.length},minmax(0,1fr))"><span></span>${ks.map(k => `<span class="hd">${k}</span>`).join("")}${cells}</div></div>`;
+}
+
+async function lpLoadOther(t) {
+  if (lpOther[t] && lpOther[t].status === "ok" && !lpOther[t].job.running) return;
+  try {
+    const d = await api(`/api/leaps?mode=${lpMode}&term=${t}`);
+    if (d.mode !== lpMode) return;
+    lpOther[t] = d;
+    lpDrawer(true);
+    if (d.job.running || d.status === "loading") setTimeout(() => lpSel && lpLoadOther(t), 4000);
+  } catch (err) { /* the card just says it isn't available */ }
+}
+
+function lpDrawer(quiet) {
+  const el = $("#lpDrawer"), r = lpSel && lpData ? lpData.rows.find(x => x.ticker === lpSel) : null;
+  el.classList.toggle("open", !!r);
+  el.setAttribute("aria-hidden", r ? "false" : "true");
+  if (!r) return;
+  if (!quiet) for (const t of Object.keys(LP_TERMS)) if (t !== lpTerm) lpLoadOther(t);
+  const c = lpBest(r), st = Math.min(40, r.stock_score), ct = Math.max(0, r.score - st), sg = c ? lpSigma(r, c.dte) : null;
+  const names = { time_value: "Time value/yr", breakeven: "Breakeven/yr", iv_hv: "IV vs realized", spread: "Spread", oi: "Open interest", be_sigma: "Breakeven vs 1σ" };
+  const maxes = lpTerm === "leap" ? { time_value: 25, breakeven: 10, iv_hv: 10, spread: 10, oi: 5 } : { be_sigma: 25, iv_hv: 15, spread: 10, oi: 10 };
+  const cmp = Object.entries(LP_TERMS).map(([t, label]) => {
+    const od = t === lpTerm ? lpData : lpOther[t], orow = od && od.rows.find(x => x.ticker === r.ticker), b = orow && orow.best;
+    const sub = orow ? (b ? `${lpMoney(b.contract_cost)} · BE ${sgnPct(b.be_pct, 0)}` : esc(orow.note || "none")) : od ? (od.job.running || od.status === "loading" ? "scanning…" : "not in this scan") : "loading…";
+    return `<button type="button" data-term="${t}" aria-pressed="${t === lpTerm}"><span class="t">${label}</span><span class="s">${orow ? Math.round(orow.score) : "–"}</span>
+      <span class="c">${b ? esc(lpMon(b.exp)) + " " + b.strike + "C" : "&nbsp;"}</span><span class="k">${sub}</span></button>`;
+  }).join("");
+  const scrollTop = el.scrollTop;
+  el.innerHTML = `
+    <div class="lp-dh"><div style="flex:1;min-width:0"><h3>${esc(r.ticker)}</h3><div class="sub">${esc(r.name || "")}${r.sector ? " · " + esc(r.sector) : ""}</div>
+      <div class="px">${f2(r.price)} <span class="${signed(r.ret12)}" style="font-size:12px">${sgnPct(r.ret12)} 1Y</span></div></div>
+      <button class="ghost small" type="button" id="lpClose" aria-label="Close detail">✕</button></div>
+    <div class="lp-sec"><h4>Which call fits</h4><div class="lp-cmp">${cmp}</div></div>
+    <div class="lp-sec"><h4>Score ${Math.round(r.score)} of 100</h4>
+      <div class="lp-split"><i style="width:${st}%;background:var(--lp-stock)"></i><i style="width:${ct}%;background:var(--lp-contract)"></i></div>
+      <div class="lp-parts"><span>Trend</span><span>${r.stock_parts.trend.toFixed(0)}/15</span><span>Relative strength</span><span>${r.stock_parts.rel_strength.toFixed(1)}/15</span>
+        <span>Rule of 40${r.rule40 != null ? ` (${r.rule40.toFixed(0)})` : ""}</span><span>${r.stock_parts.rule40.toFixed(1)}/10</span>
+        ${c ? Object.entries(c.parts).map(([k, v]) => `<span>${names[k] || k}</span><span>${v.toFixed(1)}/${maxes[k] ?? ""}</span>`).join("") : ""}
+        ${r.penalty ? `<span>Thin (no liquid contract)</span><span>−${r.penalty}</span>` : ""}</div></div>
+    ${c ? `
+    <div class="lp-sec"><h4>${esc(lpMon(c.exp))} ${f2(c.strike)} call · ${c.dte} days${c.liquid ? "" : " · thin"}${c.est ? " · estimated price" : ""}</h4>
+      <div class="lp-stats">
+        <div class="lp-stat"><div class="k">Cost</div><div class="v">${lpMoney(c.contract_cost)}</div></div>
+        <div class="lp-stat"><div class="k">Breakeven</div><div class="v">${f2(c.breakeven)}</div></div>
+        <div class="lp-stat"><div class="k">Move needed</div><div class="v">${sgnPct(c.be_pct)}</div></div>
+        <div class="lp-stat"><div class="k">Delta</div><div class="v">${c.delta.toFixed(2)}</div></div>
+        <div class="lp-stat"><div class="k">Leverage</div><div class="v">${c.leverage.toFixed(1)}×</div></div>
+        <div class="lp-stat"><div class="k">${lpTerm === "leap" ? "Time val/yr" : "BE vs 1σ"}</div><div class="v">${lpMetric(c).txt}</div></div>
+        <div class="lp-stat"><div class="k">IV / HV</div><div class="v">${c.iv_hv == null ? "–" : c.iv_hv.toFixed(2)}</div></div>
+        <div class="lp-stat"><div class="k">Spread</div><div class="v">${c.spread == null ? "–" : lpPct(c.spread)}</div></div>
+        <div class="lp-stat"><div class="k">Open int.</div><div class="v">${int(c.oi)}</div></div>
+      </div></div>
+    <div class="lp-sec"><h4>Profit / loss at expiration (1 contract)</h4>${lpPayoff(r, c)}
+      <div class="lp-callout">Shaded = a normal 1σ move by expiration${sg ? ` (±${lpPct(sg, 0)})` : ""}. Breakeven needs <b>${sgnPct(c.be_pct)}</b>${sg ? `, <b>${(c.be_pct / sg).toFixed(2)}σ</b>` : ""}. Dashed line = today's price.</div></div>
+    ${lpCandGrid(r, c)}` : `<div class="lp-callout">${esc(r.note || "No candidate contract for this term.")}</div>`}
+    <div class="lp-sec"><h4>One-year trend</h4><a class="spark-link ${signed(r.ret12)}" role="link" data-tv="${esc(r.ticker.replace("-", "."))}" title="Open ${esc(r.ticker)} on TradingView in Chrome">${spark(r.spark).replace('<svg class="spark', '<svg style="width:100%;height:64px" class="spark')}</a>
+      <div class="lp-parts"><span>vs 200-day</span><span>${sgnPct(r.vs200)}</span><span>vs SPY, 6 months</span><span>${sgnPct(r.rs6)}</span>
+        <span>Next earnings</span><span>${r.earnings ? esc(r.earnings) + (r.earnings_est ? " (est.)" : "") : "–"}</span></div></div>
+    <div class="lp-actions">
+      ${c ? `<button class="primary small" type="button" data-b="${esc(r.ticker)}|${c.exp}|${c.strike}">Open in Builder</button>` : ""}
+      <button class="ghost small" type="button" data-chain="${esc(r.ticker)}">Chain</button>
+      <button class="ghost small" type="button" data-tvb="${esc(r.ticker.replace("-", "."))}">TradingView</button>
+      ${lpData.mode === "market" && !r.watched ? `<button class="ghost small" type="button" data-w="${esc(r.ticker)}">+ Watch</button>` : ""}
+    </div>
+    <p class="note" style="margin:0">A scanner, not advice. Check the chain before you trade.</p>`;
+  el.scrollTop = scrollTop;
+}
+function lpOpenRow(t) {
+  if (lpSel !== t) lpPick = null;
+  lpSel = lpSel === t ? null : t;
+  renderLeaps(); lpDrawer();
+}
+function lpClose() { if (!lpSel) return; lpSel = null; lpPick = null; renderLeaps(); lpDrawer(); }
 
 async function lpToBuilder(ticker, exp, strike) {
   try {
     const chain = await api(`/api/chain?ticker=${encodeURIComponent(ticker)}&exp=${exp}`);
     if (B.ticker === chain.ticker) B.legs = [];
     await addLegFromChain(chain, "call", strike, "buy");
+    lpClose();
     showTab("builder");
   } catch (err) { toast("Couldn't open the Builder: " + err.message, false); }
 }
@@ -3675,41 +3887,82 @@ function lpCsv() {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-$("#lpForm").onsubmit = async e => {
-  e.preventDefault();
-  const tickers = $("#lpTickers").value.split(/[\s,]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
-  try { lpShow(await api("/api/leaps/watch", { tickers, term: lpTerm })); toast("LEAPS watchlist saved. Scanning…", false); }
-  catch (err) { toast("Couldn't save the watchlist: " + err.message, false); }
-};
-$("#lpRefresh").onclick = () => loadLeaps(true);
-$("#lpTerm").onclick = e => { const b = e.target.closest("button[data-term]"); if (b && b.dataset.term !== lpTerm) { lpTerm = b.dataset.term; store.set("lpTerm", lpTerm); lpSetMode(lpMode); loadLeaps(); } };
-$("#lpMode").onclick = e => { const b = e.target.closest("button[data-mode]"); if (b && b.dataset.mode !== lpMode) { lpSetMode(b.dataset.mode); loadLeaps(); } };
 async function lpWatchAdd(t) {
   try {
     const d = await api("/api/leaps/watch", { tickers: [...(lpData?.watchlist || []), t], term: lpTerm });
-    if (lpData) { lpData.watchlist = d.watchlist; for (const r of lpData.rows) r.watched = d.watchlist.includes(r.ticker); renderLeaps(); }
+    if (lpData) { lpData.watchlist = d.watchlist; for (const r of lpData.rows) r.watched = d.watchlist.includes(r.ticker); renderLeaps(); lpDrawer(true); }
     toast(`${t} added to your LEAPS watchlist.`, false);
   } catch (err) { toast("Couldn't add it: " + err.message, false); }
 }
-lpSetMode(lpMode);
+const lpSaveFilters = () => store.set("lpFilters", { min: lpF.min, maxCost: lpF.maxCost, thin: lpF.thin, earn: lpF.earn, trend: lpF.trend });
+
+$("#lpForm").onsubmit = async e => {
+  e.preventDefault();
+  const tickers = $("#lpTickers").value.split(/[\s,]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
+  try {
+    lpSeen = new Set();
+    lpShow(await api("/api/leaps/watch", { tickers, term: lpTerm }));
+    $("#lpForm").classList.add("hidden"); $("#lpEdit").setAttribute("aria-expanded", "false");
+    toast("LEAPS watchlist saved. Scanning…", false);
+  } catch (err) { toast("Couldn't save the watchlist: " + err.message, false); }
+};
+$("#lpEdit").onclick = () => { const f = $("#lpForm"); f.classList.toggle("hidden"); const open = !f.classList.contains("hidden");
+  $("#lpEdit").setAttribute("aria-expanded", open); if (open) $("#lpTickers").focus(); };
+$("#lpRefresh").onclick = () => { lpSeen = new Set(); loadLeaps(true); };
+$("#lpMode").onclick = e => { const b = e.target.closest("button[data-mode]"); if (b && b.dataset.mode !== lpMode) { lpSel = null; lpDrawer(); lpSetMode(b.dataset.mode); loadLeaps(); } };
+function lpSetTerm(t) {
+  if (t === lpTerm) return;
+  lpTerm = t; store.set("lpTerm", t); lpPick = null;
+  const keep = lpSel, other = lpOther;
+  lpSetMode(lpMode);
+  lpOther = other; lpSel = keep;
+  if (lpSort.k === "b.tv_year" || lpSort.k === "b.be_sigma") lpSort = { k: "score", dir: -1 };
+  if (lpOther[t]) lpShow(lpOther[t]);
+  loadLeaps();
+}
+$("#lpTerm").onclick = e => { const b = e.target.closest("button[data-term]"); if (b) lpSetTerm(b.dataset.term); };
+$("#lpQ").oninput = e => { lpF.q = e.target.value.trim().toLowerCase(); if (lpData) renderLeaps(); };
+$("#lpMin").oninput = e => { lpF.min = +e.target.value; $("#lpMinV").textContent = lpF.min; lpSaveFilters(); if (lpData) renderLeaps(); };
+$("#lpMaxCost").onchange = e => { lpF.maxCost = +e.target.value; lpSaveFilters(); if (lpData) renderLeaps(); };
+for (const [id, key] of [["#lpFThin", "thin"], ["#lpFEarn", "earn"], ["#lpFTrend", "trend"]]) {
+  $(id).setAttribute("aria-pressed", !!lpF[key]);
+  $(id).onclick = e => { lpF[key] = !lpF[key]; e.currentTarget.setAttribute("aria-pressed", lpF[key]); lpSaveFilters(); if (lpData) renderLeaps(); };
+}
+$("#lpMin").value = lpF.min; $("#lpMinV").textContent = lpF.min; $("#lpMaxCost").value = String(lpF.maxCost);
 $("#lpCsv").onclick = lpCsv;
+lpSetMode(lpMode);
+
 $("#lpBody").onclick = e => {
   const th = e.target.closest("th[data-k]");
   if (th) {
     const k = th.dataset.k;
-    lpSort = lpSort.k === k ? { k, dir: -lpSort.dir } : { k, dir: ["ticker", "b.exp", "b.tv_year", "b.be_sigma", "b.be_pct", "b.iv", "b.iv_hv", "b.spread", "earnings"].includes(k) ? 1 : -1 };
+    lpSort = lpSort.k === k ? { k, dir: -lpSort.dir } : { k, dir: ["ticker", "b.dte", "b.contract_cost", "b.tv_year", "b.be_sigma", "b.be_pct", "earnings_days"].includes(k) ? 1 : -1 };
     store.set("lpSort", lpSort);
     return renderLeaps();
   }
   const w = e.target.closest("button[data-w]");
   if (w) return lpWatchAdd(w.dataset.w);
-  const x = e.target.closest("button[data-x]");
-  if (x) { lpOpen.has(x.dataset.x) ? lpOpen.delete(x.dataset.x) : lpOpen.add(x.dataset.x); return renderLeaps(); }
-  const bb = e.target.closest("button[data-b]");
-  if (bb) { const [t, exp, k] = bb.dataset.b.split("|"); return lpToBuilder(t, exp, +k); }
-  const b = e.target.closest(".tk-btn");
-  if (b) { $("#ticker").value = b.dataset.t; showTab("chain"); loadChain(b.dataset.t); }
+  const tr = e.target.closest("tr[data-t]");
+  if (tr) lpOpenRow(tr.dataset.t);
 };
+$("#lpBody").onkeydown = e => { const tr = e.target.closest("tr[data-t]"); if (tr && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); lpOpenRow(tr.dataset.t); } };
+$("#lpDrawer").onclick = async e => {
+  if (e.target.closest("#lpClose")) return lpClose();
+  const t = e.target.closest(".lp-cmp button[data-term]");
+  if (t) return lpSetTerm(t.dataset.term);
+  const pk = e.target.closest("[data-pick]");
+  if (pk) { const [ex, k] = pk.dataset.pick.split("|"), r = lpData.rows.find(x => x.ticker === lpSel);
+    lpPick = [r.best, ...r.alternates].find(a => a && a.exp === ex && a.strike === +k) || null; renderLeaps(); return lpDrawer(true); }
+  const bb = e.target.closest("button[data-b]");
+  if (bb) { const [tk, exp, k] = bb.dataset.b.split("|"); return lpToBuilder(tk, exp, +k); }
+  const ch = e.target.closest("button[data-chain]");
+  if (ch) { const tk = ch.dataset.chain; lpClose(); $("#ticker").value = tk; showTab("chain"); return loadChain(tk); }
+  const tv = e.target.closest("button[data-tvb]");
+  if (tv) { try { await api("/api/open-chart", { symbol: tv.dataset.tvb }); } catch (err) { toast(`Couldn't open ${tv.dataset.tvb} in Chrome: ${err.message}`, false); } return; }
+  const w = e.target.closest("button[data-w]");
+  if (w) return lpWatchAdd(w.dataset.w);
+};
+document.addEventListener("keydown", e => { if (e.key === "Escape" && lpSel) lpClose(); });
 
 /* ================= start ================= */
 $("#range").value = store.get("range", "20");

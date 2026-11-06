@@ -441,7 +441,9 @@ def _scan(mode, term, tickers):
 
         def one(sym):
             try:
-                rows[sym] = _analyze(sym, spy, term)
+                r = _analyze(sym, spy, term)
+                with _lock:
+                    rows[sym] = r
             except QuoteError as e:
                 failed[sym] = str(e)
             except Exception as e:   # one bad ticker shouldn't sink the scan
@@ -450,12 +452,14 @@ def _scan(mode, term, tickers):
             with _lock:
                 job["done"] += 1
 
+        st["partial"] = rows   # scan() shows these while the first scan of a list is still running
         job["phase"] = "Checking LEAPS" if term == "leap" else "Checking " + TERMS[term]["label"]
         with ThreadPoolExecutor(WORKERS) as ex:
             list(ex.map(one, tickers))
         with _lock:
             st["data"] = dict(stats, scanned_at=time.time(), tickers=tickers, rows=list(rows.values()), failed=failed)
             _save(st)
+            st["partial"] = None
             job.update(running=False, finished=time.time(), error=None, phase="")
     except Exception as e:
         traceback.print_exc()
@@ -501,7 +505,11 @@ def scan(refresh=False, mode="watch", term="leap"):
                          "max_spread": MAX_SPREAD if term == "leap" else SHORT_MAX_SPREAD, "earnings_warn_days": EARNINGS_WARN_DAYS,
                          "market_top": MARKET_TOP, "market_min_cap": MARKET_MIN_CAP}}
     if data is None:
-        return dict(base, status="loading", rows=[], failed={})
+        with _lock:
+            part = sorted((st.get("partial") or {}).values(), key=lambda r: -r["score"])
+        for r in part:
+            r["watched"] = r["ticker"] in watch
+        return dict(base, status="loading", rows=part, failed={})
     rows = sorted(data["rows"], key=lambda r: -r["score"])
     for r in rows:
         r["watched"] = r["ticker"] in watch
