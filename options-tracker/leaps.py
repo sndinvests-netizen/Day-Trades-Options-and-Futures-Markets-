@@ -29,7 +29,7 @@ Score (0-100) = stock 40 (trend 15, relative strength 15, Rule of 40 10)
 
 Short-term OTM terms (owner request 2026-11-05: "skips or hops, 90 days, 10% / 20% out of the money"):
 the same stock score, but the contract pass looks at calls SHORT_MIN_DAYS-SHORT_MAX_DAYS out with the strike
-nearest 10% (or 20%) above the stock price (within OTM_BAND). These are all premium, so time value/yr doesn't
+at or just above 10% (or 20%) over the live stock price (never below it). These are all premium, so time value/yr doesn't
 apply; the contract score (60) = breakeven vs the stock's 1-sigma move to expiry 25, IV/HV 15, spread 10, OI 10.
 
 Earnings within EARNINGS_WARN_DAYS days are flagged, not scored. It's a scanner, not advice.
@@ -68,7 +68,8 @@ MAX_TICKERS = 60
 ALTERNATES = 4                # other candidate contracts returned per ticker
 STALE_FLOOR = 0.8             # carry (time value + dividends) below 80% of the interest on the strike = stale quote
 SHORT_MIN_DAYS, SHORT_MAX_DAYS = 85, 150   # "90-day" contracts: Hop/Skip boundary, a few monthly expirations
-OTM_BAND = 0.03               # strike within +-3% of the target (e.g. 7%-13% OTM for the 10% term)
+OTM_BAND = 0.05               # strike from the target up to 5% over it (e.g. 10%-15.5% above price for the 10% term)
+OTM_STRIKES = 2               # nearest strikes at or above the target, per expiration
 SHORT_MAX_SPREAD = 0.10       # OTM premiums are small, so allow a wider spread before "thin"
 TERMS = {
     "leap":  {"label": "LEAPS (365+ days, deep ITM)"},
@@ -232,13 +233,14 @@ def _otm_candidates(sym, spot_hint, otm):
             if SHORT_MIN_DAYS <= (datetime.strptime(e, "%Y-%m-%d").date() - today).days <= SHORT_MAX_DAYS]
     out = []
     for exp in exps:
-        rows = chain_rows(sym, exp)["call"]
+        # the OTM_STRIKES nearest strikes at or above price x (1 + otm), never below it
+        # (the first one always counts, even when strikes are spaced wider than OTM_BAND)
+        above = sorted((r for r in chain_rows(sym, exp)["call"] if r["strike"] >= target), key=lambda r: r["strike"])
+        rows = [r for i, r in enumerate(above[:OTM_STRIKES]) if i == 0 or r["strike"] <= target * (1 + OTM_BAND)]
         spot = option_spot(sym, exp) or price
         t = years_to_expiry(exp)
         dte = (datetime.strptime(exp, "%Y-%m-%d").date() - today).days
         for r in rows:
-            if abs(r["strike"] / target - 1) > OTM_BAND:
-                continue
             g = greeks("call", spot, r["strike"], t, r["iv"])
             if not g:
                 continue
@@ -302,7 +304,10 @@ def _stock_score(s):
 def _analyze(sym, spy, term="leap"):
     sym = yahoo_symbol(sym)
     closes = _closes(sym)
-    price = closes[-1]
+    try:
+        price = spot_price(sym)     # live, so Price / vs 200D / OTM % all use the same number on a big move day
+    except QuoteError:
+        price = closes[-1]
     sma50, sma200 = _sma(closes, 50), _sma(closes, 200)
     r6, r12 = _ret(closes, 126), _ret(closes, 252)
     s6, s12 = _ret(spy, 126), _ret(spy, 252)

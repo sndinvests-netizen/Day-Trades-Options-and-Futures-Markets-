@@ -874,8 +874,8 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
         </div>
         <div class="tabs mini" id="lpTerm" role="group" aria-label="Which calls">
           <button type="button" data-term="leap" title="365+ days out, deep in the money (delta 0.70-0.85)">LEAPS</button>
-          <button type="button" data-term="otm10" title="Hop/Skip: about 90 days out (85-150), strike about 10% above the stock price">90d +10%</button>
-          <button type="button" data-term="otm20" title="Hop/Skip: about 90 days out (85-150), strike about 20% above the stock price">90d +20%</button>
+          <button type="button" data-term="otm10" title="Hop/Skip: about 90 days out (85-150), strike at least 10% above the current price">90d +10%</button>
+          <button type="button" data-term="otm20" title="Hop/Skip: about 90 days out (85-150), strike at least 20% above the current price">90d +20%</button>
         </div>
         <span class="grow"></span>
         <span class="lp-meta" id="lpCount"></span>
@@ -3711,7 +3711,7 @@ function renderLeaps() {
   $("#lpProg").style.width = j.running && j.total ? (j.done / j.total * 100) + "%" : "0";
 
   $("#lpHow").innerHTML = (st.term && st.term !== "leap"
-    ? `Candidates: calls ${st.short_min_days}–${st.short_max_days} days out (Hop/Skip) with the strike within ±${lpPct(st.otm_band, 0)} of ${lpPct(st.otm, 0)} above the stock price. These are all premium: a bet on a move, not a stock replacement.`
+    ? `Candidates: calls ${st.short_min_days}–${st.short_max_days} days out (Hop/Skip) with the nearest strikes at or above ${lpPct(st.otm, 0)} over the live stock price. These are all premium: a bet on a move, not a stock replacement.`
     : `Candidates: calls ${st.min_days}+ days out with delta ${st.delta_lo.toFixed(2)}–${st.delta_hi.toFixed(2)}. Time value/yr includes the dividends a call holder gives up; stale quotes priced below what the call can be worth are skipped.`)
     + ` Liquid = open interest ≥ ${st.min_oi} and spread ≤ ${lpPct(st.max_spread, 0)}. Costs are mids, delayed about 15 min.`
     + (d.mode === "market" ? ` Whole market: stocks over $${(st.market_min_cap / 1e9).toFixed(0)}B above their 200-day with the 50-day over the 200-day and a 1-year return ahead of SPY; the top ${st.market_top} get the full check. ★ = on your watchlist.` : "")
