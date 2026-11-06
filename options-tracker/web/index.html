@@ -3643,16 +3643,16 @@ function trDrawer() {
     ${alerts.length ? `<div class="lp-sec"><h4>Alerts</h4>${alerts.map(x => `<div><span class="warn">${esc(x)}</span></div>`).join("")}</div>` : ""}
     ${t0.notes ? `<div class="lp-sec"><h4>Notes</h4><p class="note" style="margin:0;white-space:pre-wrap">${esc(t0.notes)}</p></div>` : ""}
     <div class="lp-actions">
-      <button class="primary small" type="button" data-trp='[data-close-key="${key}"]'>Close</button>
-      ${opt1 ? `<button class="ghost small" type="button" data-trp='[data-roll-id="${t0.id}"]'>Roll</button>` : ""}
-      ${opt1 && t0.side === "buy" ? `<button class="ghost small" type="button" data-trp='[data-addto-id="${t0.id}"]'>Add</button>` : ""}
-      <button class="ghost small" type="button" data-trp='[data-partial-key="${key}"]'>Partial</button>
-      <button class="ghost small" type="button" data-trp='[data-builder="${key}"]'>Builder</button>
+      <button class="primary small" type="button" data-trp="1" data-close-key="${key}">Close</button>
+      ${opt1 ? `<button class="ghost small" type="button" data-trp="1" data-roll-id="${t0.id}">Roll</button>` : ""}
+      ${opt1 && t0.side === "buy" ? `<button class="ghost small" type="button" data-trp="1" data-addto-id="${t0.id}">Add</button>` : ""}
+      <button class="ghost small" type="button" data-trp="1" data-partial-key="${key}">Partial</button>
+      <button class="ghost small" type="button" data-trp="1" data-builder="${key}">Builder</button>
     </div>
     <div class="lp-actions">
       ${t0.exp ? `<button class="ghost small" type="button" data-trchain="${esc(t0.ticker)}|${esc(t0.exp)}">Open chain</button>` : ""}
       <button class="ghost small" type="button" data-trtv="${esc(t0.ticker.replace("-", "."))}">TradingView</button>
-      <button class="ghost small danger" type="button" data-trp='[data-del-id="${t0.id}"]'>Delete</button>
+      <button class="ghost small danger" type="button" data-trp="1" data-del-id="${t0.id}">Delete</button>
     </div>
     <p class="note" style="margin:0">Marks at mid price; chart from Black-Scholes with each leg's IV. Not advice.</p>`;
   el.scrollTop = scrollTop;
@@ -3660,7 +3660,7 @@ function trDrawer() {
 $("#trDrawer").onclick = async e => {
   if (e.target.closest("#trClose")) { trSel = null; return trDrawer(); }
   const px = e.target.closest("button[data-trp]");
-  if (px) { const src = $("#openGroups").querySelector(px.dataset.trp); if (src) src.click(); return; }
+  if (px) return trDo(px.dataset);
   const ch = e.target.closest("button[data-trchain]");
   if (ch) { const [tk, exp] = ch.dataset.trchain.split("|"); trSel = null; trDrawer(); $("#ticker").value = tk; showTab("chain"); return loadChain(tk, exp); }
   const tv = e.target.closest("button[data-trtv]");
@@ -3765,6 +3765,11 @@ $("#openGroups").onclick = e => {
     trSel = trSel === tr.dataset.pos ? null : tr.dataset.pos;
     return trDrawer();
   }
+  trDo(b.dataset);
+};
+// One place for the position actions, used by the table buttons and the detail panel
+function trDo(ds) {
+  const b = { dataset: ds };
   if (b.dataset.delId) return openDelete(+b.dataset.delId);
   if (b.dataset.builder) openInBuilder(positionByKey(b.dataset.builder));
   if (b.dataset.partialKey) return openPartial(positionByKey(b.dataset.partialKey));
@@ -3772,9 +3777,10 @@ $("#openGroups").onclick = e => {
   if (b.dataset.addtoId) return openAddTo(+b.dataset.addtoId);
   if (b.dataset.closeKey) {
     const p = positionByKey(b.dataset.closeKey);
+    if (!p) return;
     if (p.length === 1) openClose(p[0].id); else openClosePosition(p);
   }
-};
+}
 
 // Closed trades grouped by the month they closed, newest first. Each month folds open/closed;
 // the newest starts open and the choices are remembered per month.

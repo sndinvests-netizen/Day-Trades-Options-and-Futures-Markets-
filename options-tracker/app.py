@@ -402,7 +402,7 @@ _TV_TABS = """tell application "Google Chrome"
 set out to ""
 repeat with w in windows
 repeat with t in tabs of w
-if URL of t contains "tradingview.com/chart" then set out to out & (id of w) & "|" & (id of t) & linefeed
+if URL of t contains "tradingview.com/chart" then set out to out & (id of w) & "|" & (id of t) & "|" & (URL of t) & linefeed
 end repeat
 end repeat
 return out
@@ -462,10 +462,11 @@ def tv_line(symbol, price, label, kind):
     label = re.sub(r"[^\w .·()+/%:-]", "", str(label or ""))[:60] or f"{price:g}"
     with _tv_lock:
         tab = None
-        for line in _osa(_TV_TABS).splitlines():
-            parts = line.split("|")
-            if len(parts) != 2:
-                continue
+        tabs = [l.split("|", 2) for l in _osa(_TV_TABS).splitlines() if l.count("|") >= 2]
+        # tabs whose address names the ticker first: they're the likely match, so most draws need one check
+        tabs.sort(key=lambda x: not re.search(r"symbol=([A-Z_]+(%3A|:))?" + re.escape(sym) + r"(&|$)", x[2], re.I))
+        for w_id, t_id, _url in tabs:
+            parts = [w_id, t_id]
             try:
                 cur = _tv_eval(parts, _TV_SYM, wait=2) or ""
             except QuoteError as e:
