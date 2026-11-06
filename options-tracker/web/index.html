@@ -535,6 +535,44 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
 .legs th { font-size: 11px; }
 .legs tr.sel td { background-color: var(--itm); }
 #bLegs tbody tr:hover td { background-color: var(--hover); }
+/* Chain and My Trades use the LEAPS Finder look */
+.c-top input#ticker { width: 90px; padding: 5px 8px; text-transform: uppercase; }
+.c-top select { padding: 5px 8px; }
+.c-strip { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; box-shadow: var(--shadow);
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+.c-strip:empty { display: none; }
+.c-strip.c-in { background: none; border: 0; box-shadow: none; padding: 0; margin: 12px 0; }
+.c-strip .tile { background: var(--well); border: 0; box-shadow: none; border-radius: 9px; padding: 8px 11px; }
+.c-strip .tile .k { font-size: 10px; }
+.c-strip .tile .v { font-size: 18px; }
+.c-strip .tile .s { font-size: 11px; }
+.lp-filters .chips { margin: 0; gap: 6px; }
+.lp-filters .chips .chip { padding: 3px 10px; font-size: 12px; }
+.c-recent:has(+ .chips:empty) { display: none; }
+.chip.c-greeks { position: relative; cursor: pointer; }
+.chip.c-greeks input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.chip.c-greeks:has(input:checked) { transform: translateY(2px); color: #072c50; background: linear-gradient(180deg, var(--pri-bot), var(--pri-top));
+  border-color: var(--pri-border); box-shadow: inset 0 2px 5px rgba(13,59,102,.3); }
+.chip.c-greeks:has(input:focus-visible) { outline: 2px solid #5fa4e8; outline-offset: 2px; }
+#chain td, #chain th { padding: 6px 9px; }
+#chain td[data-col="oi"] { background-image: linear-gradient(90deg, rgba(95,164,232,.3) var(--w, 0%), transparent var(--w, 0%)); }
+#chain td.p[data-col="oi"] { background-image: linear-gradient(270deg, rgba(95,164,232,.3) var(--w, 0%), transparent var(--w, 0%)); }
+#chain td.strike[data-sk] { cursor: pointer; }
+#chain tbody tr.sel td { box-shadow: inset 0 1px 0 #5fa4e8, inset 0 -1px 0 #5fa4e8; }
+#chain tbody tr.sel td.strike, #chain tbody tr.sel:hover td.strike { background: #5fa4e8; color: #fff; }
+#chain tbody tr.in td { animation: lpIn .35s ease both; }
+.ch-cmp { width: 100%; font-size: 13px; border-collapse: collapse; }
+.ch-cmp th, .ch-cmp td { padding: 5px 8px; text-align: right; border-bottom: 1px solid var(--line); position: static; }
+.ch-cmp th:first-child, .ch-cmp td:first-child { text-align: left; color: var(--muted); }
+.ch-cmp td { font-variant-numeric: tabular-nums; }
+.ch-cmp .itm { background: var(--itm); }
+#openGroups tbody tr[data-pos] { cursor: pointer; }
+#openGroups tbody tr[data-pos]:hover td { background-color: var(--hover); }
+#openGroups tbody tr.sel td { background-color: var(--itm); }
+#openGroups h3:first-child { margin-top: 4px; }
+.tr-legs { display: grid; gap: 6px; }
+.tr-leg { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; background: var(--well); border-radius: 9px; padding: 8px 11px; font-size: 13px; }
+.tr-leg .note { grid-column: 1 / -1; }
 /* Screener uses the LEAPS Finder look */
 #scrTable { min-width: 760px; }
 #scrTable td, #scrTable th { padding: 8px 10px; }
@@ -748,42 +786,50 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
   <!-- ===== Chain ===== -->
   <section id="view-chain">
     <div class="panel">
-      <form class="controls" id="lookup">
+      <form class="lp-top c-top" id="lookup">
+        <h2>Option chain</h2>
         <label>Ticker <input id="ticker" autocomplete="off" spellcheck="false" placeholder="TSLA"></label>
-        <button class="primary" type="submit">Load</button>
+        <button class="primary small" type="submit">Load</button>
         <label>Expiration <select id="exp"></select></label>
+        <span class="grow"></span>
+        <span class="lp-meta" id="asof"></span>
+      </form>
+      <div class="lp-filters">
         <label>Strikes <select id="range">
           <option value="10">10 each side</option><option value="20" selected>20 each side</option>
           <option value="40">40 each side</option><option value="0">All</option></select></label>
         <label>Auto-refresh <select id="refresh">
           <option value="0">Off</option><option value="60">1 min</option>
           <option value="120" selected>2 min</option><option value="300">5 min</option></select></label>
-        <label class="check"><input type="checkbox" id="moreGreeks"> Gamma / Theta / Vega</label>
-        <span class="note" id="asof"></span>
-      </form>
-      <div class="chips" id="chips"></div>
+        <label class="chip c-greeks" title="Show gamma, theta and vega columns"><input type="checkbox" id="moreGreeks"> Gamma / Theta / Vega</label>
+        <span class="lp-meta c-recent">Recent</span>
+        <div class="chips" id="chips"></div>
+      </div>
     </div>
     <div id="chainErr" class="err hidden"></div>
     <div id="chainBody" class="hidden">
-      <div class="tiles" id="tiles"></div>
+      <div class="tiles c-strip" id="tiles"></div>
       <div class="panel">
-        <div class="row">
+        <div class="lp-top">
           <h2 id="chainTitle"></h2>
-          <div class="inline note">Clicking a contract
-            <div class="tabs mini" id="clickMode">
-              <button type="button" data-mode="builder" class="on">adds it to Builder</button>
-              <button type="button" data-mode="log">logs a trade</button>
-            </div>
-            <span id="clickHint">Bid = sell, anything else = buy.</span>
+          <span class="grow"></span>
+          <span class="lp-meta">Clicking a contract</span>
+          <div class="tabs mini" id="clickMode">
+            <button type="button" data-mode="builder" class="on">adds it to Builder</button>
+            <button type="button" data-mode="log">logs a trade</button>
           </div>
+          <span class="lp-meta" id="clickHint">Bid = sell, anything else = buy.</span>
         </div>
         <div class="scroll"><table id="chain"></table></div>
-        <div class="legend note">
-          <span><span class="sw" style="background:var(--itm)"></span>In the money</span>
-          <span><span class="sw" style="background:var(--spot)"></span>Stock price</span>
+        <div class="lp-legend">
+          <span><i style="background:var(--itm)"></i>In the money</span>
+          <span><i style="background:var(--spot)"></i>Stock price</span>
+          <span><i style="background:rgba(95,164,232,.45)"></i>Open interest (bar = share of the biggest strike shown)</span>
           <span><span class="flag">●</span> Unusual: volume at least 2× open interest (500+ contracts)</span>
+          <span>Click a strike to compare its call and put</span>
         </div>
       </div>
+      <aside class="lp-drawer lp-st" id="chDrawer" aria-label="Strike detail" aria-hidden="true"></aside>
       <div class="panel" id="gexPanel">
         <div class="lp-top" style="margin-bottom:10px">
           <h2 id="gexTitle">Gamma exposure (GEX)</h2>
@@ -915,21 +961,35 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
 
   <!-- ===== Trades ===== -->
   <section id="view-trades" class="hidden">
-    <div id="tradesErr" class="err hidden"></div>
-    <div class="tiles" id="tradeTiles"></div>
     <div class="panel">
-      <div class="row">
-        <h2>Open positions</h2>
-        <div><button class="ghost" id="reloadTrades">Refresh quotes</button>
-          <button class="ghost" id="newShares">Add shares</button>
-          <button class="primary" id="newTrade">Log a trade</button></div>
+      <div class="lp-top">
+        <h2>My trades</h2>
+        <span class="grow"></span>
+        <span class="lp-meta" id="trMeta"></span>
+        <button class="ghost small" type="button" id="reloadTrades">Refresh quotes</button>
+        <button class="ghost small" type="button" id="newShares">Add shares</button>
+        <button class="primary small" type="button" id="newTrade">Log a trade</button>
       </div>
+      <div class="lp-filters" id="trFilters">
+        <label for="trQ">Find <input type="search" id="trQ" placeholder="Ticker or strategy"></label>
+        <button type="button" class="chip" data-tcat="Hop" aria-pressed="true" title="90 days or less at open">Hop</button>
+        <button type="button" class="chip" data-tcat="Skip" aria-pressed="true" title="91–360 days at open">Skip</button>
+        <button type="button" class="chip" data-tcat="Leap" aria-pressed="true" title="Over 360 days at open">Leap</button>
+        <button type="button" class="chip" id="trTarget" aria-pressed="false">At 50% target only</button>
+        <button type="button" class="chip" id="trAlerts" aria-pressed="false">With alerts only</button>
+      </div>
+    </div>
+    <div id="tradesErr" class="err hidden"></div>
+    <div class="tiles c-strip" id="tradeTiles"></div>
+    <div class="panel">
+      <div class="lp-top"><h2>Open positions</h2><span class="grow"></span><span class="lp-meta" id="trShown"></span></div>
       <div id="openGroups"></div>
+      <div class="lp-legend"><span><span class="target-dot"></span>At the 50% profit target</span><span>Click a position for details, its payoff chart and actions</span></div>
     </div>
     <div class="panel" id="premPanel">
-      <div class="row"><h2>Premium income</h2>
-        <span class="note">Sold puts, covered calls and puts, short calls, credit spreads, short straddles/strangles</span></div>
-      <div class="tiles" id="premTiles"></div>
+      <div class="lp-top"><h2>Premium income</h2><span class="grow"></span>
+        <span class="lp-meta">Sold puts, covered calls and puts, short calls, credit spreads, short straddles/strangles</span></div>
+      <div class="tiles c-strip c-in" id="premTiles"></div>
       <div class="scroll"><table id="premKinds"></table></div>
       <h3>By month</h3>
       <div class="scroll"><table id="premMonths"></table></div>
@@ -938,11 +998,12 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
         Cost to close = what buying back the open positions would cost at the current mid price.</p>
     </div>
     <div class="panel">
-      <h2>Results</h2>
+      <div class="lp-top"><h2>Results</h2><span class="grow"></span><span class="lp-meta">win rate and realized P&amp;L by group</span></div>
       <div class="scroll"><table id="report"></table></div>
       <h3>Closed trades</h3>
       <div id="closed"></div>
     </div>
+    <aside class="lp-drawer lp-st" id="trDrawer" aria-label="Position detail" aria-hidden="true"></aside>
   </section>
 
   <!-- ===== Screener: stocks sitting at support ===== -->
@@ -1958,6 +2019,7 @@ function renderChain() {
     ["Max pain", s.max_pain == null ? "–" : f2(s.max_pain), s.max_pain == null ? "" : `${pct((s.max_pain - d.spot) / d.spot)} from price`],
   ].map(([k, v, sub]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${esc(sub)}</div></div>`).join("");
   $("#chainTitle").textContent = `${d.ticker} ${d.exp}`;
+  if (chainSel != null && (chainSel.t !== d.ticker || chainSel.exp !== d.exp)) chainSel = null;
 
   const more = $("#moreGreeks").checked;
   const cols = ["delta", ...(more ? ["gamma", "theta", "vega"] : []), "iv", "oi", "volume", "last", "bid", "ask"];
@@ -1985,6 +2047,7 @@ function renderChain() {
     const mid = i < 0 ? strikes.length : i;
     strikes = strikes.slice(Math.max(0, mid - n), mid + n);
   }
+  const maxOi = Math.max(1, ...strikes.flatMap(k => { const x = byStrike.get(k); return [x.call?.oi || 0, x.put?.oi || 0]; }));
   let html = `<thead><tr><th class="side" colspan="${cols.length}">Calls</th><th class="strike"></th><th class="side" colspan="${cols.length}">Puts</th></tr>
     <tr>${callCols.map(c => `<th>${names[c]}</th>`).join("")}<th class="strike">Strike</th>${putCols.map(c => `<th>${names[c]}</th>`).join("")}</tr></thead><tbody>`;
   let spotDone = false;
@@ -1993,15 +2056,93 @@ function renderChain() {
     if (!spotDone && k >= d.spot) { html += spotRow(); spotDone = true; }
     const { call, put } = byStrike.get(k);
     const side = (r, list, kind) => list.map(c => r
-      ? `<td class="${kind[0]} ${r.itm ? "itm" : ""}" data-kind="${kind}" data-strike="${k}" data-col="${c}">${fmt(c, r)}</td>`
+      ? `<td class="${kind[0]} ${r.itm ? "itm" : ""}" data-kind="${kind}" data-strike="${k}" data-col="${c}"${c === "oi" && r.oi ? ` style="--w:${Math.round(r.oi / maxOi * 100)}%"` : ""}>${fmt(c, r)}</td>`
       : "<td></td>").join("");
-    html += `<tr>${side(call, callCols, "call")}<td class="strike">${f2(k)}</td>${side(put, putCols, "put")}</tr>`;
+    html += `<tr${chainSel && chainSel.k === k ? ' class="sel"' : ""}>${side(call, callCols, "call")}<td class="strike" data-sk="${k}" tabindex="0" role="button" aria-label="Compare the ${f2(k)} call and put">${f2(k)}</td>${side(put, putCols, "put")}</tr>`;
   }
   if (!spotDone) html += spotRow();
   $("#chain").innerHTML = html + "</tbody>";
+  chDrawer();
 
   renderFlow();
 }
+
+/* Strike detail: the call and put at one strike side by side, with one-click legs for the Builder */
+let chainSel = null;
+function chDrawer() {
+  const el = $("#chDrawer");
+  const d = current, k = chainSel && chainSel.k;
+  const call = d && d.calls.find(r => r.strike === k), put = d && d.puts.find(r => r.strike === k);
+  const on = !!(chainSel && (call || put));
+  el.classList.toggle("open", on);
+  el.setAttribute("aria-hidden", on ? "false" : "true");
+  if (!on) return;
+  const S = d.spot, dash = "–";
+  const cell = (r, fn) => r ? fn(r) : dash;
+  const gk = (r, c, dp) => r[c] == null ? dash : (+r[c]).toFixed(dp);
+  const be = (r, kind) => r.mark == null ? null : kind === "call" ? k + r.mark : k - r.mark;
+  const rows = [
+    ["Bid / ask", r => `${f2(r.bid)} / ${f2(r.ask)}`],
+    ["Mid", r => r.mark == null ? dash : f2(r.mark) + (r.est ? estTag(estWhy(r)) : "")],
+    ["Last", r => f2(r.last)],
+    ["Spread", r => r.bid > 0 && r.ask > 0 ? pct((r.ask - r.bid) / ((r.ask + r.bid) / 2), 0) : dash],
+    ["IV", r => r.iv == null || r.iv < 0.01 ? dash : pct(r.iv, 0)],
+    ["Delta", r => gk(r, "delta", 2)],
+    ["Gamma", r => gk(r, "gamma", 4)],
+    ["Theta / day", r => gk(r, "theta", 3)],
+    ["Vega / IV pt", r => gk(r, "vega", 3)],
+    ["Open int.", r => int(r.oi)],
+    ["Volume", r => (r.unusual ? '<span class="flag">●</span> ' : "") + int(r.volume)],
+    ["Intrinsic", (r, kind) => f2(intrinsic(kind, S, k))],
+    ["Breakeven", (r, kind) => be(r, kind) == null ? dash : f2(be(r, kind))],
+    ["Move to BE", (r, kind) => be(r, kind) == null ? dash : sgnPct(be(r, kind) / S - 1)],
+  ];
+  const away = k / S - 1;
+  const btn = (kind, side, r) => r ? `<button class="${side === "buy" ? "primary" : "ghost"} small" type="button" data-chadd="${kind}|${side}">${side === "buy" ? "Buy" : "Sell"} ${kind}</button>` : "";
+  const scrollTop = el.scrollTop;
+  el.innerHTML = `
+    <div class="lp-dh"><div style="flex:1;min-width:0"><h3>${esc(d.ticker)} ${f2(k)} strike</h3>
+      <div class="sub">${esc(d.exp)} · ${d.dte} day${d.dte === 1 ? "" : "s"} left</div>
+      <div class="px">${esc(d.ticker)} ${f2(S)} · strike ${Math.abs(away) < 0.0005 ? "at the money" : `${pct(Math.abs(away))} ${away > 0 ? "above" : "below"} price`}</div></div>
+      <button class="ghost small" type="button" id="chClose" aria-label="Close detail">✕</button></div>
+    <div class="lp-sec"><h4>Call vs put</h4>
+      <table class="ch-cmp"><thead><tr><th></th><th>Call${call && call.itm ? " · ITM" : ""}</th><th>Put${put && put.itm ? " · ITM" : ""}</th></tr></thead><tbody>
+      ${rows.map(([name, fn]) => `<tr><td>${name}</td><td>${cell(call, r => fn(r, "call"))}</td><td>${cell(put, r => fn(r, "put"))}</td></tr>`).join("")}
+      </tbody></table></div>
+    ${call && put ? `<div class="lp-sec"><h4>Open interest here</h4>
+      <div class="lp-split"><i style="width:${(call.oi + put.oi ? call.oi / (call.oi + put.oi) * 100 : 50).toFixed(1)}%;background:var(--up)"></i><i style="flex:1;background:var(--down)"></i></div>
+      <div class="lp-callout">${int(call.oi)} calls · ${int(put.oi)} puts${call.oi + put.oi ? ` · ${pct(call.oi / (call.oi + put.oi), 0)} calls` : ""}</div></div>` : ""}
+    <div class="lp-actions">${btn("call", "buy", call)}${btn("call", "sell", call)}${btn("put", "buy", put)}${btn("put", "sell", put)}</div>
+    <div class="lp-actions">
+      ${call ? `<button class="ghost small" type="button" data-chlog="call">Log call trade</button>` : ""}
+      ${put ? `<button class="ghost small" type="button" data-chlog="put">Log put trade</button>` : ""}
+      <button class="ghost small" type="button" data-chtv="${esc(d.ticker.replace("-", "."))}">TradingView</button>
+    </div>
+    <p class="note" style="margin:0">Quotes from Yahoo Finance. Buy/Sell adds a leg to the Builder at the mid price. Not advice.</p>`;
+  el.scrollTop = scrollTop;
+}
+function chSelect(k) {
+  chainSel = chainSel && chainSel.k === k ? null : { k, t: current.ticker, exp: current.exp };
+  for (const tr of document.querySelectorAll("#chain tbody tr")) {
+    const td = tr.querySelector("td[data-sk]");
+    tr.classList.toggle("sel", !!(chainSel && td && +td.dataset.sk === chainSel.k));
+  }
+  chDrawer();
+}
+$("#chDrawer").onclick = async e => {
+  if (e.target.closest("#chClose")) return chSelect(chainSel.k);
+  const a = e.target.closest("button[data-chadd]");
+  if (a) { const [kind, side] = a.dataset.chadd.split("|"); return addLegFromChain(current, kind, chainSel.k, side); }
+  const lg = e.target.closest("button[data-chlog]");
+  if (lg) {
+    const kind = lg.dataset.chlog, r = current[kind === "call" ? "calls" : "puts"].find(x => x.strike === chainSel.k);
+    return openAdd({ ticker: current.ticker, type: kind, strike: chainSel.k, exp: current.exp, premium: r && r.mark != null ? r.mark.toFixed(2) : "" });
+  }
+  const tv = e.target.closest("button[data-chtv]");
+  if (tv) { try { await api("/api/open-chart", { symbol: tv.dataset.chtv }); } catch (err) { toast(`Couldn't open ${tv.dataset.chtv} in Chrome: ${err.message}`, false); } }
+};
+$("#chain").addEventListener("keydown", e => { const td = e.target.closest("td[data-sk]"); if (td && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); chSelect(+td.dataset.sk); } });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && chainSel) chSelect(chainSel.k); });
 
 function setClickMode(m) {
   clickMode = m;
@@ -2012,6 +2153,8 @@ function setClickMode(m) {
 $("#clickMode").onclick = e => { if (e.target.dataset.mode) setClickMode(e.target.dataset.mode); };
 
 $("#chain").onclick = e => {
+  const sk = e.target.closest("td[data-sk]");
+  if (sk && current) return chSelect(+sk.dataset.sk);
   const td = e.target.closest("td[data-kind]");
   if (!td || !current) return;
   const kind = td.dataset.kind, strike = +td.dataset.strike;
@@ -3282,11 +3425,20 @@ function renderTrades() {
       t.live && t.live.est && (rows.length > 1 ? `${t.label}: ` : "") + (t.live.unlisted ? "strike not in Yahoo's chain, mark estimated" : `no live bid/ask, mark estimated (last trade ${f2(t.live.last)} ${lastTradeText(t.live)})`)]).filter(Boolean);
   const alertHtml = list => [...new Set(list)].map(a => `<span class="warn">${esc(a)}</span>`).join(" ");
   const posKey = p => p[0].group ? "g" + p[0].group : "t" + p[0].id;
+  const q = ($("#trQ").value || "").trim().toLowerCase();
+  const shown = positions.filter(p => trCats.has(p[0].category)
+    && (!q || p.some(t => [t.ticker, t.label, t.strategy].some(x => x && String(x).toLowerCase().includes(q))))
+    && (!trOnlyTarget || (profitTarget(p) || {}).hit)
+    && (!trOnlyAlerts || alertsOf(p).length));
+  const selCls = p => posKey(p) === trSel ? " sel" : "";
+  $("#trShown").textContent = positions.length ? (shown.length === positions.length ? `${positions.length} position${positions.length === 1 ? "" : "s"}` : `${shown.length} of ${positions.length} shown`) : "";
+  $("#trMeta").textContent = "Quotes " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
   const lots = d.open.filter(t => t.category === "Shares");
-  const sharesHtml = !d.holdings.length ? "" : `<h3>Shares <span class="note" style="text-transform:none;letter-spacing:0">assigned puts and shares you added · average cost is price × shares ÷ total shares</span></h3>
+  const holdings = d.holdings.filter(h => !q || h.ticker.toLowerCase().includes(q));
+  const sharesHtml = !holdings.length ? "" : `<h3>Shares <span class="note" style="text-transform:none;letter-spacing:0">assigned puts and shares you added · average cost is price × shares ÷ total shares</span></h3>
     <div class="scroll"><table><thead><tr><th class="left">Ticker</th><th>Shares</th><th title="Weighted average price paid">Avg cost</th><th title="Average cost minus the premium collected on the puts that were assigned, plus fees">Avg cost net of premium</th><th>Stock</th><th>Cost</th><th>Unrealized</th><th>vs net avg</th><th class="left">Lots</th></tr></thead><tbody>` +
-    d.holdings.map(h => {
+    holdings.map(h => {
       const lv = d.open.find(t => t.ticker === h.ticker && t.live), spot = lv ? lv.live.spot : null;
       const un = spot == null ? null : (spot - h.avg_cost) * h.shares - h.fees;
       const mine = lots.filter(t => t.ticker === h.ticker);
@@ -3300,9 +3452,11 @@ function renderTrades() {
 
   if (!positions.length) {
     $("#openGroups").innerHTML = sharesHtml + '<p class="note">No open trades. Use “Log a trade”, save a position from the Builder, or click a contract on the Chain tab.</p>';
+  } else if (!shown.length) {
+    $("#openGroups").innerHTML = sharesHtml + '<p class="note">No open positions match the filters above.</p>';
   } else {
     $("#openGroups").innerHTML = sharesHtml + ["Hop", "Skip", "Leap"].map(cat => {
-      const ps = positions.filter(p => p[0].category === cat);
+      const ps = shown.filter(p => p[0].category === cat);
       if (!ps.length) return "";
       const sub = { Hop: "90 days or less at open", Skip: "91–360 days at open", Leap: "over 360 days at open" }[cat];
       return `<h3>${cat} <span class="note" style="text-transform:none;letter-spacing:0">${sub}</span></h3><div class="scroll-top"><div></div></div><div class="scroll"><table>${head}<tbody>` +
@@ -3310,7 +3464,7 @@ function renderTrades() {
           const buttons = `<button class="ghost small" data-builder="${posKey(p)}">Builder</button> <button class="ghost small" data-close-key="${posKey(p)}">Close</button> ${p.length === 1 && p[0].type !== "stock" && p[0].side === "buy" ? `<button class="ghost small" data-addto-id="${p[0].id}" title="Buy more of this contract on a dip and average your cost">Add</button> ` : ""}${p.length === 1 && p[0].type !== "stock" ? `<button class="ghost small" data-roll-id="${p[0].id}" title="Close this leg and open a new strike or expiration in one step">Roll</button> ` : ""}<button class="ghost small" data-partial-key="${posKey(p)}" title="Buy back or sell some of the contracts and keep the rest open">Partial</button> <button class="ghost small danger" data-del-id="${p[0].id}" title="Delete a trade logged by mistake">Delete</button>`;
           if (p.length === 1) {
             const t = p[0], s = t.stats;
-            return `<tr><td class="left">${t.id}</td>
+            return `<tr data-pos="${posKey(p)}" class="${selCls(p)}"><td class="left">${t.id}</td>
               <td class="left">${targetDot(profitTarget(p))}<b>${esc(t.ticker)}</b> ${esc(t.label)} ${t.exp || ""}${t.rolled_from ? `<div><span class="pill">rolled from #${t.rolled_from}</span> ${chainNote(t)}</div>` : ""}${addsNote(t)}${noteFold(posKey(p), t.notes)}${targetNote(profitTarget(p))}</td>
               <td style="white-space:nowrap">${buttons}</td>${roiCell(p)}
               ${legCells(t)}<td>${f2(s.breakeven)}</td><td>${usd(s.max_profit)}</td><td>${usd(s.max_loss)}</td>
@@ -3324,7 +3478,7 @@ function renderTrades() {
           const un = p.reduce((s, t) => s + (t.live ? t.live.unrealized : 0), 0);
           const delta = p.reduce((s, t) => s + (t.live && t.live.position_delta != null ? t.live.position_delta : 0), 0);
           const dtes = p.map(t => t.dte).filter(x => x != null);
-          const headRow = `<tr class="pos-head"><td class="left">P${p[0].group}</td>
+          const headRow = `<tr class="pos-head${selCls(p)}" data-pos="${posKey(p)}"><td class="left">P${p[0].group}</td>
             <td class="left">${targetDot(profitTarget(p))}<b>${esc(p[0].ticker)}</b> ${esc(p[0].strategy)} <span class="note">· ${p.length} legs</span>${noteFold(posKey(p), p[0].notes)}${targetNote(profitTarget(p))}</td>
             <td style="white-space:nowrap">${buttons}</td>${roiCell(p)}
             <td class="left">${net >= 0 ? "Debit" : "Credit"}</td><td></td><td>${usd(Math.abs(net))}</td><td>${spot ? f2(spot) : "–"}</td><td></td>
@@ -3333,7 +3487,7 @@ function renderTrades() {
             <td>${a && a.bes.length ? a.bes.slice(0, 2).map(f2).join(" / ") : "–"}</td>
             <td>${a ? (a.maxP == null ? "unlimited" : usd(a.maxP)) : "–"}</td><td>${a ? (a.maxL == null ? "unlimited" : usd(-a.maxL)) : "–"}</td>
             <td class="left">${alertHtml(alertsOf(p))}</td></tr>`;
-          return headRow + p.map(t => `<tr class="pos-leg"><td class="left">${t.id}</td><td class="left contract">${esc(t.label)} ${t.exp || ""}</td><td></td><td></td>${legCells(t)}<td colspan="4"></td></tr>`).join("");
+          return headRow + p.map(t => `<tr class="pos-leg${selCls(p)}" data-pos="${posKey(p)}"><td class="left">${t.id}</td><td class="left contract">${esc(t.label)} ${t.exp || ""}</td><td></td><td></td>${legCells(t)}<td colspan="4"></td></tr>`).join("");
         }).join("") + "</tbody></table></div>";
     }).join("");
   }
@@ -3347,7 +3501,122 @@ function renderTrades() {
   renderClosed(d.closed);
   renderPremium();
   syncTopBars($("#openGroups"));
+  trDrawer();
 }
+
+/* My Trades filters and the position detail panel */
+const trCats = new Set(store.get("trCats", ["Hop", "Skip", "Leap"]));
+let trOnlyTarget = false, trOnlyAlerts = false, trSel = null;
+function trSyncChips() {
+  for (const b of document.querySelectorAll("#trFilters [data-tcat]")) b.setAttribute("aria-pressed", trCats.has(b.dataset.tcat));
+  $("#trTarget").setAttribute("aria-pressed", trOnlyTarget);
+  $("#trAlerts").setAttribute("aria-pressed", trOnlyAlerts);
+}
+trSyncChips();
+$("#trFilters").onclick = e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.dataset.tcat) { trCats.has(b.dataset.tcat) ? trCats.delete(b.dataset.tcat) : trCats.add(b.dataset.tcat); store.set("trCats", [...trCats]); }
+  if (b.id === "trTarget") trOnlyTarget = !trOnlyTarget;
+  if (b.id === "trAlerts") trOnlyAlerts = !trOnlyAlerts;
+  trSyncChips();
+  tradeData && renderTrades();
+};
+$("#trQ").oninput = () => tradeData && renderTrades();
+
+function trChart(legs, S0) {
+  const W = 400, H = 170, pl = 52, pr = 8, pt = 10, pb = 22;
+  const opts = legs.filter(l => l.type !== "stock");
+  const far = Math.max(0, ...opts.map(l => Math.abs(l.strike / S0 - 1)));
+  const span = Math.max(0.15, Math.min(0.6, far * 2 + 0.12));
+  const lo = S0 * (1 - span), hi = S0 * (1 + span), n = 80, xs = [...Array(n + 1)].map((_, i) => lo + (hi - lo) * i / n);
+  const tE = opts.length ? Math.min(...opts.map(l => expMs(l.exp))) : Date.now();
+  const ex = xs.map(S => pnlAt(legs, S, tE)), now = xs.map(S => pnlAt(legs, S, Date.now()));
+  const all = [...ex, ...now, 0], yMin = Math.min(...all), yMax = Math.max(...all), pad = (yMax - yMin) * 0.08 || 1;
+  const X = S => pl + (S - lo) / (hi - lo) * (W - pl - pr), Y = v => pt + (yMax + pad - v) / (yMax - yMin + 2 * pad) * (H - pt - pb);
+  const path = vs => vs.map((v, i) => `${i ? "L" : "M"}${X(xs[i]).toFixed(1)} ${Y(v).toFixed(1)}`).join("");
+  const k = v => (v < 0 ? "−" : "+") + "$" + (Math.abs(v) >= 1000 ? (Math.abs(v) / 1000).toFixed(1) + "K" : Math.round(Math.abs(v)));
+  const t = (x, y, s, a, c = "var(--muted)") => `<text x="${x}" y="${y}" text-anchor="${a}" font-size="10" fill="${c}">${s}</text>`;
+  return `<svg class="lp-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Position profit and loss by stock price">
+    <line x1="${pl}" x2="${W - pr}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--line)" stroke-width="1.5"/>
+    ${t(pl - 6, Y(0) + 3, "$0", "end")}${t(pl - 6, Y(yMax) + 8, k(yMax), "end", "var(--up)")}${t(pl - 6, Y(yMin), k(yMin), "end", "var(--down)")}
+    ${opts.length ? `<path d="${path(now)}" fill="none" stroke="#5fa4e8" stroke-width="1.8" stroke-dasharray="5 4"/>` : ""}
+    <path d="${path(ex)}" fill="none" stroke="var(--up)" stroke-width="2.5" stroke-linejoin="round"/>
+    <line x1="${X(S0)}" x2="${X(S0)}" y1="${pt}" y2="${H - pb}" stroke="var(--spot)" stroke-width="1.5"/>
+    ${t(X(lo), H - 6, f2(lo), "start")}${t(X(S0), H - 6, "now " + f2(S0), "middle", "var(--spot)")}${t(X(hi), H - 6, f2(hi), "end")}</svg>`;
+}
+function trDrawer() {
+  const el = $("#trDrawer");
+  const p = trSel && tradeData ? positionByKey(trSel) : null;
+  if (!p) trSel = null;
+  el.classList.toggle("open", !!p);
+  el.setAttribute("aria-hidden", p ? "false" : "true");
+  for (const tr of document.querySelectorAll("#openGroups tr[data-pos]")) tr.classList.toggle("sel", tr.dataset.pos === trSel);
+  if (!p) return;
+  const t0 = p[0], key = trSel, multi = p.length > 1;
+  const spot = (p.find(t => t.live) || {}).live?.spot;
+  const legs = legsForEngine(p), a = spot ? analyze(legs, spot, 0) : null;
+  const net = p.reduce((s, t) => s + (t.side === "buy" ? 1 : -1) * t.premium * t.contracts * 100, 0);
+  const now = p.reduce((s, t) => s + (t.live ? (t.side === "buy" ? 1 : -1) * t.live.mark * t.contracts * 100 : 0), 0);
+  const un = p.reduce((s, t) => s + (t.live ? t.live.unrealized : 0), 0);
+  const delta = p.reduce((s, t) => s + (t.live && t.live.position_delta != null ? t.live.position_delta : 0), 0);
+  const dtes = p.map(t => t.dte).filter(x => x != null), dte = dtes.length ? Math.min(...dtes) : null;
+  const pt = profitTarget(p), roi = estRoi(p);
+  const p1 = x => (x * 100).toFixed(x !== 0 && Math.abs(x) < 0.1 ? 2 : 1) + "%";
+  const alerts = [...new Set(p.flatMap(t => [t.live && t.live.warning, t.dte != null && (t.dte < 0 ? "past expiration: close it" : t.dte <= 7 && "expires within a week"), t.live_error && "no quote: " + t.live_error]).filter(Boolean))];
+  const title = multi ? `${t0.ticker} ${t0.strategy || "position"}` : `${t0.ticker} ${t0.label} ${t0.exp || ""}`;
+  const stat = (k, v, cls = "") => `<div class="lp-stat"><div class="k">${k}</div><div class="v ${cls}">${v}</div></div>`;
+  const opt1 = !multi && t0.type !== "stock";
+  const scrollTop = el.scrollTop;
+  el.innerHTML = `
+    <div class="lp-dh"><div style="flex:1;min-width:0"><h3>${esc(title)}</h3>
+      <div class="sub">${esc(t0.category || "")}${multi ? ` · ${p.length} legs` : ""}${t0.opened ? ` · opened ${esc(t0.opened)}` : ""}${dte != null ? ` · ${dte} day${dte === 1 ? "" : "s"} left` : ""}</div>
+      <div class="px">${spot ? `${esc(t0.ticker)} ${f2(spot)}` : "no live quote"}${pt && pt.hit ? ` · <span class="hit">${esc(pt.text)}</span>` : ""}</div></div>
+      <button class="ghost small" type="button" id="trClose" aria-label="Close detail">✕</button></div>
+    <div class="lp-sec"><h4>Profit and loss</h4><div class="lp-stats">
+      ${stat("Unrealized", usd(un, true), signed(un))}
+      ${stat(net >= 0 ? "Paid (debit)" : "Received (credit)", usd(Math.abs(net)))}
+      ${stat("Worth now", usd(Math.abs(now)))}
+      ${stat("Position delta", (delta > 0 ? "+" : "") + delta.toFixed(0) + " sh")}
+      ${stat("Breakeven", a && a.bes.length ? a.bes.slice(0, 2).map(f2).join(" / ") : !multi && t0.stats ? f2(t0.stats.breakeven) : "–")}
+      ${stat("Max profit", a ? (a.maxP == null ? "unlimited" : usd(a.maxP)) : !multi && t0.stats ? usd(t0.stats.max_profit) : "–", "up")}
+      ${stat("Max loss", a ? (a.maxL == null ? "unlimited" : usd(-a.maxL)) : !multi && t0.stats ? usd(t0.stats.max_loss) : "–", "down")}
+      ${roi ? stat(esc(roi.kind) + " ROI", `${p1(roi.roi)} · ${p1(roi.mon)}/mo`, "up") : ""}
+    </div></div>
+    ${spot ? `<div class="lp-sec"><h4>Payoff</h4>${trChart(legs, spot)}
+      <div class="lp-callout"><span style="color:var(--up)">━</span> at the first expiration &nbsp; <span style="color:#5fa4e8">╍</span> today &nbsp; <span style="color:var(--spot)">│</span> stock price</div></div>` : ""}
+    <div class="lp-sec"><h4>${multi ? "Legs" : "Contract"}</h4><div class="tr-legs">
+      ${p.map(t => { const q = t.live; return `<div class="tr-leg"><b>#${t.id} ${t.side === "buy" ? "Long" : "Short"} ${t.contracts}× ${esc(t.label)} ${t.exp || ""}</b>
+        <span class="${q ? signed(q.unrealized) : ""}">${q ? usd(q.unrealized, true) : "–"}</span>
+        <span class="note">entry ${f2(t.premium)} · mark ${q ? f2(q.mark) : "–"}${q && t.type !== "stock" && q.quoted !== false ? ` · ${f2(q.bid)} / ${f2(q.ask)}` : ""}${q && q.iv ? ` · IV ${pct(q.iv, 0)}` : ""}</span></div>`; }).join("")}
+    </div></div>
+    ${alerts.length ? `<div class="lp-sec"><h4>Alerts</h4>${alerts.map(x => `<div><span class="warn">${esc(x)}</span></div>`).join("")}</div>` : ""}
+    ${t0.notes ? `<div class="lp-sec"><h4>Notes</h4><p class="note" style="margin:0;white-space:pre-wrap">${esc(t0.notes)}</p></div>` : ""}
+    <div class="lp-actions">
+      <button class="primary small" type="button" data-trp='[data-close-key="${key}"]'>Close</button>
+      ${opt1 ? `<button class="ghost small" type="button" data-trp='[data-roll-id="${t0.id}"]'>Roll</button>` : ""}
+      ${opt1 && t0.side === "buy" ? `<button class="ghost small" type="button" data-trp='[data-addto-id="${t0.id}"]'>Add</button>` : ""}
+      <button class="ghost small" type="button" data-trp='[data-partial-key="${key}"]'>Partial</button>
+      <button class="ghost small" type="button" data-trp='[data-builder="${key}"]'>Builder</button>
+    </div>
+    <div class="lp-actions">
+      ${t0.exp ? `<button class="ghost small" type="button" data-trchain="${esc(t0.ticker)}|${esc(t0.exp)}">Open chain</button>` : ""}
+      <button class="ghost small" type="button" data-trtv="${esc(t0.ticker.replace("-", "."))}">TradingView</button>
+      <button class="ghost small danger" type="button" data-trp='[data-del-id="${t0.id}"]'>Delete</button>
+    </div>
+    <p class="note" style="margin:0">Marks at mid price; chart from Black-Scholes with each leg's IV. Not advice.</p>`;
+  el.scrollTop = scrollTop;
+}
+$("#trDrawer").onclick = async e => {
+  if (e.target.closest("#trClose")) { trSel = null; return trDrawer(); }
+  const px = e.target.closest("button[data-trp]");
+  if (px) { const src = $("#openGroups").querySelector(px.dataset.trp); if (src) src.click(); return; }
+  const ch = e.target.closest("button[data-trchain]");
+  if (ch) { const [tk, exp] = ch.dataset.trchain.split("|"); trSel = null; trDrawer(); $("#ticker").value = tk; showTab("chain"); return loadChain(tk, exp); }
+  const tv = e.target.closest("button[data-trtv]");
+  if (tv) { try { await api("/api/open-chart", { symbol: tv.dataset.trtv }); } catch (err) { toast(`Couldn't open ${tv.dataset.trtv} in Chrome: ${err.message}`, false); } }
+};
+document.addEventListener("keydown", e => { if (e.key === "Escape" && trSel) { trSel = null; trDrawer(); } });
 /* Wide open-position tables get a second scrollbar above them, kept in step with the bottom one,
    so you can slide sideways without scrolling down to the end of the table. */
 // Notes on open positions start collapsed. Remember which ones are open so the live refresh doesn't close them.
@@ -3440,7 +3709,12 @@ $("#sharesForm").onsubmit = async e => {
 };
 $("#openGroups").onclick = e => {
   const b = e.target.closest("button");
-  if (!b) return;
+  if (!b) {
+    const tr = e.target.closest("tr[data-pos]");
+    if (!tr || e.target.closest("details, a")) return;
+    trSel = trSel === tr.dataset.pos ? null : tr.dataset.pos;
+    return trDrawer();
+  }
   if (b.dataset.delId) return openDelete(+b.dataset.delId);
   if (b.dataset.builder) openInBuilder(positionByKey(b.dataset.builder));
   if (b.dataset.partialKey) return openPartial(positionByKey(b.dataset.partialKey));
