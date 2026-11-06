@@ -456,6 +456,71 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
 #scrTable td.tk { text-align: left; }
 #scrTable th, #scrTable td { padding: 5px 6px; }   /* compact, so the extra RSI columns don't push Open interest off the edge */
 #scrTable .spark { width: 72px; }
+/* GEX ladder, snapshot strip and options-flow table (flow-dashboard look) */
+.gx-snap { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.gx-snap .lp-stat { padding: 8px 11px; }
+.gx-snap .lp-stat .v { font-size: 18px; }
+.gx-snap .gx-wide { grid-column: span 2; }
+@media (max-width: 640px) { .gx-snap .gx-wide { grid-column: span 1; } }
+.gx-s { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.gx-sm { font-size: 12px; font-weight: 600; }
+.gx-em .v, .v.gx-em { color: #4fc3e8; }
+.gx-pill { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 99px; background: var(--well); color: var(--muted); }
+.gx-pill.pos { background: rgba(63,197,151,.16); color: var(--up); } .gx-pill.neg { background: rgba(240,114,114,.16); color: var(--down); }
+.gx-ring-stat { display: flex; gap: 10px; align-items: center; }
+.gx-head, .gx-row { display: grid; grid-template-columns: 96px 64px minmax(0, 1fr) 140px; align-items: center; gap: 8px; }
+.gx-head { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; padding: 0 8px 6px; border-bottom: 1px solid var(--line); }
+.gx-head span:last-child, .gx-row .gx-v { text-align: right; }
+.gx-axis { display: flex; justify-content: space-between; }
+.gx-ladder { max-height: 520px; overflow-y: auto; position: relative; }
+.gx-row { width: 100%; font: inherit; color: var(--text); background: none; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+  padding: 0 8px; height: 22px; cursor: pointer; text-align: left; font-variant-numeric: tabular-nums; }
+.gx-row:hover { background: var(--hover); }
+.gx-row.sel { background: var(--itm); outline: 1px solid var(--pri-border); outline-offset: -1px; }
+.gx-row .gx-k { font-size: 12px; font-weight: 600; text-align: right; }
+.gx-row .gx-v { font-size: 11.5px; white-space: nowrap; }
+.gx-row .gx-tag { font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gx-bar { display: grid; grid-template-columns: 1fr 1fr; height: 12px; position: relative; }
+.gx-bar::after { content: ""; position: absolute; left: 50%; top: -5px; bottom: -5px; border-left: 1px solid var(--muted); opacity: .45; }
+.gx-half { display: flex; height: 100%; }
+.gx-half.l { justify-content: flex-end; } .gx-half.r { justify-content: flex-start; }
+.gx-half i { display: block; height: 100%; border-radius: 2px; animation: gxGrow .45s ease both; }
+.gx-half.l i { background: var(--down); transform-origin: right; } .gx-half.r i { background: var(--up); transform-origin: left; }
+@keyframes gxGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { .gx-half i { animation: none; } }
+.gx-row.gx-call, .gx-row.gx-both { background: linear-gradient(90deg, rgba(63,197,151,.22), rgba(63,197,151,.06)); }
+.gx-row.gx-put { background: linear-gradient(90deg, rgba(240,114,114,.22), rgba(240,114,114,.06)); }
+.gx-row.gx-call .gx-tag, .gx-row.gx-both .gx-tag { color: var(--up); } .gx-row.gx-put .gx-tag { color: var(--down); }
+.gx-row.gx-flip .gx-tag { color: var(--flag); }
+.gx-row.gx-spot { cursor: default; height: 20px; background: color-mix(in srgb, var(--spot) 14%, transparent); }
+.gx-row.gx-spot .gx-tag, .gx-row.gx-spot .gx-k { color: var(--spot); }
+.gx-line { height: 2px; background: var(--spot); border-radius: 2px; }
+table.gx-oi td, table.gx-oi th { padding: 5px 10px; }
+table.gx-oi tbody tr { cursor: pointer; }
+table.gx-oi tbody tr:hover td { background: var(--hover); }
+table.gx-oi tr.gx-call td { background: rgba(63,197,151,.12); } table.gx-oi tr.gx-put td { background: rgba(240,114,114,.12); }
+table.gx-oi tr.sel td { background: var(--itm); }
+table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background: color-mix(in srgb, var(--spot) 12%, transparent); }
+.gx-oibar { display: inline-flex; width: 90px; height: 6px; margin-right: 8px; vertical-align: middle; background: var(--well); border-radius: 3px; overflow: hidden; }
+.gx-oibar i { display: block; height: 100%; } .gx-oibar .c { background: var(--up); } .gx-oibar .p { background: var(--down); }
+.flow-lbl { flex-direction: row !important; align-items: center; gap: 6px; }
+.flow-lbl select { padding: 4px 8px; }
+#unusual { min-width: 820px; }
+#unusual td, #unusual th { padding: 6px 9px; }
+#unusual tbody tr[data-f] { cursor: pointer; }
+#unusual tbody tr[data-f]:hover td { background: var(--hover); }
+#unusual tr.fl-bull td:first-child { box-shadow: inset 3px 0 0 var(--up); }
+#unusual tr.fl-bear td:first-child { box-shadow: inset 3px 0 0 var(--down); }
+#unusual tr.sel td { background: var(--itm); }
+.fl-cp { font-weight: 700; } .fl-cp.call { color: var(--up); } .fl-cp.put { color: var(--down); }
+.fl-side { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 5px; background: var(--well); color: var(--muted); }
+.fl-side.bull { background: rgba(63,197,151,.16); color: var(--up); } .fl-side.bear { background: rgba(240,114,114,.16); color: var(--down); }
+.fl-prem { font-weight: 700; }
+.fl-tag { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 5px; }
+.fl-tag.t-hot { background: rgba(224,165,38,.18); color: #e0a526; } .fl-tag.t-new { background: rgba(180,140,245,.18); color: var(--flag); }
+.fl-tag.t-x { background: rgba(95,164,232,.16); color: #5fa4e8; }
+.fl-details { grid-template-columns: 1fr auto; font-size: 13px; gap: 6px 10px; }
+.fl-details span:nth-child(even) { color: var(--text); font-weight: 600; }
 /* Builder: same header bar, compact stats strip and slide-in leg panel as the LEAPS Finder */
 .lp-top label, .b-top label { flex-direction: row; align-items: center; gap: 6px; }
 .b-top select, .b-top input { padding: 5px 8px; }
@@ -720,8 +785,14 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
         </div>
       </div>
       <div class="panel" id="gexPanel">
-        <div class="row">
+        <div class="lp-top" style="margin-bottom:10px">
           <h2 id="gexTitle">Gamma exposure (GEX)</h2>
+          <div class="tabs mini" id="gexView" role="group" aria-label="GEX view">
+            <button type="button" data-view="ladder">Ladder</button>
+            <button type="button" data-view="oi">Open interest</button>
+            <button type="button" data-view="chart">Chart</button>
+          </div>
+          <span class="grow"></span>
           <div class="inline note">
             <label style="flex-direction:row;align-items:center;gap:6px">Expirations <select id="gexExps"
               title="Which expirations' open interest goes into GEX (it doesn't follow the chain's expiration)">
@@ -739,7 +810,7 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
         </div>
         <div id="gexErr" class="note hidden"></div>
         <div id="gexBody">
-          <div class="tiles" id="gexTiles"><div class="note">Loading gamma exposure…</div></div>
+          <div id="gexTiles"><div class="note">Loading gamma exposure…</div></div>
           <div class="chart" id="gexChart"></div>
           <div class="legend note">
             <span><span class="sw" style="background:var(--up)"></span>Calls / positive GEX</span>
@@ -758,9 +829,23 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
         </div>
       </div>
       <div class="panel">
-        <h2>Unusual activity this expiration</h2>
+        <div class="lp-top" style="margin-bottom:10px">
+          <h2 id="flowTitle">Unusual activity</h2>
+          <div class="tabs mini" id="flowKind" role="group" aria-label="Calls or puts">
+            <button type="button" data-kind="all">All</button><button type="button" data-kind="call">Calls</button><button type="button" data-kind="put">Puts</button>
+          </div>
+          <label for="flowMin" class="flow-lbl">Premium <select id="flowMin"><option value="0">Any</option><option value="25000">$25K+</option><option value="100000">$100K+</option><option value="500000">$500K+</option><option value="1000000">$1M+</option></select></label>
+          <label for="flowSort" class="flow-lbl">Sort <select id="flowSort"><option value="premium">Premium</option><option value="size">Size</option><option value="ratio">Vol / OI</option><option value="time">Latest</option></select></label>
+          <span class="grow"></span>
+          <span class="lp-meta" id="flowCount"></span>
+        </div>
+        <div class="gx-snap" id="flowSnap"></div>
         <div class="scroll"><table id="unusual"></table></div>
+        <div class="lp-legend"><span><i style="background:var(--up)"></i>bullish: calls bought at the ask / puts sold at the bid</span>
+          <span><i style="background:var(--down)"></i>bearish: puts bought / calls sold</span><span>Contracts that traded at least 2× their open interest (500+). Click a row for order details.</span></div>
       </div>
+      <aside class="lp-drawer lp-st" id="gexDrawer" aria-label="Strike detail" aria-hidden="true"></aside>
+      <aside class="lp-drawer lp-st" id="flowDrawer" aria-label="Order details" aria-hidden="true"></aside>
     </div>
   </section>
 
@@ -1915,12 +2000,7 @@ function renderChain() {
   if (!spotDone) html += spotRow();
   $("#chain").innerHTML = html + "</tbody>";
 
-  $("#unusual").innerHTML = d.unusual.length
-    ? `<thead><tr><th class="left">Contract</th><th>Volume</th><th>Open int.</th><th>Vol / OI</th><th>Last</th><th>IV</th><th>Delta</th></tr></thead><tbody>` +
-      d.unusual.map(r => `<tr><td class="left">${f2(r.strike)} ${r.kind === "call" ? "Call" : "Put"}${r.itm ? ' <span class="note">ITM</span>' : ""}</td>
-        <td>${int(r.volume)}</td><td>${int(r.oi)}</td><td>${r.oi ? (r.volume / r.oi).toFixed(1) + "x" : "new"}</td>
-        <td>${f2(r.last)}</td><td>${pct(r.iv, 0)}</td><td>${f2(r.delta)}</td></tr>`).join("") + "</tbody>"
-    : `<tbody><tr><td class="left note">No contracts traded at least 2× their open interest (500+ contracts) for this expiration.</td></tr></tbody>`;
+  renderFlow();
 }
 
 function setClickMode(m) {
@@ -2006,19 +2086,7 @@ function renderGex() {
   $("#gexTv").disabled = false;
   $("#gexTv").title = `Open ${d.ticker} on TradingView in Chrome`;
   $("#gexAsof").textContent = "Updated " + new Date(d.as_of).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  const away = k => k == null ? "" : `${pct((k - d.spot) / d.spot)} from price`;
-  const pos = d.net_gex >= 0;
-  $("#gexTiles").innerHTML = [
-    ["Price", f2(d.spot), d.ticker],
-    ["Net GEX per 1% move", `<span class="${pos ? "up" : "down"}">${gexMoney(d.net_gex, true)}</span>`,
-      pos ? "Positive gamma: moves tend to be damped" : "Negative gamma: moves tend to be amplified"],
-    ["Call wall", f2(d.call_wall), `${away(d.call_wall)} · ${gexMoney(d.call_wall_gex)} · most call OI ${f2(d.call_oi_wall)}`],
-    ["Put wall", f2(d.put_wall), `${away(d.put_wall)} · ${gexMoney(d.put_wall_gex)} · most put OI ${f2(d.put_oi_wall)}`],
-    ["Gamma flip", d.gamma_flip == null ? "–" : f2(d.gamma_flip),
-      d.gamma_flip == null ? `Cumulative GEX by strike never crosses zero` : `${away(d.gamma_flip)} · cumulative GEX by strike crosses 0`],
-    ["Zero-gamma price", d.profile_flip == null ? "–" : f2(d.profile_flip),
-      d.profile_flip == null ? "Total GEX keeps one sign within ±15%" : `${away(d.profile_flip)} · total GEX changes sign if price moves here`],
-  ].map(([k, v, sub]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${esc(sub)}</div></div>`).join("");
+  $("#gexTiles").innerHTML = gexSnapshot(d);
   $("#gexExpList").textContent = "Expirations used: " + d.expirations.map(e => `${e.exp} (${e.dte}d, ${gexMoney(e.net_gex, true)})`).join(", ")
     + ". Open interest from " + d.oi_sources.join(" / ") + ".";
 
@@ -2041,6 +2109,16 @@ function renderGex() {
   }
   rows.sort((a, b) => b.strike - a.strike);  // highest strike on top, like a price axis
   if (!rows.length) { $("#gexChart").innerHTML = `<div class="note">No open interest within ±${(span * 100).toFixed(0)}% of the price.</div>`; return; }
+  gexRows = rows; gexRows.step = step;
+  if (gexSel != null && !rows.some(r => r.strike === gexSel)) gexSel = null;
+  gexDrawer();
+  if (gexView !== "chart") {
+    const box = $("#gxLadder") || $("#gexChart .gx-ladder"), keep = box && box.dataset.t === d.ticker + gexView ? box.scrollTop : null;
+    $("#gexChart").innerHTML = gexView === "oi" ? gexOiTable(d, rows, step) : gexLadder(d, rows, split, step);
+    const nb = $("#gexChart .gx-ladder"); nb.dataset.t = d.ticker + gexView;
+    if (keep != null) nb.scrollTop = keep; else gexCenter();
+    return;
+  }
   const RH = rows.length > 60 ? 7 : rows.length > 35 ? 10 : 14;
   const W = 880, m = { l: 62, r: 118, t: 22, b: 30 }, H = m.t + m.b + rows.length * RH;
   const vals = split ? rows.flatMap(r => [r.call_gex, r.put_gex]) : rows.map(r => r.net_gex);
@@ -2088,6 +2166,237 @@ $("#gexMode").onclick = e => {
   if (r && [...$("#gexRange").options].some(o => o.value === r)) $("#gexRange").value = r;
   for (const b of document.querySelectorAll("#gexMode button")) b.classList.toggle("on", b.dataset.mode === m);
 }
+
+/* ---- GEX: snapshot strip, strike ladder, open-interest table and strike panel (flow-dashboard style) ---- */
+let gexSel = null, gexView = store.get("gexView", "ladder"), gexRows = [];
+const gxK = k => k >= 1000 ? k.toFixed(0) : String(+k.toFixed(2));
+function gexExpMove(d) {
+  // 1-day expected move from the at-the-money IV on the Chain tab (same ticker only)
+  const iv = current && current.ticker === d.ticker ? current.summary.atm_iv : null;
+  if (!iv) return null;
+  const mv = d.spot * iv / Math.sqrt(252);
+  return { mv, pct: mv / d.spot, hi: d.spot + mv, lo: d.spot - mv, iv };
+}
+function gexSnapshot(d) {
+  const away = k => k == null ? "" : sgnPct(k / d.spot - 1);
+  const pos = d.net_gex >= 0, tot = Math.abs(d.call_gex) + Math.abs(d.put_gex) || 1, cs = Math.abs(d.call_gex) / tot * 100;
+  const em = gexExpMove(d);
+  const stat = (k, v, s = "", cls = "") => `<div class="lp-stat"><div class="k">${k}</div><div class="v ${cls}">${v}</div>${s ? `<div class="gx-s">${s}</div>` : ""}</div>`;
+  return `<div class="gx-snap">
+    ${stat("Spot price", f2(d.spot), esc(d.ticker))}
+    ${stat("Net gamma (GEX)", gexMoney(d.net_gex, true), `<span class="gx-pill ${pos ? "pos" : "neg"}">${pos ? "Positive: damped moves" : "Negative: amplified moves"}</span>`, pos ? "up" : "down")}
+    <div class="lp-stat gx-wide"><div class="k">Calls vs puts gamma</div>
+      <div class="lp-split" style="margin:6px 0 4px"><i style="width:${cs}%;background:var(--up)"></i><i style="width:${100 - cs}%;background:var(--down)"></i></div>
+      <div class="gx-s"><span class="up">Calls ${gexMoney(d.call_gex)} · ${cs.toFixed(0)}%</span> &nbsp; <span class="down">Puts ${gexMoney(d.put_gex)} · ${(100 - cs).toFixed(0)}%</span></div></div>
+    ${stat("1-day expected move", em ? `±$${f2(em.mv)} <span class="gx-sm">(${pct(em.pct, 2)})</span>` : "–", em ? `Max ${f2(em.hi)} / Min ${f2(em.lo)} · ATM IV ${pct(em.iv, 0)}` : "from the chain's ATM IV", "gx-em")}
+    ${stat("Call wall", f2(d.call_wall), `${away(d.call_wall)} · ${gexMoney(d.call_wall_gex)}`, "up")}
+    ${stat("Put wall", f2(d.put_wall), `${away(d.put_wall)} · ${gexMoney(d.put_wall_gex)}`, "down")}
+    ${stat("Gamma flip", d.gamma_flip == null ? "–" : f2(d.gamma_flip), d.gamma_flip == null ? "cumulative GEX never crosses 0" : away(d.gamma_flip))}
+    ${stat("Zero-gamma price", d.profile_flip == null ? "–" : f2(d.profile_flip), d.profile_flip == null ? "one sign within ±15%" : away(d.profile_flip))}
+  </div>`;
+}
+function gexRole(d, k, step) {
+  const near = x => x != null && (step ? Math.abs(x - k) <= step / 2 : Math.abs(x - k) < 1e-6);
+  return near(d.call_wall) && near(d.put_wall) ? "both" : near(d.call_wall) ? "call" : near(d.put_wall) ? "put" : near(d.gamma_flip) ? "flip" : "";
+}
+function gexLadder(d, rows, split, step) {
+  const vals = split ? rows.flatMap(r => [r.call_gex, r.put_gex]) : rows.map(r => r.net_gex);
+  const mx = Math.max(...vals.map(Math.abs)) || 1;
+  const half = (v, side) => { const w = Math.min(100, Math.abs(v) / mx * 100); return `<i class="${side}" style="width:${w.toFixed(1)}%;opacity:${(0.35 + 0.65 * Math.abs(v) / mx).toFixed(2)}"></i>`; };
+  let html = "", spotDone = false;
+  const spotRow = () => `<div class="gx-row gx-spot" aria-hidden="true"><span class="gx-tag">Price</span><span class="gx-k">${f2(d.spot)}</span><span class="gx-line"></span><span class="gx-v"></span></div>`;
+  for (const r of rows) {
+    if (!spotDone && r.strike < d.spot) { html += spotRow(); spotDone = true; }
+    const role = gexRole(d, r.strike, step);
+    const tag = role === "both" ? "Call + put wall" : role === "call" ? "Call wall" : role === "put" ? "Put wall" : role === "flip" ? "Gamma flip" : "";
+    const v = split ? null : r.net_gex;
+    const neg = split ? half(r.put_gex, "neg") : v < 0 ? half(v, "neg") : "";
+    const pos = split ? half(r.call_gex, "pos") : v >= 0 ? half(v, "pos") : "";
+    html += `<button type="button" class="gx-row${role ? " gx-" + role : ""}${gexSel === r.strike ? " sel" : ""}" data-k="${r.strike}"
+        title="${step ? "Strikes near " : "Strike "}${f2(r.strike)}: net ${gexMoney(r.net_gex, true)} (calls ${gexMoney(r.call_gex)}, puts ${gexMoney(r.put_gex)}); OI ${int(r.call_oi)} C / ${int(r.put_oi)} P">
+      <span class="gx-tag">${tag}</span><span class="gx-k">${gxK(r.strike)}</span>
+      <span class="gx-bar"><span class="gx-half l">${neg}</span><span class="gx-half r">${pos}</span></span>
+      <span class="gx-v ${split ? "" : v >= 0 ? "up" : "down"}">${split ? `<span class="up">${gexMoney(r.call_gex)}</span> <span class="down">${gexMoney(r.put_gex)}</span>` : gexMoney(v, true)}</span></button>`;
+  }
+  if (!spotDone) html += spotRow();
+  return `<div class="gx-head"><span></span><span>Strike</span><span class="gx-axis"><span>← ${split ? "puts" : "negative"}</span><span>${split ? "calls" : "positive"} →</span></span><span>${split ? "Calls / puts" : "Net GEX"}</span></div>
+    <div class="gx-ladder" id="gxLadder">${html}</div>`;
+}
+function gexOiTable(d, rows, step) {
+  const mx = Math.max(...rows.map(r => r.call_oi + r.put_oi)) || 1;
+  let html = "", spotDone = false;
+  for (const r of rows) {
+    if (!spotDone && r.strike < d.spot) { html += `<tr class="gx-spot-tr"><td class="left" colspan="5">▶ Price ${f2(d.spot)}</td></tr>`; spotDone = true; }
+    const role = gexRole(d, r.strike, step), tot = r.call_oi + r.put_oi;
+    html += `<tr class="${role ? "gx-" + role : ""}${gexSel === r.strike ? " sel" : ""}" data-k="${r.strike}"><td class="left"><b>${gxK(r.strike)}</b>${role === "call" ? ' <span class="gx-pill pos">call wall</span>' : role === "put" ? ' <span class="gx-pill neg">put wall</span>' : ""}</td>
+      <td class="up">${int(r.call_oi)}</td><td class="down">${int(r.put_oi)}</td>
+      <td><span class="gx-oibar"><i class="c" style="width:${(r.call_oi / mx * 100).toFixed(1)}%"></i><i class="p" style="width:${(r.put_oi / mx * 100).toFixed(1)}%"></i></span>${int(tot)}</td>
+      <td class="${signed(r.net_gex)}">${gexMoney(r.net_gex, true)}</td></tr>`;
+  }
+  return `<div class="gx-ladder"><table class="gx-oi"><thead><tr><th class="left">Strike</th><th>Call OI</th><th>Put OI</th><th>Total OI</th><th>Net GEX</th></tr></thead><tbody>${html}</tbody></table></div>`;
+}
+function gexCenter() {
+  const box = $("#gxLadder") || $("#gexChart .gx-ladder"), s = box && box.querySelector(".gx-spot, .gx-spot-tr");
+  if (box && s) box.scrollTop = Math.max(0, s.offsetTop - box.clientHeight / 2);
+}
+function gexDrawer() {
+  const el = $("#gexDrawer"), d = gexData, r = d && gexSel != null ? gexRows.find(x => x.strike === gexSel) : null;
+  el.classList.toggle("open", !!r);
+  el.setAttribute("aria-hidden", r ? "false" : "true");
+  if (!r) return;
+  const tot = Math.abs(d.call_gex) + Math.abs(d.put_gex) || 1, oi = r.call_oi + r.put_oi;
+  const role = gexRole(d, r.strike, gexRows.step);
+  const inChain = current && current.ticker === d.ticker;
+  const cRow = inChain && current.calls.find(x => x.strike === r.strike), pRow = inChain && current.puts.find(x => x.strike === r.strike);
+  const stat = (k, v, cls = "") => `<div class="lp-stat"><div class="k">${k}</div><div class="v ${cls}">${v}</div></div>`;
+  el.innerHTML = `
+    <div class="lp-dh"><div style="flex:1;min-width:0"><h3>${esc(d.ticker)} ${f2(r.strike)}</h3>
+      <div class="sub">${gexRows.step ? `strikes grouped every ${+gexRows.step.toFixed(2)} · ` : ""}${sgnPct(r.strike / d.spot - 1)} from price ${f2(d.spot)}</div>
+      ${role ? `<div class="px"><span class="gx-pill ${role === "put" ? "neg" : role === "flip" ? "" : "pos"}">${role === "both" ? "Call and put wall" : role === "call" ? "Call wall" : role === "put" ? "Put wall" : "Gamma flip"}</span></div>` : ""}</div>
+      <button class="ghost small" type="button" id="gexClose" aria-label="Close detail">✕</button></div>
+    <div class="lp-sec"><h4>Gamma at this strike (per 1% move)</h4><div class="lp-stats">
+      ${stat("Net GEX", gexMoney(r.net_gex, true), signed(r.net_gex))}${stat("Call GEX", gexMoney(r.call_gex), "up")}${stat("Put GEX", gexMoney(r.put_gex), "down")}
+      ${stat("Share of total", pct((Math.abs(r.call_gex) + Math.abs(r.put_gex)) / tot, 1))}${stat("Dealers here", r.net_gex >= 0 ? "Damp" : "Amplify", signed(r.net_gex))}${stat("Distance", sgnPct(r.strike / d.spot - 1))}
+    </div></div>
+    <div class="lp-sec"><h4>Open interest</h4>
+      <div class="lp-split"><i style="width:${oi ? r.call_oi / oi * 100 : 50}%;background:var(--up)"></i><i style="width:${oi ? r.put_oi / oi * 100 : 50}%;background:var(--down)"></i></div>
+      <div class="lp-parts"><span>Calls</span><span>${int(r.call_oi)}</span><span>Puts</span><span>${int(r.put_oi)}</span><span>Total</span><span>${int(oi)}</span>
+        <span>Put / call</span><span>${r.call_oi ? (r.put_oi / r.call_oi).toFixed(2) : "–"}</span></div></div>
+    ${inChain ? `<div class="lp-sec"><h4>This strike on ${esc(current.exp)} (the chain's expiration)</h4><div class="lp-parts">
+      <span>Call bid / ask</span><span>${cRow ? `${f2(cRow.bid)} / ${f2(cRow.ask)}` : "not listed"}</span>
+      <span>Put bid / ask</span><span>${pRow ? `${f2(pRow.bid)} / ${f2(pRow.ask)}` : "not listed"}</span></div></div>` : ""}
+    <div class="lp-actions">
+      ${cRow ? `<button class="primary small" type="button" data-gb="call">Buy call in Builder</button>` : ""}
+      ${pRow ? `<button class="ghost small" type="button" data-gb="put">Buy put in Builder</button>` : ""}
+      <button class="ghost small" type="button" data-gtv="1">TradingView</button>
+    </div>
+    <p class="note" style="margin:0">Dealer positioning is assumed (long calls, short puts). Not advice.</p>`;
+}
+$("#gexChart").addEventListener("click", e => {
+  const r = e.target.closest("[data-k]");
+  if (!r) return;
+  gexSel = gexSel === +r.dataset.k ? null : +r.dataset.k;
+  for (const x of document.querySelectorAll("#gexChart [data-k]")) x.classList.toggle("sel", +x.dataset.k === gexSel);
+  gexDrawer();
+});
+$("#gexDrawer").onclick = async e => {
+  if (e.target.closest("#gexClose")) { gexSel = null; renderGex(); return gexDrawer(); }
+  const b = e.target.closest("button[data-gb]");
+  if (b) { await addLegFromChain(current, b.dataset.gb, gexSel, "buy"); return; }
+  if (e.target.closest("button[data-gtv]")) $("#gexTv").onclick();
+};
+$("#gexView").onclick = e => {
+  const v = e.target.dataset.view; if (!v) return;
+  gexView = v; store.set("gexView", v);
+  for (const b of document.querySelectorAll("#gexView button")) b.classList.toggle("on", b.dataset.view === v);
+  renderGex();
+};
+for (const b of document.querySelectorAll("#gexView button")) b.classList.toggle("on", b.dataset.view === gexView);
+document.addEventListener("keydown", e => { if (e.key === "Escape" && gexSel != null) { gexSel = null; renderGex(); gexDrawer(); } });
+
+/* ---- Unusual activity: flow table with sentiment, filters and an order-details panel ---- */
+let flowSel = null, flowF = Object.assign({ kind: "all", min: 0, sort: "premium" }, store.get("flowF", {}));
+function flowRows(d) {
+  const t0 = today();
+  return d.unusual.map(r => {
+    const px = r.last || r.mark || 0, prem = r.volume * px * 100;
+    const fresh = r.last_trade && new Date(r.last_trade).toLocaleDateString("en-CA") === t0;
+    const side = !r.quoted || !r.last ? "–" : r.last >= r.ask - 0.005 ? (r.last > r.ask + 0.005 ? "Above ask" : "Ask") : r.last <= r.bid + 0.005 ? (r.last < r.bid - 0.005 ? "Below bid" : "Bid") : "Mid";
+    const askSide = side === "Ask" || side === "Above ask", bidSide = side === "Bid" || side === "Below bid";
+    const mood = askSide ? (r.kind === "call" ? "bull" : "bear") : bidSide ? (r.kind === "call" ? "bear" : "bull") : "neutral";
+    const ratio = r.oi ? r.volume / r.oi : null;
+    const tag = !r.oi ? "New" : ratio >= 10 ? "Hot" : ratio >= 5 ? "5×+" : "2×+";
+    return Object.assign({}, r, { prem, side, mood, ratio, tag, fresh, px });
+  });
+}
+function renderFlow() {
+  const d = current;
+  if (!d) return;
+  const all = flowRows(d);
+  let rows = all.filter(r => (flowF.kind === "all" || r.kind === flowF.kind) && r.prem >= flowF.min);
+  const key = { premium: r => -r.prem, size: r => -r.volume, ratio: r => -(r.ratio ?? 1e9), time: r => -(Date.parse(r.last_trade || 0) || 0) }[flowF.sort];
+  rows.sort((a, b) => key(a) - key(b));
+  const bull = all.filter(r => r.mood === "bull").reduce((a, r) => a + r.prem, 0), bear = all.filter(r => r.mood === "bear").reduce((a, r) => a + r.prem, 0);
+  const cp = all.filter(r => r.kind === "call").reduce((a, r) => a + r.prem, 0), pp = all.filter(r => r.kind === "put").reduce((a, r) => a + r.prem, 0);
+  const sent = bull + bear ? bull / (bull + bear) : null, big = all.reduce((a, r) => !a || r.prem > a.prem ? r : a, null);
+  const C = 2 * Math.PI * 16, money = v => gexMoney(v).replace("−", "");
+  $("#flowTitle").textContent = `Unusual activity · ${d.ticker} ${d.exp}`;
+  $("#flowSnap").innerHTML = `
+    <div class="lp-stat gx-ring-stat"><span class="lp-ring" style="width:44px;height:44px"><svg viewBox="0 0 38 38" aria-hidden="true">
+        <circle cx="19" cy="19" r="16" fill="none" stroke="var(--down)" stroke-width="4" opacity="${sent == null ? 0.25 : 0.9}"/>
+        ${sent == null ? "" : `<circle cx="19" cy="19" r="16" fill="none" stroke="var(--up)" stroke-width="4" stroke-dasharray="${C * sent} ${C}"/>`}</svg>
+        <span>${sent == null ? "–" : Math.round(sent * 100)}</span></span>
+      <div><div class="k">Flow sentiment</div><div class="v ${sent == null ? "" : sent >= 0.55 ? "up" : sent <= 0.45 ? "down" : ""}">${sent == null ? "No side" : sent >= 0.55 ? "Bullish" : sent <= 0.45 ? "Bearish" : "Mixed"}</div>
+        <div class="gx-s">${sent == null ? "trades at the mid" : `${money(bull)} bullish · ${money(bear)} bearish`}</div></div></div>
+    <div class="lp-stat gx-wide"><div class="k">Call vs put premium</div>
+      <div class="lp-split" style="margin:6px 0 4px"><i style="width:${cp + pp ? cp / (cp + pp) * 100 : 50}%;background:var(--up)"></i><i style="width:${cp + pp ? pp / (cp + pp) * 100 : 50}%;background:var(--down)"></i></div>
+      <div class="gx-s"><span class="up">Calls ${money(cp)}</span> &nbsp; <span class="down">Puts ${money(pp)}</span></div></div>
+    <div class="lp-stat"><div class="k">Put / call volume</div><div class="v">${d.summary.pc_volume == null ? "–" : d.summary.pc_volume.toFixed(2)}</div><div class="gx-s">whole expiration</div></div>
+    <div class="lp-stat"><div class="k">Biggest print</div><div class="v">${big ? money(big.prem) : "–"}</div><div class="gx-s">${big ? `${f2(big.strike)} ${big.kind === "call" ? "C" : "P"} · ${int(big.volume)} contracts` : ""}</div></div>`;
+  $("#flowCount").textContent = `${rows.length} of ${all.length} contracts`;
+  if (!all.length) { $("#unusual").innerHTML = `<tbody><tr><td class="left note">No contracts traded at least 2× their open interest (500+ contracts) for this expiration.</td></tr></tbody>`; return flowDrawer(); }
+  const clock = r => !r.last_trade ? "–" : r.fresh ? new Date(r.last_trade).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : new Date(r.last_trade).toLocaleDateString([], { month: "short", day: "numeric" });
+  $("#unusual").innerHTML = `<thead><tr><th class="left">Time</th><th class="left">Contract</th><th class="left">C/P</th><th class="left">Side</th><th>Size</th><th>Price</th><th>Premium</th><th>Vol / OI</th><th>IV</th><th>Delta</th><th class="left">Tag</th></tr></thead><tbody>` +
+    (rows.length ? rows.map(r => `<tr class="fl-${r.mood}${flowSel === r.kind + r.strike ? " sel" : ""}" data-f="${r.kind}|${r.strike}" tabindex="0">
+      <td class="left note" title="${r.fresh ? "Last trade today" : "Last trade was before today; side may be stale"}">${clock(r)}</td>
+      <td class="left"><b>${f2(r.strike)}</b>${r.itm ? ' <span class="note">ITM</span>' : ""}</td>
+      <td class="left"><span class="fl-cp ${r.kind}">${r.kind === "call" ? "Calls" : "Puts"}</span></td>
+      <td class="left"><span class="fl-side ${r.mood}">${r.side}</span></td>
+      <td>${int(r.volume)}</td><td>${f2(r.px)}</td>
+      <td class="fl-prem ${r.kind === "call" ? "up" : "down"}">${money(r.prem)}</td>
+      <td>${r.oi ? r.ratio.toFixed(1) + "×" : "new"}</td><td>${pct(r.iv, 0)}</td><td>${f2(r.delta)}</td>
+      <td class="left"><span class="fl-tag t-${r.tag === "New" ? "new" : r.tag === "Hot" ? "hot" : "x"}">${r.tag}</span></td></tr>`).join("")
+      : `<tr><td class="left note" colspan="11">Nothing matches these filters.</td></tr>`) + "</tbody>";
+  flowDrawer();
+}
+function flowDrawer() {
+  const el = $("#flowDrawer"), d = current;
+  const r = d && flowSel ? flowRows(d).find(x => x.kind + x.strike === flowSel) : null;
+  el.classList.toggle("open", !!r);
+  el.setAttribute("aria-hidden", r ? "false" : "true");
+  if (!r) return;
+  const line = (k, v, cls = "") => `<span>${k}</span><span class="${cls}">${v}</span>`;
+  el.innerHTML = `
+    <div class="lp-dh"><div style="flex:1;min-width:0"><h3>Order details</h3>
+      <div class="sub">${esc(d.ticker)} ${f2(r.strike)} ${r.kind} · ${esc(d.exp)} · ${d.dte} days</div>
+      <div class="px"><span class="fl-side ${r.mood}">${r.mood === "bull" ? "Bullish" : r.mood === "bear" ? "Bearish" : "No clear side"}</span> <span class="fl-tag t-${r.tag === "New" ? "new" : r.tag === "Hot" ? "hot" : "x"}">${r.tag}</span></div></div>
+      <button class="ghost small" type="button" id="flowClose" aria-label="Close detail">✕</button></div>
+    <div class="lp-sec"><div class="lp-parts fl-details">
+      ${line("Ticker", esc(d.ticker))}${line("Premium (≈ volume × last)", "$" + Math.round(r.prem).toLocaleString(), r.kind === "call" ? "up" : "down")}
+      ${line("Expiration", esc(d.exp))}${line("Strike", f2(r.strike))}${line("Spot", f2(d.spot))}
+      ${line("Size (volume today)", int(r.volume))}${line("Open interest", int(r.oi))}${line("Vol / OI", r.oi ? r.ratio.toFixed(1) + "×" : "new")}
+      ${line("Price (last)", f2(r.last))}${line("Bid", f2(r.bid))}${line("Ask", f2(r.ask))}${line("Side", r.side)}
+      ${line("Last trade", r.last_trade ? new Date(r.last_trade).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "–")}
+      ${line("IV", pct(r.iv, 0))}${line("Delta", f2(r.delta))}${line("Gamma", r.gamma == null ? "–" : r.gamma.toFixed(4))}${line("Theta / day", f2(r.theta))}${line("Vega", f2(r.vega))}
+    </div></div>
+    <div class="lp-callout">Side compares the last trade with the bid and ask: at the ask = bought (bullish for calls, bearish for puts), at the bid = sold. Yahoo shows only the last print, not every trade, so this is a read on the latest order, not the whole day.</div>
+    <div class="lp-actions">
+      <button class="primary small" type="button" data-fb="buy">Buy in Builder</button>
+      <button class="ghost small" type="button" data-fb="sell">Sell in Builder</button>
+    </div>`;
+}
+$("#unusual").addEventListener("click", e => {
+  const tr = e.target.closest("tr[data-f]");
+  if (!tr) return;
+  const [k, s] = tr.dataset.f.split("|");
+  flowSel = flowSel === k + s ? null : k + s;
+  renderFlow();
+});
+$("#unusual").addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && e.target.closest("tr[data-f]")) { e.preventDefault(); e.target.click(); } });
+$("#flowDrawer").onclick = async e => {
+  if (e.target.closest("#flowClose")) { flowSel = null; return renderFlow(); }
+  const b = e.target.closest("button[data-fb]");
+  if (b && flowSel) { const r = flowRows(current).find(x => x.kind + x.strike === flowSel); if (r) await addLegFromChain(current, r.kind, r.strike, b.dataset.fb); }
+};
+$("#flowKind").onclick = e => { const k = e.target.dataset.kind; if (!k) return; flowF.kind = k; store.set("flowF", flowF); flowSync(); renderFlow(); };
+$("#flowMin").onchange = () => { flowF.min = +$("#flowMin").value; store.set("flowF", flowF); renderFlow(); };
+$("#flowSort").onchange = () => { flowF.sort = $("#flowSort").value; store.set("flowF", flowF); renderFlow(); };
+function flowSync() {
+  for (const b of document.querySelectorAll("#flowKind button")) b.classList.toggle("on", b.dataset.kind === flowF.kind);
+  $("#flowMin").value = String(flowF.min); $("#flowSort").value = flowF.sort;
+}
+flowSync();
+document.addEventListener("keydown", e => { if (e.key === "Escape" && flowSel) { flowSel = null; renderFlow(); } });
 
 /* ================= builder ================= */
 // [side, type, strike steps from the money (0 = at the money), qty, "far" = later expiration]
