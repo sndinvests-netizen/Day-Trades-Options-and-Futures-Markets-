@@ -456,6 +456,20 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
 #scrTable td.tk { text-align: left; }
 #scrTable th, #scrTable td { padding: 5px 6px; }   /* compact, so the extra RSI columns don't push Open interest off the edge */
 #scrTable .spark { width: 72px; }
+/* Builder: same header bar, compact stats strip and slide-in leg panel as the LEAPS Finder */
+.lp-top label, .b-top label { flex-direction: row; align-items: center; gap: 6px; }
+.b-top select, .b-top input { padding: 5px 8px; }
+.b-units { margin-top: 10px; }
+.b-units .unit-toggle { padding-bottom: 0; }
+#bTiles { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; box-shadow: var(--shadow);
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+#bTiles .tile { background: var(--well); border: 0; box-shadow: none; border-radius: 9px; padding: 8px 11px; }
+#bTiles .tile .k { font-size: 10px; }
+#bTiles .tile .v { font-size: 18px; }
+#bTiles .tile .s { font-size: 11px; }
+.legs th { font-size: 11px; }
+.legs tr.sel td { background-color: var(--itm); }
+#bLegs tbody tr:hover td { background-color: var(--hover); }
 /* Screener uses the LEAPS Finder look */
 #scrTable { min-width: 760px; }
 #scrTable td, #scrTable th { padding: 8px 10px; }
@@ -753,32 +767,36 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
   <!-- ===== Builder ===== -->
   <section id="view-builder" class="hidden">
     <div class="panel">
-      <form class="controls" id="bLookup">
-        <label>Ticker <input id="bTicker" autocomplete="off" spellcheck="false" placeholder="TSLA" style="width:110px;text-transform:uppercase;font-weight:700"></label>
-        <button class="primary" type="submit">Load</button>
-        <label>Strategy <select id="bStrategy"></select></label>
-        <label>Expiration <select id="bExp"></select></label>
+      <form class="lp-top b-top" id="bLookup">
+        <h2>Builder</h2>
+        <label for="bTicker">Ticker <input id="bTicker" autocomplete="off" spellcheck="false" placeholder="TSLA" style="width:96px;text-transform:uppercase;font-weight:700"></label>
+        <button class="primary small" type="submit">Load</button>
+        <label for="bStrategy">Strategy <select id="bStrategy"></select></label>
+        <label for="bExp">Expiration <select id="bExp"></select></label>
         <span id="bExpQuick" role="group" aria-label="Quick expiration"></span>
+        <span class="grow"></span>
+        <span class="lp-meta" id="bSpot"></span>
+      </form>
+      <div class="lp-filters b-units">
         <div class="unit-toggle"><span id="bUnitD">P/L $</span>
           <button type="button" class="switch" id="bUnitSw" role="switch" aria-checked="false" aria-label="Show profit and loss as a percent"><span class="knob"></span></button>
           <span id="bUnitP">P/L %</span> <span class="note" id="bUnitNote" style="font-weight:500"></span></div>
         <div class="unit-toggle" title="Show what the position is worth (what you'd get or pay to close it) instead of profit/loss">
           <button type="button" class="switch" id="bValueSw" role="switch" aria-checked="false" aria-label="Show contract value"><span class="knob"></span></button>
           <span id="bValueLbl">Contract value</span></div>
-        <span class="note" id="bSpot"></span>
-      </form>
+      </div>
     </div>
     <div id="bErr" class="err hidden"></div>
     <div id="bBody" class="hidden">
       <div class="panel">
-        <div class="row">
+        <div class="lp-top" style="margin-bottom:10px">
           <h2>Legs</h2>
-          <div>
-            <button class="ghost" type="button" id="bReset" title="Clear all legs and reset the sliders to start over">Reset</button>
-            <button class="ghost" type="button" id="bAddLeg">+ Add leg</button>
-            <button class="ghost" type="button" id="bRefresh">Refresh prices</button>
-            <button class="primary" type="button" id="bSave">Save to My Trades</button>
-          </div>
+          <span class="lp-meta" id="bLegCount"></span>
+          <span class="grow"></span>
+          <button class="ghost small" type="button" id="bReset" title="Clear all legs and reset the sliders to start over">Reset</button>
+          <button class="ghost small" type="button" id="bAddLeg">+ Add leg</button>
+          <button class="ghost small" type="button" id="bRefresh">Refresh prices</button>
+          <button class="primary small" type="button" id="bSave">Save to My Trades</button>
         </div>
         <div class="scroll"><table class="legs" id="bLegs"></table></div>
         <p class="note" id="bLegNote"></p>
@@ -807,6 +825,7 @@ label.scr-chip { flex-direction: row; align-items: center; gap: 6px; padding: 3p
         </div>
       </div>
     </div>
+    <aside class="lp-drawer lp-st" id="bDrawer" aria-label="Leg detail" aria-hidden="true"></aside>
   </section>
 
   <!-- ===== Trades ===== -->
@@ -2308,12 +2327,12 @@ function renderBuilder() {
 
 function renderLegs() {
   const fromTrades = B.legs.some(l => l.tradeId);
-  $("#bLegs").innerHTML = `<thead><tr><th>Side</th><th>Qty</th><th>Type</th><th>Expiration</th><th>Strike</th><th>Price</th><th class="num">Mid now</th><th class="num">IV</th><th class="num">Delta</th><th></th></tr></thead><tbody>` +
+  $("#bLegs").innerHTML = `<thead><tr><th>Side</th><th>Qty</th><th>Type</th><th>Expiration</th><th>Strike</th><th>Price</th><th class="num">Mid now</th><th class="num">IV</th><th class="num">Delta</th><th></th><th></th></tr></thead><tbody>` +
     B.legs.map((l, i) => {
       const stock = l.type === "stock";
       const ks = stock ? [] : strikesFor(l.exp);
       const g = stock ? { delta: 1 } : bsGreeks(l.type, B.spot, l.strike, (expMs(l.exp) - Date.now()) / YEAR, legIv(l, 1));
-      return `<tr class="${l.side}" data-i="${i}">
+      return `<tr class="${l.side}${bSel === l.uid ? " sel" : ""}" data-i="${i}">
         <td><select data-f="side"><option value="buy" ${l.side === "buy" ? "selected" : ""}>Buy</option><option value="sell" ${l.side === "sell" ? "selected" : ""}>Sell</option></select></td>
         <td><div class="stepper"><input class="qty" data-f="qty" type="number" min="1" step="1" value="${l.qty}" title="${stock ? "lots of 100 shares" : "contracts"}">
           <span class="steps"><button type="button" class="ghost step" data-step="1" aria-label="Increase quantity">▲</button><button type="button" class="ghost step" data-step="-1" aria-label="Decrease quantity">▼</button></span></div></td>
@@ -2324,12 +2343,16 @@ function renderLegs() {
         <td class="num">${stock ? f2(B.spot) : f2(l.mark)}</td>
         <td class="num">${stock ? "–" : pct(l.iv, 0)}</td>
         <td class="num">${f2(g.delta * legSign(l))}</td>
+        <td><button class="ghost small" type="button" data-info="${l.uid}" title="Leg details: Greeks, cost, breakeven and its own P/L chart">Details</button></td>
         <td><button class="ghost small" type="button" data-del="${i}" title="Remove leg">✕</button></td></tr>`;
     }).join("") + "</tbody>";
   $("#bLegNote").textContent = fromTrades
     ? "Showing a saved position from My Trades at its entry prices. Changes here aren't saved back; click a contract on the Chain tab to start a new idea."
     : "Price is what you pay or receive per share; it starts at the current mid. Edit it to match your fill.";
   $("#bLegs").classList.toggle("hidden", !B.legs.length);
+  const net = B.legs.reduce((a, l) => a + legSign(l) * l.qty * 100 * (l.price || 0), 0);
+  $("#bLegCount").textContent = B.legs.length ? `${B.legs.length} leg${B.legs.length > 1 ? "s" : ""} · ${net >= 0 ? "debit" : "credit"} ${usd(Math.abs(net))}` : "";
+  bDrawer();
   $("#bSave").disabled = fromTrades || !B.legs.length;
   $("#bSave").style.opacity = $("#bSave").disabled ? .5 : 1;
 }
@@ -2738,6 +2761,96 @@ async function openInBuilder(legRows) {
     renderBuilder();
   } catch (err) { builderError(err); showTab("builder"); }
 }
+
+/* ---- leg detail panel (same slide-in panel as the LEAPS Finder and Screener) ---- */
+let bSel = null;   // uid of the leg shown in the panel
+function bLegChart(l) {
+  const W = 400, H = 170, pl = 52, pr = 8, pt = 10, pb = 22, S0 = B.spot;
+  const span = l.type === "stock" ? 0.25 : Math.max(0.15, Math.min(0.6, Math.abs(l.strike / S0 - 1) * 2 + 0.12));
+  const lo = S0 * (1 - span), hi = S0 * (1 + span), n = 80, xs = [...Array(n + 1)].map((_, i) => lo + (hi - lo) * i / n);
+  const tE = l.type === "stock" ? Date.now() : expMs(l.exp);
+  const ex = xs.map(S => pnlAt([l], S, tE)), now = xs.map(S => pnlAt([l], S, Date.now()));
+  const all = [...ex, ...now, 0], yMin = Math.min(...all), yMax = Math.max(...all), pad = (yMax - yMin) * 0.08 || 1;
+  const X = S => pl + (S - lo) / (hi - lo) * (W - pl - pr), Y = v => pt + (yMax + pad - v) / (yMax - yMin + 2 * pad) * (H - pt - pb);
+  const path = vs => vs.map((v, i) => `${i ? "L" : "M"}${X(xs[i]).toFixed(1)} ${Y(v).toFixed(1)}`).join("");
+  const k = v => (v < 0 ? "−" : "+") + "$" + (Math.abs(v) >= 1000 ? (Math.abs(v) / 1000).toFixed(1) + "K" : Math.round(Math.abs(v)));
+  const t = (x, y, s, a, c = "var(--muted)") => `<text x="${x}" y="${y}" text-anchor="${a}" font-size="10" fill="${c}">${s}</text>`;
+  return `<svg class="lp-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="This leg's profit and loss">
+    <line x1="${pl}" x2="${W - pr}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--line)" stroke-width="1.5"/>
+    ${t(pl - 6, Y(0) + 3, "$0", "end")}${t(pl - 6, Y(yMax) + 8, k(yMax), "end", "var(--up)")}${t(pl - 6, Y(yMin), k(yMin), "end", "var(--down)")}
+    ${l.type === "stock" ? "" : `<path d="${path(now)}" fill="none" stroke="#5fa4e8" stroke-width="1.8" stroke-dasharray="5 4"/>`}
+    <path d="${path(ex)}" fill="none" stroke="var(--up)" stroke-width="2.5" stroke-linejoin="round"/>
+    <line x1="${X(S0)}" x2="${X(S0)}" y1="${pt}" y2="${H - pb}" stroke="var(--spot)" stroke-width="1.5"/>
+    ${t(X(lo), H - 6, f2(lo), "start")}${t(X(S0), H - 6, "now " + f2(S0), "middle", "var(--spot)")}${t(X(hi), H - 6, f2(hi), "end")}</svg>`;
+}
+function bDrawer() {
+  const el = $("#bDrawer");
+  if (!el) return;
+  const l = B.legs.find(x => x.uid === bSel);
+  if (!l) bSel = null;
+  el.classList.toggle("open", !!l);
+  el.setAttribute("aria-hidden", l ? "false" : "true");
+  if (!l) return;
+  const stock = l.type === "stock", sg = legSign(l), mult = l.qty * 100;
+  const T = stock ? 0 : (expMs(l.exp) - Date.now()) / YEAR;
+  const g = stock ? { delta: 1, gamma: 0, theta: 0, vega: 0 } : bsGreeks(l.type, B.spot, l.strike, T, legIv(l, 1));
+  const c = !stock && B.chains[l.exp], row = c && c[l.type === "call" ? "calls" : "puts"].find(x => x.strike === l.strike);
+  const mark = stock ? B.spot : l.mark, cost = sg * mult * (l.price || 0);
+  const plNow = mark == null ? null : sg * mult * (mark - l.price);
+  const intr = stock ? null : intrinsic(l.type, B.spot, l.strike), be = stock ? l.price : l.type === "call" ? l.strike + l.price : l.strike - l.price;
+  const days = stock ? null : daysTo(l.exp);
+  const title = stock ? `${l.side === "buy" ? "Buy" : "Sell"} ${l.qty * 100} shares of ${B.ticker}` :
+    `${l.side === "buy" ? "Buy" : "Sell"} ${l.qty} ${B.ticker} ${f2(l.strike)} ${l.type}${l.qty > 1 ? "s" : ""}`;
+  const stat = (k, v, cls = "") => `<div class="lp-stat"><div class="k">${k}</div><div class="v ${cls}">${v}</div></div>`;
+  const scrollTop = el.scrollTop;
+  el.innerHTML = `
+    <div class="lp-dh"><div style="flex:1;min-width:0"><h3>${esc(title)}</h3>
+      <div class="sub">${stock ? "Stock leg" : `${esc(l.exp)} · ${days} day${days === 1 ? "" : "s"} left`}${l.tradeId ? " · saved position" : ""}</div>
+      <div class="px">${esc(B.ticker)} ${f2(B.spot)}${stock ? "" : ` · ${l.type === "call" ? (B.spot > l.strike ? "in" : "out of") : (B.spot < l.strike ? "in" : "out of")} the money by ${pct(Math.abs(B.spot / l.strike - 1))}`}</div></div>
+      <button class="ghost small" type="button" id="bClose" aria-label="Close detail">✕</button></div>
+    <div class="lp-sec"><h4>Cost and value</h4><div class="lp-stats">
+      ${stat(cost >= 0 ? "You pay" : "You receive", usd(Math.abs(cost)))}
+      ${stat("Price / share", f2(l.price))}
+      ${stat("Mid now", mark == null ? "–" : f2(mark))}
+      ${stat("P/L now", plNow == null ? "–" : signedUsd(Math.round(plNow)), signed(plNow))}
+      ${stat("Breakeven", f2(be))}
+      ${stat("Move to BE", sgnPct(be / B.spot - 1))}
+      ${stock ? "" : stat("Intrinsic", f2(intr)) + stat("Time value", mark == null ? "–" : f2(Math.max(0, mark - intr))) + stat("Bid / ask", row ? `${f2(row.bid)} / ${f2(row.ask)}` : "–")}
+    </div></div>
+    ${stock ? "" : `<div class="lp-sec"><h4>Greeks for this leg (whole position)</h4><div class="lp-stats">
+      ${stat("Delta", (g.delta * sg * mult >= 0 ? "+" : "") + (g.delta * sg * mult).toFixed(0) + " sh")}
+      ${stat("Gamma", (g.gamma * sg * mult).toFixed(2))}
+      ${stat("Theta / day", signedUsd(Math.round(g.theta * sg * mult)), signed(g.theta * sg))}
+      ${stat("Vega / IV pt", signedUsd(Math.round(g.vega * sg * mult)))}
+      ${stat("IV", pct(l.iv, 0))}
+      ${stat("Open int.", row ? int(row.oi) : "–")}
+    </div></div>`}
+    <div class="lp-sec"><h4>This leg on its own</h4>${bLegChart(l)}
+      <div class="lp-callout"><span style="color:var(--up)">━</span> at expiration${stock ? "" : ` &nbsp; <span style="color:#5fa4e8">╍</span> today`} &nbsp; <span style="color:var(--spot)">│</span> stock price. The full position is in the chart on the page.</div></div>
+    <div class="lp-actions">
+      ${stock ? "" : `<button class="ghost small" type="button" data-bchain="${esc(B.ticker)}|${esc(l.exp)}">Open in Chain</button>`}
+      <button class="ghost small" type="button" data-tvb="${esc(B.ticker.replace("-", "."))}">TradingView</button>
+      <button class="ghost small danger" type="button" data-bdel="${l.uid}">Remove leg</button>
+    </div>
+    <p class="note" style="margin:0">Estimates from Black-Scholes with this leg's IV. Not advice.</p>`;
+  el.scrollTop = scrollTop;
+}
+$("#bLegs").addEventListener("click", e => {
+  const b = e.target.closest("button[data-info]");
+  if (!b) return;
+  bSel = bSel === +b.dataset.info ? null : +b.dataset.info;
+  renderLegs();
+});
+$("#bDrawer").onclick = async e => {
+  if (e.target.closest("#bClose")) { bSel = null; return renderLegs(); }
+  const del = e.target.closest("button[data-bdel]");
+  if (del) { const i = B.legs.findIndex(x => x.uid === +del.dataset.bdel); bSel = null; if (i >= 0) { B.legs.splice(i, 1); B.strategy = "Custom"; } return renderBuilder(); }
+  const ch = e.target.closest("button[data-bchain]");
+  if (ch) { const [tk, exp] = ch.dataset.bchain.split("|"); bSel = null; renderLegs(); $("#ticker").value = tk; showTab("chain"); return loadChain(tk, exp); }
+  const tv = e.target.closest("button[data-tvb]");
+  if (tv) { try { await api("/api/open-chart", { symbol: tv.dataset.tvb }); } catch (err) { toast(`Couldn't open ${tv.dataset.tvb} in Chrome: ${err.message}`, false); } }
+};
+document.addEventListener("keydown", e => { if (e.key === "Escape" && bSel != null) { bSel = null; renderLegs(); } });
 
 /* ================= trades ================= */
 let tradeData = null;
