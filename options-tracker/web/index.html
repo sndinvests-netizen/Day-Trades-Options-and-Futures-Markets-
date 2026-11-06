@@ -640,6 +640,13 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
 .lp-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
 .lp-dot.warn { background: #e0a526; } .lp-dot.down { background: var(--down); } .lp-dot.muted { background: var(--muted); }
 .lp-star { color: #e0a526; margin-right: 3px; }
+.lp-sim { display: grid; gap: 8px; margin-top: 10px; }
+.lp-sim label { display: grid; grid-template-columns: 62px 1fr auto; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.lp-sim label b { color: var(--text); font-variant-numeric: tabular-nums; min-width: 132px; text-align: right; font-size: 12px; }
+.lp-sim input[type=range] { width: 100%; accent-color: #5fa4e8; box-shadow: none; background: none; border: 0; padding: 0; }
+.lp-sim-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.lp-sim-chips .chip { padding: 2px 9px; font-size: 11px; }
+#lpSimOut .v { font-size: 17px; }
 .lp-look { font-size: 10px; font-weight: 700; color: #5fa4e8; border: 1px solid #5fa4e8; border-radius: 5px; padding: 0 5px; margin-left: 6px; vertical-align: 1px; }
 .lp-add { font-size: 11px; padding: 1px 7px; margin-left: 6px; }
 .lp-call { font-weight: 600; }
@@ -4742,25 +4749,73 @@ function renderLeaps() {
 }
 
 /* ---------- detail panel ---------- */
+/* Payoff chart with a what-if: drag the stock price and the date (today → expiration). Before expiration the
+   call is priced with Black-Scholes at today's IV; at expiration it's worth only what it's in the money. */
+let lpSim = null;   // {key, px, days} kept per contract so live refreshes don't reset the sliders
+const lpSimRange = (r, c) => {
+  const p = r.price, sg = lpSigma(r, c.dte) || 0.2;
+  return { lo: Math.min(c.strike, p) * 0.75, hi: Math.max(c.breakeven, p * (1 + 2 * sg)) * 1.08, sg };
+};
+function lpSimOf(r, c) {
+  const key = r.ticker + "|" + c.exp + "|" + c.strike;
+  if (!lpSim || lpSim.key !== key) lpSim = { key, px: r.price, days: c.dte };
+  return lpSim;
+}
+const lpCallAt = (c, S, left) => left <= 0 ? Math.max(0, S - c.strike)
+  : Math.max(Math.max(0, S - c.strike), bsPrice("call", S, c.strike, left / 365, c.iv || 0.3));
 function lpPayoff(r, c) {
   const W = 400, H = 170, pl = 46, pr = 8, pt = 10, pb = 22;
-  const p = r.price, sg = lpSigma(r, c.dte) || 0.2;
-  const lo = Math.min(c.strike, p) * 0.75, hi = Math.max(c.breakeven, p * (1 + 2 * sg)) * 1.08;
+  const p = r.price, { lo, hi, sg } = lpSimRange(r, c), sim = lpSimOf(r, c), left = c.dte - sim.days;
   const pnl = s => (Math.max(0, s - c.strike) - c.cost) * 100;
-  const yMin = pnl(lo), yMax = Math.max(pnl(hi), c.contract_cost * 0.5);
+  const xs = [...Array(61)].map((_, i) => lo + (hi - lo) * i / 60);
+  const mid = left > 0 ? xs.map(s => (lpCallAt(c, s, left) - c.cost) * 100) : null;
+  const yMin = Math.min(pnl(lo), ...(mid || [])), yMax = Math.max(pnl(hi), c.contract_cost * 0.5, ...(mid || []));
   const X = s => pl + (s - lo) / (hi - lo) * (W - pl - pr), Y = v => pt + (yMax - v) / (yMax - yMin) * (H - pt - pb);
   const k = v => Math.abs(v) >= 1000 ? (v / 1000).toFixed(1) + "K" : Math.round(v);
   const txt = (x, y, s, a = "middle", col = "var(--muted)") => `<text x="${x}" y="${y}" text-anchor="${a}" font-size="10" fill="${col}">${s}</text>`;
   const bandL = Math.max(pl, X(p * (1 - sg)));
-  return `<svg class="lp-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Profit and loss at expiration for one contract">
+  const v = (lpCallAt(c, sim.px, left) - c.cost) * 100, mx = X(Math.min(hi, Math.max(lo, sim.px)));
+  return `<svg class="lp-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Profit and loss for one contract">
     <rect x="${bandL}" y="${pt}" width="${Math.max(0, X(p * (1 + sg)) - bandL)}" height="${H - pt - pb}" fill="var(--well)"/>
     <line x1="${pl}" x2="${W - pr}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--line)" stroke-width="1.5"/>
-    ${txt(pl - 6, Y(0) + 3, "$0", "end")}${txt(pl - 6, Y(yMin) + 3, "−$" + k(c.contract_cost), "end", "var(--down)")}${txt(pl - 6, pt + 8, "+$" + k(yMax), "end", "var(--up)")}
+    ${txt(pl - 6, Y(0) + 3, "$0", "end")}${txt(pl - 6, Y(yMin) + 3, (yMin < 0 ? "−$" : "$") + k(Math.abs(yMin)), "end", "var(--down)")}${txt(pl - 6, pt + 8, "+$" + k(yMax), "end", "var(--up)")}
     <polyline points="${[lo, c.strike, hi].map(s => `${X(s).toFixed(1)},${Y(pnl(s)).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--lp-contract)" stroke-width="2.5" stroke-linejoin="round"/>
+    ${mid ? `<polyline points="${xs.map((s, i) => `${X(s).toFixed(1)},${Y(mid[i]).toFixed(1)}`).join(" ")}" fill="none" stroke="#e0a526" stroke-width="2" stroke-dasharray="5 4"/>` : ""}
     <line x1="${X(p)}" x2="${X(p)}" y1="${pt}" y2="${H - pb}" stroke="var(--text)" stroke-dasharray="3 3"/>
     <circle cx="${X(c.breakeven)}" cy="${Y(0)}" r="4" fill="var(--lp-contract)"/>
+    <line x1="${mx}" x2="${mx}" y1="${pt}" y2="${H - pb}" stroke="${v >= 0 ? "var(--up)" : "var(--down)"}" stroke-width="1.5"/>
+    <circle cx="${mx}" cy="${Y(v).toFixed(1)}" r="5.5" fill="${v >= 0 ? "var(--up)" : "var(--down)"}" stroke="var(--panel)" stroke-width="2"/>
     ${txt(X(lo), H - 6, lo.toFixed(0), "start")}${txt(X(p), H - 6, "now " + p.toFixed(0))}${txt(X(c.breakeven), H - 6 - (Math.abs(X(c.breakeven) - X(p)) < 50 ? 11 : 0), "BE " + c.breakeven.toFixed(0))}${txt(X(hi), H - 6, hi.toFixed(0), "end")}
   </svg>`;
+}
+function lpSimPanel(r, c) {
+  const { lo, hi, sg } = lpSimRange(r, c), sim = lpSimOf(r, c), p = r.price;
+  const chips = [["−10%", p * 0.9], ["Now", p], ["+10%", p * 1.1], ["+20%", p * 1.2], ["+30%", p * 1.3], ["+1σ", p * (1 + sg)], ["Breakeven", c.breakeven]]
+    .filter(([, x]) => x >= lo && x <= hi);
+  return `<div class="lp-sim">
+    <label>Stock at <input type="range" id="lpSimPx" min="${lo.toFixed(2)}" max="${hi.toFixed(2)}" step="${((hi - lo) / 400).toFixed(4)}" value="${sim.px}" aria-label="Stock price"> <b id="lpSimPxV"></b></label>
+    <label>Date <input type="range" id="lpSimD" min="0" max="${c.dte}" step="1" value="${sim.days}" aria-label="Days from today"> <b id="lpSimDV"></b></label>
+    <div class="lp-sim-chips">${chips.map(([l, x]) => `<button type="button" class="chip" data-simpx="${x.toFixed(2)}">${l}</button>`).join("")}
+      <button type="button" class="chip" data-simd="${c.dte}">At expiration</button></div>
+    <div class="lp-stats" id="lpSimOut"></div></div>`;
+}
+function lpSimPaint() {
+  const r = lpSel && lpData ? lpData.rows.find(x => x.ticker === lpSel) : null, c = r && lpBest(r);
+  if (!c || !$("#lpSimOut")) return;
+  const sim = lpSimOf(r, c), left = c.dte - sim.days, worth = lpCallAt(c, sim.px, left), pl = (worth - c.cost) * 100;
+  const when = new Date(Date.now() + sim.days * 864e5).toLocaleDateString([], { month: "short", day: "numeric", year: "2-digit" });
+  $("#lpSimPxV").textContent = `$${f2(sim.px)} (${sgnPct(sim.px / r.price - 1)})`;
+  $("#lpSimDV").textContent = left <= 0 ? `expiration · ${when}` : `${when} · ${left} day${left === 1 ? "" : "s"} left`;
+  const stat = (k, v, cls = "") => `<div class="lp-stat"><div class="k">${k}</div><div class="v ${cls}">${v}</div></div>`;
+  $("#lpSimOut").innerHTML = stat("Profit / loss", signedUsd(Math.round(pl)), signed(pl)) + stat("Return", sgnPct(pl / c.contract_cost), signed(pl))
+    + stat("Call worth", "$" + Math.round(worth * 100).toLocaleString()) + stat("Stock move", sgnPct(sim.px / r.price - 1));
+  $("#lpPay").innerHTML = lpPayoff(r, c);
+}
+function lpSimSet(px, days) {
+  if (!lpSim) return;
+  if (px != null) { lpSim.px = +px; const i = $("#lpSimPx"); if (i) i.value = px; }
+  if (days != null) { lpSim.days = +days; const i = $("#lpSimD"); if (i) i.value = days; }
+  lpSimPaint();
 }
 
 function lpCandGrid(r, c) {
@@ -4831,8 +4886,9 @@ function lpDrawer(quiet) {
         <div class="lp-stat"><div class="k">Spread</div><div class="v">${c.spread == null ? "–" : lpPct(c.spread)}</div></div>
         <div class="lp-stat"><div class="k">Open int.</div><div class="v">${int(c.oi)}</div></div>
       </div></div>
-    <div class="lp-sec"><h4>Profit / loss at expiration (1 contract)</h4>${lpPayoff(r, c)}
-      <div class="lp-callout">Shaded = a normal 1σ move by expiration${sg ? ` (±${lpPct(sg, 0)})` : ""}. Breakeven needs <b>${sgnPct(c.be_pct)}</b>${sg ? `, <b>${(c.be_pct / sg).toFixed(2)}σ</b>` : ""}. Dashed line = today's price.</div></div>
+    <div class="lp-sec"><h4>Profit / loss (1 contract): drag to see potential profit</h4><div id="lpPay">${lpPayoff(r, c)}</div>
+      ${lpSimPanel(r, c)}
+      <div class="lp-callout"><span style="color:var(--lp-contract)">━</span> at expiration · <span style="color:#e0a526">╍</span> on the date you pick (Black-Scholes at today's IV ${lpPct(c.iv, 0)}) · ● your what-if. Shaded = a normal 1σ move by expiration${sg ? ` (±${lpPct(sg, 0)})` : ""}. Breakeven needs <b>${sgnPct(c.be_pct)}</b>${sg ? `, <b>${(c.be_pct / sg).toFixed(2)}σ</b>` : ""}. Dashed line = today's price.</div></div>
     ${lpCandGrid(r, c)}` : `<div class="lp-callout">${esc(r.note || "No candidate contract for this term.")}</div>`}
     <div class="lp-sec"><h4>One-year trend</h4><a class="spark-link ${signed(r.ret12)}" role="link" data-tv="${esc(r.ticker.replace("-", "."))}" title="Open ${esc(r.ticker)} on TradingView in Chrome">${spark(r.spark).replace('<svg class="spark', '<svg style="width:100%;height:64px" class="spark')}</a>
       <div class="lp-parts"><span>vs 200-day</span><span>${sgnPct(r.vs200)}</span><span>vs SPY, 6 months</span><span>${sgnPct(r.rs6)}</span>
@@ -4845,7 +4901,16 @@ function lpDrawer(quiet) {
     </div>
     <p class="note" style="margin:0">A scanner, not advice. Check the chain before you trade.</p>`;
   el.scrollTop = scrollTop;
+  lpSimPaint();
 }
+$("#lpDrawer").addEventListener("input", e => {
+  if (e.target.id === "lpSimPx") lpSimSet(e.target.value, null);
+  if (e.target.id === "lpSimD") lpSimSet(null, e.target.value);
+});
+$("#lpDrawer").addEventListener("click", e => {
+  const b = e.target.closest("button[data-simpx], button[data-simd]");
+  if (b) lpSimSet(b.dataset.simpx ?? null, b.dataset.simd ?? null);
+});
 function lpOpenRow(t) {
   if (lpSel !== t) lpPick = null;
   lpSel = lpSel === t ? null : t;
