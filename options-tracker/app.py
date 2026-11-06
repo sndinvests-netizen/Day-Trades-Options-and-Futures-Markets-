@@ -28,7 +28,7 @@ from econ_calendar import usd_events
 from fear_greed import fear_greed
 from breadth import breadth
 from fees import order_fees
-from options_data import GEX_DAYS, GEX_MAX_EXPS, QuoteError, chain, gex, news, quote, vix
+from options_data import GEX_DAYS, GEX_MAX_EXPS, QuoteError, chain, gex, news, quote, vix, vix_history
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 INDEX = os.path.join(HERE, "web", "index.html")
@@ -230,6 +230,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(positions)
         elif url.path == "/api/vix":
             self.guard(lambda: dict(vix(), levels=vix_levels()))
+        elif url.path == "/api/vix/history":
+            self.guard(vix_history)
         elif url.path == "/api/econ":
             self.guard(usd_events)
         elif url.path == "/api/feargreed":
@@ -367,7 +369,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/open-chart":
             self.guard(lambda: open_chart(body.get("symbol")))
         elif path == "/api/tv-line":
-            self.guard(lambda: tv_line(body.get("symbol"), body.get("price"), body.get("label"), body.get("kind")))
+            self.guard(lambda: tv_lines(body.get("symbol"), body.get("lines") or [body], body.get("clear_prefix")))
         else:
             self.send(404, {"error": "not found"})
 
@@ -445,74 +447,87 @@ def _tv_eval(tab, expr, wait=4.0):
     raise QuoteError("TradingView page didn't answer")
 
 
-def tv_line(symbol, price, label, kind):
-    """Draw a labeled horizontal line on a TradingView chart of `symbol` in Chrome.
-    Uses an open TradingView tab already showing that symbol, otherwise opens the Option Layout chart on it.
-    A redraw of the same level kind (e.g. a new call wall) replaces the old line."""
+def _tv_tab(sym):
+    """A Chrome tab whose TradingView chart shows `sym`, opening the Option Layout chart on it if none does."""
+    tabs = [l.split("|", 2) for l in _osa(_TV_TABS).splitlines() if l.count("|") >= 2]
+    # tabs whose address names the ticker first: they're the likely match, so most draws need one check
+    tabs.sort(key=lambda x: not re.search(r"symbol=([A-Z_]+(%3A|:))?" + re.escape(sym) + r"(&|$)", x[2], re.I))
+    for w_id, t_id, _url in tabs:
+        try:
+            cur = _tv_eval([w_id, t_id], _TV_SYM, wait=2) or ""
+        except QuoteError as e:
+            if "Allow JavaScript" in str(e):
+                raise
+            continue
+        if cur.split(":")[-1].upper() == sym:
+            return [w_id, t_id]
+    tab = _osa(_TV_OPEN, TV_LAYOUT + "?symbol=" + sym).split("|")
+    if len(tab) != 2:
+        raise QuoteError("couldn't open a TradingView tab in Chrome")
+    deadline = time.time() + 25
+    while True:
+        time.sleep(1)
+        try:
+            cur = _tv_eval(tab, _TV_SYM, wait=1.5) or ""
+        except QuoteError as e:
+            if "Allow JavaScript" in str(e):
+                raise
+            cur = ""
+        if cur.split(":")[-1].upper() == sym:
+            time.sleep(1.5)   # let the series finish loading before drawing
+            return tab
+        if time.time() > deadline:
+            raise QuoteError(f"TradingView didn't load {sym} in time (logged out?)")
+
+
+_TV_LABEL = re.compile(r"[^\w .·()+/%:&-]")
+
+
+def tv_lines(symbol, lines, clear_prefix=None):
+    """Draw labeled horizontal lines on a TradingView chart of `symbol` in Chrome.
+    Each line: {price, label, kind (call/put/flip/strike/level), color (#rrggbb, for kind "level")}.
+    A redraw of a GEX wall/flip replaces the old one; lines with the same label are replaced;
+    `clear_prefix` first removes every line whose label starts with it (e.g. a full redraw of the VIX levels)."""
     sym = str(symbol or "").upper().replace("-", ".")
     if not re.fullmatch(r"[A-Z0-9.^=!_]{1,15}", sym):
         raise QuoteError("bad symbol")
-    try:
-        price = float(price)
-    except (TypeError, ValueError):
-        raise QuoteError("bad price")
-    if not 0 < price < 1e7:
-        raise QuoteError("bad price")
-    kind = kind if kind in TV_COLORS else "strike"
-    label = re.sub(r"[^\w .·()+/%:-]", "", str(label or ""))[:60] or f"{price:g}"
-    with _tv_lock:
-        tab = None
-        tabs = [l.split("|", 2) for l in _osa(_TV_TABS).splitlines() if l.count("|") >= 2]
-        # tabs whose address names the ticker first: they're the likely match, so most draws need one check
-        tabs.sort(key=lambda x: not re.search(r"symbol=([A-Z_]+(%3A|:))?" + re.escape(sym) + r"(&|$)", x[2], re.I))
-        for w_id, t_id, _url in tabs:
-            parts = [w_id, t_id]
-            try:
-                cur = _tv_eval(parts, _TV_SYM, wait=2) or ""
-            except QuoteError as e:
-                if "Allow JavaScript" in str(e):
-                    raise
-                continue
-            if cur.split(":")[-1].upper() == sym:
-                tab = parts
-                break
-        if not tab:
-            tab = _osa(_TV_OPEN, TV_LAYOUT + "?symbol=" + sym).split("|")
-            if len(tab) != 2:
-                raise QuoteError("couldn't open a TradingView tab in Chrome")
-            deadline = time.time() + 25
-            while True:
-                time.sleep(1)
-                try:
-                    cur = _tv_eval(tab, _TV_SYM, wait=1.5) or ""
-                except QuoteError as e:
-                    if "Allow JavaScript" in str(e):
-                        raise
-                    cur = ""
-                if cur.split(":")[-1].upper() == sym:
-                    time.sleep(1.5)   # let the series finish loading before drawing
-                    break
-                if time.time() > deadline:
-                    raise QuoteError(f"TradingView didn't load {sym} in time (logged out?)")
-        color = TV_COLORS[kind]
+    if not isinstance(lines, list) or not 1 <= len(lines) <= 30:
+        raise QuoteError("nothing to draw")
+    out = []
+    for l in lines:
+        try:
+            price = float(l.get("price"))
+        except (TypeError, ValueError, AttributeError):
+            raise QuoteError("bad price")
+        if not 0 < price < 1e7:
+            raise QuoteError("bad price")
+        kind = l.get("kind") if l.get("kind") in TV_COLORS or l.get("kind") == "level" else "strike"
+        color = l.get("color") if kind == "level" and re.fullmatch(r"#[0-9a-fA-F]{6}", str(l.get("color") or "")) else TV_COLORS.get(kind, "#787b86")
+        label = _TV_LABEL.sub("", str(l.get("label") or ""))[:60] or f"{price:g}"
         prefix = {"call": "Call wall", "put": "Put wall", "flip": "Gamma flip"}.get(kind)
+        out.append({"price": price, "text": label, "color": color, "prefix": prefix})
+    clear = _TV_LABEL.sub("", str(clear_prefix or ""))[:40] or None
+    with _tv_lock:
+        tab = _tv_tab(sym)
         js = """(function(){
-  const c = TradingViewApi.activeChart(), TEXT = %s, PREFIX = %s;
+  const c = TradingViewApi.activeChart(), L = %s, CLEAR = %s;
   for (const s of c.getAllShapes()) {
     try { const t = (c.getShapeById(s.id).getProperties() || {}).text || "";
-      if (t === TEXT || (PREFIX && t.startsWith(PREFIX + " ") && t.endsWith("(GEX)"))) c.removeEntity(s.id); } catch (e) {}
+      if ((CLEAR && t.startsWith(CLEAR)) || L.some(l => t === l.text || (l.prefix && t.startsWith(l.prefix + " ") && t.endsWith("(GEX)")))) c.removeEntity(s.id); } catch (e) {}
   }
-  c.createShape({time: Math.floor(Date.now() / 1000), price: %s}, {shape: "horizontal_line", text: TEXT, lock: false,
-    overrides: {linecolor: %s, textcolor: %s, linewidth: 2, linestyle: 0, fontsize: 12, showLabel: true, horzLabelsAlign: "right"}});
+  const now = Math.floor(Date.now() / 1000);
+  for (const l of L) c.createShape({time: now, price: l.price}, {shape: "horizontal_line", text: l.text, lock: false,
+    overrides: {linecolor: l.color, textcolor: l.color, linewidth: 2, linestyle: 0, fontsize: 12, showLabel: true, horzLabelsAlign: "right"}});
   return "ok";
-})()""" % (json.dumps(label), json.dumps(prefix), repr(price), json.dumps(color), json.dumps(color))
+})()""" % (json.dumps(out), json.dumps(clear))
         _tv_eval(tab, js)
         time.sleep(0.8)
-        check = "(function(){const c=TradingViewApi.activeChart();return c.getAllShapes().filter(s=>{try{return (c.getShapeById(s.id).getProperties()||{}).text===%s}catch(e){return false}}).length})()" % json.dumps(label)
-        n = _tv_eval(tab, check)
-        if not n:
-            raise QuoteError("TradingView didn't accept the line; is the chart fully loaded?")
-    return {"drawn": label, "symbol": sym, "price": price}
+        check = ("(function(){const c=TradingViewApi.activeChart(),T=%s;const have=c.getAllShapes().map(s=>{try{return (c.getShapeById(s.id).getProperties()||{}).text}catch(e){return ''}});"
+                 "return T.filter(t=>have.includes(t)).length})()") % json.dumps([o["text"] for o in out])
+        n = _tv_eval(tab, check) or 0
+        if n < len(out):
+            raise QuoteError(f"TradingView only took {n} of {len(out)} lines; is the chart fully loaded?")
+    return {"drawn": [o["text"] for o in out], "symbol": sym}
 
 
 def main():

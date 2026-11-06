@@ -377,11 +377,22 @@ input[type=range].glow:focus-visible { outline: 3px solid rgba(111,174,233,.5); 
 .vix-alert p { margin: 0 0 8px; }
 @keyframes vixIn { from { transform: translateY(-8px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .vix-alert { animation: none; } }
-#vixDlg { width: min(900px, calc(100vw - 32px)); max-width: none; }
-#vixDlg table { width: 100%; }
-#vixDlg table input { width: 100%; }
-#vixDlg td { padding: 4px; vertical-align: middle; }
-#vixDlg .swatch { width: 34px; padding: 0; height: 28px; }
+/* VIX panel: slide-in like the other detail panels */
+.vx-drawer { width: min(480px, 100vw); }
+.vx-drawer h3 .vx-chg { font-size: 14px; font-weight: 600; }
+.vx-drawer h4 { display: flex; align-items: center; gap: 8px; }
+.vx-range { margin-left: auto; }
+.vx-pill { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 1px 8px; color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.35); margin-right: 6px; }
+.vx-gauge, .vx-chart { width: 100%; height: auto; display: block; }
+.vx-levels { display: grid; gap: 8px; }
+.vx-lv { display: grid; grid-template-columns: 34px 84px 1fr auto; gap: 6px; align-items: center; background: var(--well);
+  border-left: 4px solid var(--c, #6faee9); border-radius: 9px; padding: 8px; }
+.vx-lv input, .vx-lv select { padding: 4px 7px; min-width: 0; width: 100%; }
+.vx-lv .vx-wide { grid-column: 1 / -1; }
+.vx-lv .swatch { width: 34px; height: 28px; padding: 0; }
+.vx-lv.vx-on { box-shadow: 0 0 0 1px var(--c); }
+.vx-lv.vx-in { animation: lpIn .3s ease both; }
+.lp-actions .grow { flex: 1; }
 
 .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 20; background: var(--panel);
   border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; box-shadow: 0 12px 34px rgba(0,0,0,.3);
@@ -1117,29 +1128,39 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
 
 <div class="vix-alerts" id="vixAlerts" aria-live="assertive"></div>
 
-<dialog id="vixDlg">
-  <form method="dialog" id="vixForm">
-    <h2 style="margin-top:0">VIX levels and alerts</h2>
-    <p class="note" style="margin-top:0">A pop-up appears in the tracker when VIX crosses a level in the direction you set. It fires once per cross and re-arms after VIX moves back.
-      VIX is <b id="vixDlgNow">–</b> (Yahoo ^VIX, checked every minute while the tracker is open).</p>
-    <div class="scroll"><table>
-      <thead><tr><th class="left">Level</th><th class="left">Alert when VIX</th><th class="left">Label</th><th class="left">What to do</th><th></th><th></th></tr></thead>
-      <tbody id="vixRows"></tbody>
-    </table></div>
-    <div class="inline" style="margin-top:10px">
-      <button class="ghost small" type="button" id="vixAdd">Add level</button>
+<aside class="lp-drawer lp-st vx-drawer" id="vixDrawer" aria-label="VIX levels and alerts" aria-hidden="true">
+  <div class="lp-dh"><div style="flex:1;min-width:0">
+      <h3>VIX <span id="vixDlgNow">–</span> <span class="vx-chg" id="vxChg"></span></h3>
+      <div class="sub">CBOE Volatility Index · Yahoo ^VIX, checked every minute while the tracker is open</div>
+      <div class="px" id="vxZoneLine"></div></div>
+    <button class="ghost small" type="button" id="vxClose" aria-label="Close VIX panel">✕</button></div>
+  <div class="lp-sec"><h4>Where VIX sits in your levels</h4><div id="vxGauge"></div></div>
+  <div class="lp-sec"><h4>Past year <span class="tabs mini vx-range" id="vxRange" role="group" aria-label="Chart range">
+      <button type="button" data-n="63">3M</button><button type="button" data-n="126">6M</button><button type="button" data-n="0">1Y</button></span></h4>
+    <div id="vxChart"><div class="note">Loading VIX history…</div></div>
+    <div class="lp-stats" id="vxStats"></div></div>
+  <div class="lp-sec"><h4>Levels and alerts</h4>
+    <p class="note" style="margin:0 0 8px">A pop-up appears when VIX crosses a level in the direction you set. It fires once per cross and re-arms after VIX moves back.</p>
+    <div class="vx-levels" id="vixRows"></div>
+    <div class="lp-actions">
+      <button class="ghost small" type="button" id="vixAdd">+ Add level</button>
+      <span class="grow"></span>
+      <button class="primary small" type="button" id="vixSave">Save levels</button>
+    </div></div>
+  <div class="lp-sec"><h4>Alerts</h4>
+    <div class="lp-actions" style="margin-top:0">
       <button class="ghost small" type="button" id="vixTest">Test pop-up</button>
       <button class="ghost small" type="button" id="vixNotify">Desktop notifications</button>
-      <span class="note" id="vixNotifyNote"></span>
     </div>
-    <h3 style="margin-bottom:4px">Recent alerts</h3>
-    <div class="note" id="vixLog">None yet.</div>
-    <div class="inline" style="justify-content:flex-end;margin-top:14px">
-      <button class="ghost" type="button" data-close>Cancel</button>
-      <button class="primary" type="button" id="vixSave">Save levels</button>
-    </div>
-  </form>
-</dialog>
+    <p class="note" id="vixNotifyNote" style="margin:6px 0 0"></p>
+    <h4 style="margin-top:12px">Recent alerts</h4>
+    <div class="note" id="vixLog">None yet.</div></div>
+  <div class="lp-actions">
+    <button class="ghost small" type="button" id="vxTv">Open VIX on TradingView</button>
+    <button class="ghost small" type="button" id="vxDraw" title="Draws each saved level in its color on the VIX chart in Chrome (replaces earlier VIX level lines)">Draw levels on TradingView</button>
+  </div>
+  <p class="note" style="margin:0">Levels are your own guide. Not advice.</p>
+</aside>
 
 <div class="toast hidden" id="toast"><span id="toastMsg"></span><button class="primary small" type="button" id="toastGo">Open Builder</button></div>
 
@@ -1872,6 +1893,7 @@ function renderVix() {
   $("#vixNext").textContent = [above && `↑ ${above.price.toFixed(2)} ${above.label}`, below && `↓ ${below.price.toFixed(2)} ${below.label}`].filter(Boolean).join(" · ");
   $("#vixBadge").title = (z ? `${z.label}: ${z.note}\n\n` : "") + "Click to edit your VIX levels and alerts.";
   $("#vixDlgNow").textContent = d.level.toFixed(2);
+  if (vxOpen()) vxRender();
 }
 function vixPopup(l, level, test) {
   const box = document.createElement("div");
@@ -1918,34 +1940,115 @@ async function loadVix() {
     $("#vixNext").textContent = "no VIX quote";
   }
 }
-function vixRow(l = { price: "", dir: "up", label: "", note: "", color: "#6faee9" }) {
-  return `<tr><td><input type="number" step="0.01" min="0" data-k="price" value="${l.price}" style="width:80px"></td>
-    <td><select data-k="dir"><option value="up"${l.dir === "up" ? " selected" : ""}>rises through</option><option value="down"${l.dir === "down" ? " selected" : ""}>falls through</option></select></td>
-    <td><input data-k="label" value="${esc(l.label)}" style="width:150px"></td>
-    <td style="width:45%"><input data-k="note" value="${esc(l.note)}" style="min-width:220px"></td>
-    <td><input type="color" class="swatch" data-k="color" value="${esc(l.color)}"></td>
-    <td><button class="ghost small danger" type="button" data-vix-del>Remove</button></td></tr>`;
+function vixRow(l = { price: "", dir: "up", label: "", note: "", color: "#6faee9" }, fresh) {
+  const on = vixData && l.price !== "" && (vixZone(vixData.level) || {}).price === +l.price;
+  return `<div class="vx-lv${on ? " vx-on" : ""}${fresh ? " vx-in" : ""}" style="--c:${esc(l.color)}">
+    <input type="color" class="swatch" data-k="color" value="${esc(l.color)}" aria-label="Color">
+    <input type="number" step="0.01" min="0" data-k="price" value="${l.price}" placeholder="Level" aria-label="Level">
+    <select data-k="dir" aria-label="Alert direction"><option value="up"${l.dir === "up" ? " selected" : ""}>▲ rises through</option><option value="down"${l.dir === "down" ? " selected" : ""}>▼ falls through</option></select>
+    <button class="ghost small danger" type="button" data-vix-del aria-label="Remove level">✕</button>
+    <input class="vx-wide" data-k="label" value="${esc(l.label)}" placeholder="Label, e.g. Caution" aria-label="Label">
+    <input class="vx-wide" data-k="note" value="${esc(l.note)}" placeholder="What to do when it crosses" aria-label="What to do"></div>`;
 }
+/* ---- VIX panel ---- */
+let vxHist = null, vxN = store.get("vxRange", 126);
+const vxOpen = () => $("#vixDrawer").classList.contains("open");
 function openVixDlg() {
-  $("#vixRows").innerHTML = vixSorted().map(vixRow).join("");
+  $("#vixRows").innerHTML = vixSorted().map(l => vixRow(l)).join("");
   const log = store.get("vixLog", []);
-  $("#vixLog").innerHTML = log.length ? log.map(x => `${new Date(x.t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · VIX ${x.dir === "down" ? "fell" : "rose"} to ${x.level.toFixed(2)} · ${esc(x.label)} (${x.price.toFixed(2)})`).join("<br>") : "None yet.";
+  $("#vixLog").innerHTML = log.length ? log.map(x => `<div><span class="vx-pill" style="background:${x.dir === "down" ? "#089981" : "#f23645"}">${x.dir === "down" ? "↓" : "↑"} ${x.level.toFixed(2)}</span>${new Date(x.t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · ${esc(x.label)} (${x.price.toFixed(2)})</div>`).join("") : "None yet.";
   vixNotifyNote();
-  $("#vixDlg").showModal();
+  $("#vixDrawer").classList.add("open");
+  $("#vixDrawer").setAttribute("aria-hidden", "false");
+  vxRender();
+  if (!vxHist) api("/api/vix/history").then(h => { vxHist = h; vxRender(); }).catch(e => { $("#vxChart").innerHTML = `<div class="note">No VIX history: ${esc(e.message)}</div>`; });
 }
+function vxClose() { $("#vixDrawer").classList.remove("open"); $("#vixDrawer").setAttribute("aria-hidden", "true"); }
+function vxRender() {
+  const d = vixData;
+  if (!d) return;
+  const ch = $("#vxChg");
+  ch.textContent = `${d.change >= 0 ? "▲" : "▼"} ${Math.abs(d.change).toFixed(2)} (${sgnPct(d.change / d.prev_close)})`;
+  ch.className = "vx-chg " + (d.change >= 0 ? "down" : "up");
+  const z = vixZone(d.level), ls = vixSorted();
+  const above = ls.find(l => l.price > d.level), below = [...ls].reverse().find(l => l.price < d.level);
+  $("#vxZoneLine").innerHTML = (z ? `<span class="vx-pill" style="background:${esc(z.color)}">${esc(z.label)}</span>${esc(z.note)}` : "Between your levels: no zone active")
+    + `<div class="note" style="margin-top:4px">${[above && `next up ${above.price.toFixed(2)} ${esc(above.label)} (${sgnPct(above.price / d.level - 1)})`, below && `next down ${below.price.toFixed(2)} ${esc(below.label)} (${sgnPct(below.price / d.level - 1)})`].filter(Boolean).join(" · ")}</div>`;
+  $("#vxGauge").innerHTML = vxGauge(d.level, ls);
+  for (const b of document.querySelectorAll("#vxRange button")) b.classList.toggle("on", +b.dataset.n === vxN);
+  if (!vxHist) return;
+  const all = vxHist.closes.slice(0, -1).concat([d.level]);   // today's close = the live level
+  const xs = vxN ? all.slice(-vxN) : all, dates = vxN ? vxHist.dates.slice(-vxN) : vxHist.dates;
+  $("#vxChart").innerHTML = vxChart(xs, dates, ls);
+  const yr = all, rank = yr.filter(v => v <= d.level).length / yr.length;
+  const avg20 = all.slice(-20).reduce((a, b) => a + b, 0) / Math.min(20, all.length);
+  const stat = (k, v, cls = "") => `<div class="lp-stat"><div class="k">${k}</div><div class="v ${cls}">${v}</div></div>`;
+  $("#vxStats").innerHTML = stat("Range high", Math.max(...xs).toFixed(2)) + stat("Range low", Math.min(...xs).toFixed(2))
+    + stat("20-day avg", avg20.toFixed(2), d.level > avg20 ? "down" : "up") + stat("1-year rank", pct(rank, 0), rank > 0.8 ? "down" : rank < 0.2 ? "up" : "");
+}
+function vxGauge(v, ls) {
+  const W = 440, H = 78, pl = 8, pr = 8, y0 = 34, h = 12;
+  const top = Math.max(40, v * 1.15, ...ls.map(l => l.price * 1.1)), lo = Math.min(9, ...ls.map(l => l.price * 0.9));
+  const X = x => pl + (x - lo) / (top - lo) * (W - pl - pr);
+  const cuts = [lo, ...ls.map(l => l.price), top];
+  let segs = "";
+  for (let i = 0; i < cuts.length - 1; i++) {
+    const z = vixZone((cuts[i] + cuts[i + 1]) / 2);
+    segs += `<rect x="${X(cuts[i]).toFixed(1)}" y="${y0}" width="${Math.max(0, X(cuts[i + 1]) - X(cuts[i])).toFixed(1)}" height="${h}" fill="${z ? esc(z.color) : "var(--well)"}" opacity="${z ? 0.75 : 1}"/>`;
+  }
+  const ticks = ls.map((l, i) => `<line x1="${X(l.price)}" x2="${X(l.price)}" y1="${y0 - 3}" y2="${y0 + h + 3}" stroke="var(--text)" stroke-width="1"/>
+    <text x="${Math.min(W - 4, Math.max(4, X(l.price)))}" y="${i % 2 ? y0 - 6 : y0 - 19}" text-anchor="${X(l.price) < 40 ? "start" : X(l.price) > W - 40 ? "end" : "middle"}" font-size="10" fill="var(--muted)">${l.price.toFixed(0)} ${esc(l.label.length > 13 ? l.label.slice(0, 12) + "…" : l.label)}</text>`).join("");
+  const mx = X(Math.min(v, top));
+  return `<svg class="vx-gauge" viewBox="0 0 ${W} ${H}" role="img" aria-label="VIX ${v.toFixed(2)} on your level scale">
+    <rect x="${pl}" y="${y0}" width="${W - pl - pr}" height="${h}" rx="6" fill="var(--well)"/>${segs}${ticks}
+    <path d="M${mx - 7} ${y0 + h + 12}L${mx + 7} ${y0 + h + 12}L${mx} ${y0 + h + 2}Z" fill="var(--spot)"/>
+    <line x1="${mx}" x2="${mx}" y1="${y0 - 2}" y2="${y0 + h + 2}" stroke="var(--spot)" stroke-width="2.5"/>
+    <text x="${Math.min(W - 30, Math.max(30, mx))}" y="${H - 3}" text-anchor="middle" font-size="11" font-weight="700" fill="var(--spot)">now ${v.toFixed(2)}</text></svg>`;
+}
+function vxChart(xs, dates, ls) {
+  const W = 440, H = 190, pl = 34, pr = 8, pt = 10, pb = 20;
+  const mn = Math.min(...xs) * 0.92, mx = Math.max(...xs) * 1.06;
+  const X = i => pl + i / Math.max(1, xs.length - 1) * (W - pl - pr), Y = v => pt + (mx - v) / (mx - mn) * (H - pt - pb);
+  const path = xs.map((v, i) => `${i ? "L" : "M"}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join("");
+  const lines = ls.filter(l => l.price > mn && l.price < mx).map(l => `<line x1="${pl}" x2="${W - pr}" y1="${Y(l.price).toFixed(1)}" y2="${Y(l.price).toFixed(1)}" stroke="${esc(l.color)}" stroke-dasharray="4 4" stroke-width="1.2"/>
+    <text x="${W - pr}" y="${(Y(l.price) - 3).toFixed(1)}" text-anchor="end" font-size="10" fill="${esc(l.color)}">${l.price.toFixed(2)} ${esc(l.label)}</text>`).join("");
+  const last = xs.length - 1, t = (x, y, s, a) => `<text x="${x}" y="${y}" text-anchor="${a}" font-size="10" fill="var(--muted)">${s}</text>`;
+  const fmtD = s => new Date(s + "T12:00:00").toLocaleDateString([], { month: "short", day: "numeric" });
+  return `<svg class="vx-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="VIX daily closes with your levels">
+    <defs><linearGradient id="vxFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#f23645" stop-opacity=".28"/><stop offset="1" stop-color="#f23645" stop-opacity="0"/></linearGradient></defs>
+    ${lines}<path d="${path}L${X(last)} ${H - pb}L${X(0)} ${H - pb}Z" fill="url(#vxFill)"/>
+    <path d="${path}" fill="none" stroke="#f23645" stroke-width="1.8" stroke-linejoin="round"/>
+    <circle cx="${X(last)}" cy="${Y(xs[last])}" r="3.5" fill="var(--spot)"/>
+    ${t(pl - 4, Y(mx) + 9, mx.toFixed(0), "end")}${t(pl - 4, Y(mn), mn.toFixed(0), "end")}
+    ${t(X(0), H - 5, fmtD(dates[0]), "start")}${t(X(last), H - 5, "today", "end")}</svg>`;
+}
+$("#vxRange").onclick = e => { const b = e.target.closest("button[data-n]"); if (!b) return; vxN = +b.dataset.n; store.set("vxRange", vxN); vxRender(); };
+$("#vxClose").onclick = vxClose;
+document.addEventListener("keydown", e => { if (e.key === "Escape" && vxOpen() && !document.querySelector("dialog[open]")) vxClose(); });
+$("#vixRows").addEventListener("input", e => { if (e.target.dataset.k === "color") e.target.closest(".vx-lv").style.setProperty("--c", e.target.value); });
+$("#vxTv").onclick = async () => { try { await api("/api/open-chart", { symbol: "TVC:VIX" }); } catch (err) { toast("Couldn't open VIX in Chrome: " + err.message, false); } };
+$("#vxDraw").onclick = async () => {
+  const ls = vixSorted();
+  if (!ls.length) return toast("Save some VIX levels first", false);
+  toast(`Drawing ${ls.length} VIX levels on TradingView…`, false);
+  try {
+    await api("/api/tv-line", { symbol: "VIX", clear_prefix: "VIX ·", lines: ls.map(l => ({ price: l.price, kind: "level", color: l.color, label: `VIX · ${l.label} ${l.price.toFixed(2)}` })) });
+    toast(`Drew ${ls.length} VIX levels on the TradingView VIX chart in Chrome`, false);
+  } catch (err) { toast("Couldn't draw the levels: " + err.message, false); }
+};
 function vixNotifyNote() {
   const p = "Notification" in window ? Notification.permission : "unsupported";
   $("#vixNotifyNote").textContent = p === "granted" ? "Desktop notifications on: alerts also show when this tab is in the background."
     : p === "denied" ? "Desktop notifications are blocked in your browser settings." : "Optional: also show alerts as Mac notifications.";
   $("#vixNotify").hidden = p === "granted" || p === "unsupported";
 }
-$("#vixBadge").onclick = openVixDlg;
-$("#vixAdd").onclick = () => $("#vixRows").insertAdjacentHTML("beforeend", vixRow());
-$("#vixRows").onclick = e => { if (e.target.closest("[data-vix-del]")) e.target.closest("tr").remove(); };
+$("#vixBadge").onclick = () => vxOpen() ? vxClose() : openVixDlg();
+$("#vixAdd").onclick = () => { $("#vixRows").insertAdjacentHTML("beforeend", vixRow(undefined, true)); $("#vixRows").lastElementChild.querySelector("[data-k=price]").focus(); };
+$("#vixRows").onclick = e => { if (e.target.closest("[data-vix-del]")) e.target.closest(".vx-lv").remove(); };
 $("#vixTest").onclick = () => { const z = (vixData && vixZone(vixData.level)) || vixSorted()[0]; if (z) vixPopup(z, vixData ? vixData.level : z.price, true); };
 $("#vixNotify").onclick = async () => { try { await Notification.requestPermission(); } catch {} vixNotifyNote(); };
 $("#vixSave").onclick = async () => {
-  const levels = [...$("#vixRows").querySelectorAll("tr")].map(tr => Object.fromEntries([...tr.querySelectorAll("[data-k]")].map(i => [i.dataset.k, i.value])))
+  const levels = [...$("#vixRows").querySelectorAll(".vx-lv")].map(tr => Object.fromEntries([...tr.querySelectorAll("[data-k]")].map(i => [i.dataset.k, i.value])))
     .filter(l => l.price !== "");
   try {
     const r = await fetch("/api/vix/levels", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ levels }) });
@@ -1953,7 +2056,7 @@ $("#vixSave").onclick = async () => {
     if (!r.ok) throw new Error(d.error || r.status);
     if (vixData) vixData.levels = d.levels;
     renderVix();
-    $("#vixDlg").close();
+    $("#vixRows").innerHTML = vixSorted().map(l => vixRow(l)).join("");
     toast("VIX levels saved", false);
   } catch (e) { toast("Couldn't save VIX levels: " + e.message, false); }
 };

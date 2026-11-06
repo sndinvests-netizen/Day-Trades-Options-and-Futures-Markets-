@@ -189,6 +189,22 @@ def vix():
             "as_of": datetime.now(ET).isoformat(timespec="seconds")}
 
 
+def vix_history():
+    """One year of ^VIX daily closes (for the VIX panel's chart and where today ranks in the year)."""
+    yf = _yf()
+
+    def fetch():
+        try:
+            h = yf.Ticker("^VIX").history(period="1y", interval="1d")
+        except Exception as e:
+            raise QuoteError(f"VIX: no history ({e})")
+        rows = [(d.strftime("%Y-%m-%d"), round(float(c), 2)) for d, c in zip(h.index, h["Close"]) if c == c and c > 0]
+        if len(rows) < 20:
+            raise QuoteError("VIX: not enough history")
+        return {"dates": [d for d, _ in rows], "closes": [c for _, c in rows]}
+    return _cached(("vixhist",), fetch, ttl=15 * 60)
+
+
 def historical_vol(ticker):
     """Annualized 30-trading-day close-to-close volatility, or None."""
     yf = _yf()
