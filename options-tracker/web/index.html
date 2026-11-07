@@ -370,6 +370,34 @@ input[type=range].glow:focus-visible { outline: 3px solid rgba(111,174,233,.5); 
 .vix-badge .v { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
 .vix-badge .zone { font-size: 11px; font-weight: 700; border-radius: 6px; padding: 1px 7px; color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.35); }
 .vix-badge .next { font-size: 11px; color: var(--muted); }
+/* VIX over 30: billowing smoke rising off the VIX badge and the VIX panel header */
+.vix-badge, .vx-drawer .lp-dh { position: relative; isolation: isolate; }
+.vix-smoke { position: absolute; left: -12%; right: -12%; bottom: 20%; height: 0; pointer-events: none; z-index: -1; display: none; }
+.vix-smoking .vix-smoke { display: block; }
+.vix-smoke i { position: absolute; bottom: 0; left: var(--x); width: var(--s); height: var(--s); margin-left: calc(var(--s) / -2);
+  border-radius: 50%; opacity: 0; filter: blur(6px);
+  background: radial-gradient(circle at 40% 40%, rgba(170,170,170,.95), rgba(125,125,125,.7) 45%, rgba(100,100,100,0) 72%);
+  animation: vixSmoke var(--d) ease-out var(--delay) infinite; }
+@keyframes vixSmoke {
+  0%   { transform: translate(0, 10px) scale(.35); opacity: 0; }
+  12%  { opacity: .9; }
+  55%  { opacity: .6; }
+  100% { transform: translate(var(--dx), -70px) scale(3); opacity: 0; } }
+.vix-badge.vix-smoking { border-color: #f23645; box-shadow: 0 0 0 1px #f23645, 0 0 14px rgba(242,54,69,.45); }
+.vix-badge.vix-smoking .v { color: #f23645; }
+/* VIX over 35: a flashing siren light on the badge and panel header, and the badge flashes red/blue */
+.vix-siren { display: none; font-size: 17px; line-height: 1; filter: drop-shadow(0 0 6px #f23645); }
+.vix-siren-on .vix-siren { display: inline-block; animation: vixSirenSpin 0.6s steps(2) infinite; }
+.vix-badge.vix-siren-on { animation: vixFlash 0.6s steps(1) infinite; }
+@keyframes vixSirenSpin { 0% { filter: drop-shadow(0 0 8px #f23645) brightness(1.3); transform: scale(1.15); }
+  50% { filter: drop-shadow(0 0 8px #2962ff) brightness(.8); transform: scale(.95); } }
+@keyframes vixFlash {
+  0%  { border-color: #f23645; box-shadow: 0 0 0 2px #f23645, 0 0 22px 4px rgba(242,54,69,.75); }
+  50% { border-color: #2962ff; box-shadow: 0 0 0 2px #2962ff, 0 0 22px 4px rgba(41,98,255,.75); } }
+.vx-drawer .lp-dh.vix-siren-on h3 .vix-siren { margin-left: 6px; font-size: 22px; }
+@media (prefers-reduced-motion: reduce) {
+  .vix-smoke i { animation: none; opacity: .35; transform: translateY(-20px) scale(1.6); }
+  .vix-siren-on .vix-siren, .vix-badge.vix-siren-on { animation: none; } }
 .vix-alerts { position: fixed; top: 16px; right: 16px; z-index: 30; display: flex; flex-direction: column; gap: 10px; width: min(360px, calc(100vw - 32px)); }
 .vix-alert { background: var(--panel); border: 1px solid var(--line); border-left: 6px solid var(--c); border-radius: 12px; padding: 12px 14px;
   box-shadow: 0 0 0 1px var(--c), 0 14px 36px rgba(0,0,0,.35); animation: vixIn .25s ease-out; }
@@ -725,7 +753,7 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
     </div>
     <span class="note">Yahoo Finance data, delayed about 15 min. Greeks and projections use Black-Scholes (4% rate).<span id="mkt-dot" class="mkt-dot closed" role="img" aria-label="Market closed" title="Market closed"></span></span>
     <button type="button" class="vix-badge" id="vixBadge" title="VIX and your levels. Click to edit levels and alerts.">
-      <span class="note">VIX</span><span class="v" id="vixVal">–</span><span id="vixChg" class="note"></span>
+      <span class="vix-siren" aria-hidden="true">🚨</span><span class="note">VIX</span><span class="v" id="vixVal">–</span><span id="vixChg" class="note"></span>
       <span class="zone" id="vixZone" hidden></span><span class="next" id="vixNext"></span></button>
     <div class="earn-wrap">
       <button class="ghost small earn-btn" type="button" id="earnBtn" aria-expanded="false" aria-controls="earnPanel"
@@ -1138,7 +1166,7 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
 
 <aside class="lp-drawer lp-st vx-drawer" id="vixDrawer" aria-label="VIX levels and alerts" aria-hidden="true">
   <div class="lp-dh"><div style="flex:1;min-width:0">
-      <h3>VIX <span id="vixDlgNow">–</span> <span class="vx-chg" id="vxChg"></span></h3>
+      <h3>VIX <span id="vixDlgNow">–</span> <span class="vx-chg" id="vxChg"></span><span class="vix-siren" aria-hidden="true">🚨</span></h3>
       <div class="sub">CBOE Volatility Index · Yahoo ^VIX, checked every minute while the tracker is open</div>
       <div class="px" id="vxZoneLine"></div></div>
     <button class="ghost small" type="button" id="vxClose" aria-label="Close VIX panel">✕</button></div>
@@ -1158,6 +1186,8 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
   <div class="lp-sec"><h4>Alerts</h4>
     <div class="lp-actions" style="margin-top:0">
       <button class="ghost small" type="button" id="vixTest">Test pop-up</button>
+      <button class="ghost small" type="button" id="vixSmokeTest" title="Shows the smoke effect for 10 seconds (it turns on by itself when VIX is over 30)">Test smoke</button>
+      <button class="ghost small" type="button" id="vixSirenTest" title="Shows the siren and smoke for 10 seconds (the siren turns on by itself when VIX is over 35)">Test siren</button>
       <button class="ghost small" type="button" id="vixNotify">Desktop notifications</button>
     </div>
     <p class="note" id="vixNotifyNote" style="margin:6px 0 0"></p>
@@ -1886,6 +1916,33 @@ function vixZone(v) {
   if (up) return up;
   return ls.filter(l => l.dir === "down" && v <= l.price)[0] || null;
 }
+// VIX over 30: smoke billows off the badge and the panel header
+const VIX_SMOKE = 30, VIX_SIREN = 35;
+let vixSmokeTest = false, vixSirenTest = false;
+function vixSiren(on) {
+  [$("#vixBadge"), $("#vixDrawer .lp-dh")].forEach(h => h && h.classList.toggle("vix-siren-on", on));
+}
+function vixSmoke(on) {
+  [$("#vixBadge"), $("#vixDrawer .lp-dh")].forEach(host => {
+    if (!host) return;
+    let sm = host.querySelector(":scope > .vix-smoke");
+    if (on && !sm) {
+      sm = document.createElement("span");
+      sm.className = "vix-smoke"; sm.setAttribute("aria-hidden", "true");
+      for (let i = 0; i < 24; i++) {
+        const p = document.createElement("i"), r = Math.random;
+        p.style.setProperty("--x", (4 + r() * 92).toFixed(0) + "%");
+        p.style.setProperty("--s", (28 + r() * 34).toFixed(0) + "px");
+        p.style.setProperty("--d", (2.4 + r() * 2.4).toFixed(2) + "s");
+        p.style.setProperty("--delay", (-r() * 4.5).toFixed(2) + "s");
+        p.style.setProperty("--dx", ((r() - 0.5) * 90).toFixed(0) + "px");
+        sm.appendChild(p);
+      }
+      host.prepend(sm);
+    }
+    host.classList.toggle("vix-smoking", on);
+  });
+}
 function renderVix() {
   const d = vixData;
   if (!d) return;
@@ -1901,6 +1958,9 @@ function renderVix() {
   $("#vixNext").textContent = [above && `↑ ${above.price.toFixed(2)} ${above.label}`, below && `↓ ${below.price.toFixed(2)} ${below.label}`].filter(Boolean).join(" · ");
   $("#vixBadge").title = (z ? `${z.label}: ${z.note}\n\n` : "") + "Click to edit your VIX levels and alerts.";
   $("#vixDlgNow").textContent = d.level.toFixed(2);
+  vixSmoke(vixSmokeTest || d.level > VIX_SMOKE);
+  vixSiren(vixSirenTest || d.level > VIX_SIREN);
+  if (d.level > VIX_SMOKE) $("#vixBadge").title = `VIX over ${d.level > VIX_SIREN ? VIX_SIREN + ": panic" : VIX_SMOKE + ": fear is high"}.\n\n` + $("#vixBadge").title;
   if (vxOpen()) vxRender();
 }
 function vixPopup(l, level, test) {
@@ -2053,6 +2113,8 @@ function vixNotifyNote() {
 $("#vixBadge").onclick = () => vxOpen() ? vxClose() : openVixDlg();
 $("#vixAdd").onclick = () => { $("#vixRows").insertAdjacentHTML("beforeend", vixRow(undefined, true)); $("#vixRows").lastElementChild.querySelector("[data-k=price]").focus(); };
 $("#vixRows").onclick = e => { if (e.target.closest("[data-vix-del]")) e.target.closest(".vx-lv").remove(); };
+$("#vixSirenTest").onclick = () => { vixSirenTest = vixSmokeTest = true; vixSmoke(true); vixSiren(true); setTimeout(() => { vixSirenTest = vixSmokeTest = false; const v = vixData ? vixData.level : 0; vixSmoke(v > VIX_SMOKE); vixSiren(v > VIX_SIREN); }, 10000); };
+$("#vixSmokeTest").onclick = () => { vixSmokeTest = true; vixSmoke(true); setTimeout(() => { vixSmokeTest = false; vixSmoke(!!vixData && vixData.level > VIX_SMOKE); }, 10000); };
 $("#vixTest").onclick = () => { const z = (vixData && vixZone(vixData.level)) || vixSorted()[0]; if (z) vixPopup(z, vixData ? vixData.level : z.price, true); };
 $("#vixNotify").onclick = async () => { try { await Notification.requestPermission(); } catch {} vixNotifyNote(); };
 $("#vixSave").onclick = async () => {
