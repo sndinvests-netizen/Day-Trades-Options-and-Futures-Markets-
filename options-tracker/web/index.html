@@ -1112,10 +1112,14 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
           <button type="button" data-mode="watch">My watchlist</button>
           <button type="button" data-mode="market" title="The strongest uptrending stocks over $10B from the Screener's market scan">Whole market</button>
         </div>
-        <div class="tabs mini" id="lpTerm" role="group" aria-label="Which calls">
+        <div class="tabs mini" id="lpSide" role="group" aria-label="Calls or puts">
+          <button type="button" data-side="call" title="Bullish: calls on stocks in uptrends beating SPY">Calls</button>
+          <button type="button" data-side="put" title="Bearish: puts on stocks in downtrends lagging SPY (same criteria, mirrored)">Puts</button>
+        </div>
+        <div class="tabs mini" id="lpTerm" role="group" aria-label="Which contracts">
           <button type="button" data-term="leap" title="365+ days out, deep in the money (delta 0.70-0.85)">LEAPS</button>
-          <button type="button" data-term="otm10" title="Hop/Skip: about 90 days out (85-150), strike at least 10% above the current price">90d +10%</button>
-          <button type="button" data-term="otm20" title="Hop/Skip: about 90 days out (85-150), strike at least 20% above the current price">90d +20%</button>
+          <button type="button" data-term="otm10" title="Hop/Skip: about 90 days out (85-150), strike at least 10% out of the money">90d 10%</button>
+          <button type="button" data-term="otm20" title="Hop/Skip: about 90 days out (85-150), strike at least 20% out of the money">90d 20%</button>
         </div>
         <span class="grow"></span>
         <span class="lp-meta" id="lpCount"></span>
@@ -4641,8 +4645,15 @@ scrSync();
 
 /* ================= LEAPS finder ================= */
 // One filter bar, a 7-column table (score ring, breakeven bar) and a slide-in detail panel per ticker.
-const LP_TERMS = { leap: "LEAPS", otm10: "90d +10% OTM", otm20: "90d +20% OTM" };
+// Calls and puts: each call term has a put twin ("p" + term) with the same criteria, mirrored.
+const LP_ALL = { leap: "LEAPS", otm10: "90d +10% OTM", otm20: "90d +20% OTM", pleap: "LEAPS puts", potm10: "90d −10% OTM", potm20: "90d −20% OTM" };
 let lpData = null, lpTimer = null, lpSeq = 0, lpMode = store.get("lpMode", "watch"), lpTerm = store.get("lpTerm", "leap");
+if (!LP_ALL[lpTerm]) lpTerm = "leap";
+const lpPut = (t = lpTerm) => t.startsWith("p");
+const lpBase = (t = lpTerm) => t.replace(/^p/, "");
+const lpLong = (t = lpTerm) => lpBase(t) === "leap";
+const lpRt = () => lpPut() ? "put" : "call", lpCP = () => lpPut() ? "P" : "C";
+const LP_TERMS_OF = () => Object.fromEntries(Object.entries(LP_ALL).filter(([t]) => lpPut(t) === lpPut()));
 let lpSort = store.get("lpSort", { k: "score", dir: -1 });
 let lpF = Object.assign({ q: "", min: 0, maxCost: 0, thin: false, earn: false, trend: false }, store.get("lpFilters", {}), { q: "" });
 let lpSel = null, lpPick = null, lpSeen = new Set(), lpOther = {};   // lpOther: the other terms' scans, for "Which call fits"
@@ -4671,7 +4682,12 @@ async function loadLeaps(refresh) {
 function lpSetMode(m) {
   lpMode = m; store.set("lpMode", m);
   for (const b of document.querySelectorAll("#lpMode button")) b.classList.toggle("on", b.dataset.mode === m);
-  for (const b of document.querySelectorAll("#lpTerm button")) b.classList.toggle("on", b.dataset.term === lpTerm);
+  for (const b of document.querySelectorAll("#lpTerm button")) {
+    b.classList.toggle("on", b.dataset.term === lpBase());
+    b.textContent = { leap: "LEAPS", otm10: `90d ${lpPut() ? "−" : "+"}10%`, otm20: `90d ${lpPut() ? "−" : "+"}20%` }[b.dataset.term];
+  }
+  for (const b of document.querySelectorAll("#lpSide button")) b.classList.toggle("on", b.dataset.side === lpRt());
+  $("#lpFTrend").textContent = lpPut() ? "Below 200-day only" : "Above 200-day only";
   $("#lpEdit").classList.toggle("hidden", m !== "watch");
   if (m !== "watch") $("#lpForm").classList.add("hidden");
   $("#lpRefresh").textContent = m === "market" ? "Scan market" : "Rescan";
@@ -4694,17 +4710,21 @@ function lpShow(d) {
 const LP_COLS = () => [
   ["ticker", "Ticker", "left sticky"],
   ["score", "Score", "", "0-100: stock 40 (purple) + contract 60 (blue), minus 15 when no contract is liquid. Open a row for the breakdown"],
-  ["b.dte", lpTerm === "leap" ? "Best LEAPS" : "Best call", "left", lpTerm === "leap" ? "Deep in-the-money call with the best contract score among liquid ones" : "Best-scoring liquid call about 90 days out near the target strike"],
+  ["b.dte", lpLong() ? (lpPut() ? "Best LEAPS put" : "Best LEAPS") : "Best " + lpRt(), "left", lpLong() ? `Deep in-the-money ${lpRt()} with the best contract score among liquid ones` : `Best-scoring liquid ${lpRt()} about 90 days out near the target strike`],
   ["b.contract_cost", "Cost", "", "Per contract (100 shares), at the mid"],
-  lpTerm === "leap" ? ["b.tv_year", "Time value/yr", "", "(Time value + dividends you give up) per year, as a % of the stock price. Under ~6% is cheap"]
+  lpLong() ? ["b.tv_year", "Time value/yr", "", lpPut() ? "Time value per year, as a % of the stock price. Under ~6% is cheap" : "(Time value + dividends you give up) per year, as a % of the stock price. Under ~6% is cheap"]
                     : ["b.be_sigma", "BE vs 1σ", "", "Breakeven move ÷ the stock's normal 1σ move by expiration. Under 1 = inside a normal move; over 2 = a long shot"],
   ["b.be_pct", "Price → breakeven", "left", "● price · | strike · ◆ breakeven, over the shaded 1σ move by expiration. Sorts by the move needed"],
   ["earnings_days", "Earnings", "", "Next report; flagged within 14 days"],
 ];
-const lpVal = (r, k) => k.startsWith("b.") ? (lpBest(r) ? lpBest(r)[k.slice(2)] : null) : r[k];
+const lpVal = (r, k) => {
+  if (!k.startsWith("b.")) return r[k];
+  const c = lpBest(r); if (!c) return null;
+  return k === "b.be_pct" && lpPut() && c.be_pct != null ? -c.be_pct : c[k.slice(2)];   // sort puts by the drop needed
+};
 const lpMetric = c => {
   if (!c) return { txt: "–", cls: "" };
-  if (lpTerm === "leap") return { txt: lpPct(c.tv_year), cls: c.tv_year <= 0.06 ? "up" : c.tv_year >= 0.12 ? "down" : "" };
+  if (lpLong()) return { txt: lpPct(c.tv_year), cls: c.tv_year <= 0.06 ? "up" : c.tv_year >= 0.12 ? "down" : "" };
   return { txt: c.be_sigma == null ? "–" : c.be_sigma.toFixed(2) + "σ", cls: c.be_sigma == null ? "" : c.be_sigma <= 1 ? "up" : c.be_sigma >= 2 ? "down" : "" };
 };
 
@@ -4717,7 +4737,7 @@ function lpRows() {
     if (f.maxCost && (!c || c.contract_cost > f.maxCost)) return false;
     if (f.thin && (!c || !c.liquid)) return false;
     if (f.earn && lpSoon(r)) return false;
-    if (f.trend && !(r.vs200 > 0)) return false;
+    if (f.trend && (lpPut() ? !(r.vs200 < 0) : !(r.vs200 > 0))) return false;
     return true;
   }).sort((a, b) => {
     const x = lpVal(a, k), y = lpVal(b, k);
@@ -4738,17 +4758,18 @@ function lpRing(r) {
 
 function lpBeBar(r, c, w = 170, h = 26) {
   if (!c) return "";
-  const p = r.price, sg = lpSigma(r, c.dte), up = sg ? p * (1 + sg) : p;
-  const lo = Math.min(p, c.strike) * 0.97, hi = Math.max(c.breakeven, up) * 1.03;
+  const put = lpPut(), p = r.price, sg = lpSigma(r, c.dte), up = sg ? p * (put ? 1 - sg : 1 + sg) : p;
+  const lo = Math.min(p, c.strike, c.breakeven, up) * 0.97, hi = Math.max(p, c.strike, c.breakeven, up) * 1.03;
   const x = v => 4 + (v - lo) / (hi - lo) * (w - 8), y = h / 2;
-  const col = c.breakeven <= up ? "var(--up)" : "var(--down)";
+  const col = (put ? c.breakeven >= up : c.breakeven <= up) ? "var(--up)" : "var(--down)";
+  const ar = put ? `M${x(c.breakeven)} ${y - 6} l-5 6 l5 6 l5 -6z` : `M${x(c.breakeven)} ${y - 6} l5 6 l-5 6 l-5 -6z`;
   return `<svg class="lp-bebar" viewBox="0 0 ${w} ${h}" role="img" aria-label="Price ${f2(p)}, strike ${f2(c.strike)}, breakeven ${f2(c.breakeven)}">
-    ${sg ? `<rect x="${x(p)}" y="${y - 6}" width="${Math.max(0, x(up) - x(p))}" height="12" rx="3" fill="var(--up)" opacity=".16"/>` : ""}
+    ${sg ? `<rect x="${x(Math.min(p, up))}" y="${y - 6}" width="${Math.abs(x(up) - x(p))}" height="12" rx="3" fill="var(--up)" opacity=".16"/>` : ""}
     <line x1="4" x2="${w - 4}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="2"/>
     <line x1="${x(p)}" x2="${x(c.breakeven)}" y1="${y}" y2="${y}" stroke="${col}" stroke-width="2.5"/>
     <line x1="${x(c.strike)}" x2="${x(c.strike)}" y1="${y - 7}" y2="${y + 7}" stroke="var(--muted)" stroke-width="2"/>
     <circle cx="${x(p)}" cy="${y}" r="4" fill="var(--text)"/>
-    <path d="M${x(c.breakeven)} ${y - 6} l5 6 l-5 6 l-5 -6z" fill="${col}"/></svg>`;
+    <path d="${ar}" fill="${col}"/></svg>`;
 }
 
 function renderLeaps() {
@@ -4758,7 +4779,7 @@ function renderLeaps() {
   const bits = [];
   if (d.status === "loading" || j.running) bits.push(`<b>Scanning…</b> ${int(j.done)} of ${int(j.total)}${j.phase ? " · " + esc(j.phase) : ""}`);
   bits.push(d.mode === "market" && d.status === "ok"
-    ? `${int(rows.length)} shown · best of ${int(d.uptrend)} uptrending over $${(st.market_min_cap / 1e9).toFixed(0)}B (${int(d.screened)} screened)`
+    ? `${int(rows.length)} shown · best of ${int(d.uptrend)} ${lpPut(d.term) ? "downtrending" : "uptrending"} over $${(st.market_min_cap / 1e9).toFixed(0)}B (${int(d.screened)} screened)`
     : `${int(rows.length)} of ${int(d.rows.length)} shown`);
   if (d.scanned_at) bits.push(`updated ${new Date(d.scanned_at * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`);
   const failed = Object.entries(d.failed || {});
@@ -4767,15 +4788,20 @@ function renderLeaps() {
   $("#lpCount").innerHTML = bits.join(" · ");
   $("#lpProg").style.width = j.running && j.total ? (j.done / j.total * 100) + "%" : "0";
 
-  $("#lpHow").innerHTML = (st.term && st.term !== "leap"
-    ? `Candidates: calls ${st.short_min_days}–${st.short_max_days} days out (Hop/Skip) with the nearest strikes at or above ${lpPct(st.otm, 0)} over the live stock price. These are all premium: a bet on a move, not a stock replacement.`
+  const put = lpPut(d.term);
+  $("#lpHow").innerHTML = (put ? `Puts mirror the call criteria: the stock score rewards a downtrend (below the 200- and 50-day, 50-day under the 200-day), lagging SPY, and a weak Rule of 40. ` : "")
+    + (!lpLong(d.term)
+    ? `Candidates: ${put ? "puts" : "calls"} ${st.short_min_days}–${st.short_max_days} days out (Hop/Skip) with the nearest strikes at or ${put ? "below" : "above"} ${lpPct(st.otm, 0)} ${put ? "under" : "over"} the live stock price. These are all premium: a bet on a move, not a stock replacement.`
+    : put ? `Candidates: puts ${st.min_days}+ days out with delta −${st.delta_lo.toFixed(2)} to −${st.delta_hi.toFixed(2)}. Time value/yr = (cost − intrinsic) per year; quotes with a mid under intrinsic are stale and skipped.`
     : `Candidates: calls ${st.min_days}+ days out with delta ${st.delta_lo.toFixed(2)}–${st.delta_hi.toFixed(2)}. Time value/yr includes the dividends a call holder gives up; stale quotes priced below what the call can be worth are skipped.`)
     + ` Liquid = open interest ≥ ${st.min_oi} and spread ≤ ${lpPct(st.max_spread, 0)}. Costs are mids, delayed about 15 min.`
-    + (d.mode === "market" ? ` Whole market: stocks over $${(st.market_min_cap / 1e9).toFixed(0)}B above their 200-day with the 50-day over the 200-day and a 1-year return ahead of SPY; the top ${st.market_top} get the full check. ★ = on your watchlist.` : "")
+    + (d.mode === "market" ? (put
+      ? ` Whole market: stocks over $${(st.market_min_cap / 1e9).toFixed(0)}B below their 200-day with the 50-day under the 200-day and a 1-year return behind SPY; the weakest ${st.market_top} get the full check. ★ = on your watchlist.`
+      : ` Whole market: stocks over $${(st.market_min_cap / 1e9).toFixed(0)}B above their 200-day with the 50-day over the 200-day and a 1-year return ahead of SPY; the top ${st.market_top} get the full check. ★ = on your watchlist.`) : "")
     + ` A scanner, not advice: check the chain before you trade.`;
   $("#lpLegend").innerHTML = `<span><i style="background:var(--lp-stock)"></i>stock score (of 40)</span><span><i style="background:var(--lp-contract)"></i>contract score (of 60)</span>
     <span>● price · | strike · ◆ breakeven · <i style="background:var(--up);opacity:.25"></i>normal 1σ move by expiration</span>
-    <span><span class="lp-dot warn"></span> thin</span><span><span class="lp-dot muted"></span> estimated price</span><span><span class="lp-dot down"></span> below 200-day</span>`;
+    <span><span class="lp-dot warn"></span> thin</span><span><span class="lp-dot muted"></span> estimated price</span><span><span class="lp-dot down"></span> ${lpPut(d.term) ? "against the trade (above 200-day / 50-day over 200-day)" : "below 200-day"}</span>`;
 
   if (!d.rows.length) {
     $("#lpBody").innerHTML = `<div class="note empty">${d.status === "loading"
@@ -4790,8 +4816,11 @@ function renderLeaps() {
     lpSeen.add(r.ticker);
     const dots = (c && !c.liquid ? `<span class="lp-dot warn" title="${esc(r.note || "Thin: not liquid")}"></span>` : "")
       + (c && c.est ? `<span class="lp-dot muted" title="No live two-sided quote: Black-Scholes estimate"></span>` : "")
-      + (!(r.vs200 > 0) ? `<span class="lp-dot down" title="Below the 200-day SMA"></span>` : "")
-      + (r.sma50 && r.sma200 && r.sma50 < r.sma200 ? `<span class="lp-dot down" title="50-day SMA under the 200-day"></span>` : "");
+      + (lpPut()
+        ? (r.vs200 > 0 ? `<span class="lp-dot down" title="Above the 200-day SMA (against a put)"></span>` : "")
+          + (r.sma50 && r.sma200 && r.sma50 > r.sma200 ? `<span class="lp-dot down" title="50-day SMA over the 200-day (against a put)"></span>` : "")
+        : (!(r.vs200 > 0) ? `<span class="lp-dot down" title="Below the 200-day SMA"></span>` : "")
+          + (r.sma50 && r.sma200 && r.sma50 < r.sma200 ? `<span class="lp-dot down" title="50-day SMA under the 200-day"></span>` : ""));
     const star = (d.mode === "market" || r.lookup) && r.watched ? `<span class="lp-star" title="On your LEAPS watchlist">★</span>` : "";
     const look = r.lookup ? `<span class="lp-look" title="Looked up from the Find box: not in this ${d.mode === "market" ? "market scan" : "watchlist"}">looked up</span>` : "";
     const add = (d.mode === "market" || r.lookup) && !r.watched ? `<button type="button" class="ghost small lp-add" data-w="${esc(r.ticker)}" title="Add ${esc(r.ticker)} to your LEAPS watchlist">+ Watch</button>` : "";
@@ -4799,7 +4828,7 @@ function renderLeaps() {
     return `<tr tabindex="0" data-t="${esc(r.ticker)}" class="${lpSel === r.ticker ? "sel" : ""}${fresh ? " in" : ""}">
       <td class="left sticky lp-tk">${star}<b>${esc(r.ticker)}</b><span class="lp-dots">${dots}</span>${look}${add}${r.name ? `<span class="tk-name" title="${esc(r.name)}">${esc(r.name)}</span>` : ""}</td>
       <td>${lpRing(r)}</td>
-      <td class="left">${c ? `<span class="lp-call">${esc(lpMon(c.exp))} ${f2(c.strike)}C<small>${c.dte}d · ${lpTerm === "leap" ? "" : lpPct(c.otm_pct, 0) + " OTM · "}Δ ${c.delta.toFixed(2)}</small></span>` : `<span class="note">${esc(r.note || "No candidate")}</span>`}</td>
+      <td class="left">${c ? `<span class="lp-call">${esc(lpMon(c.exp))} ${f2(c.strike)}${lpCP()}<small>${c.dte}d · ${lpLong() ? "" : lpPct(Math.abs(c.otm_pct), 0) + " OTM · "}Δ ${c.delta.toFixed(2)}</small></span>` : `<span class="note">${esc(r.note || "No candidate")}</span>`}</td>
       <td>${c ? lpMoney(c.contract_cost) : "–"}</td>
       <td class="${m.cls}">${m.txt}</td>
       <td class="left">${lpBeBar(r, c)}</td>
@@ -4816,6 +4845,7 @@ function renderLeaps() {
 let lpSim = null;   // {key, px, days} kept per contract so live refreshes don't reset the sliders
 const lpSimRange = (r, c) => {
   const p = r.price, sg = lpSigma(r, c.dte) || 0.2;
+  if (lpPut()) return { lo: Math.max(0.01, Math.min(c.breakeven, p * (1 - 2 * sg)) * 0.92), hi: Math.max(c.strike, p) * 1.25, sg };
   return { lo: Math.min(c.strike, p) * 0.75, hi: Math.max(c.breakeven, p * (1 + 2 * sg)) * 1.08, sg };
 };
 function lpSimOf(r, c) {
@@ -4823,15 +4853,16 @@ function lpSimOf(r, c) {
   if (!lpSim || lpSim.key !== key) lpSim = { key, px: r.price, days: c.dte };
   return lpSim;
 }
-const lpCallAt = (c, S, left) => left <= 0 ? Math.max(0, S - c.strike)
-  : Math.max(Math.max(0, S - c.strike), bsPrice("call", S, c.strike, left / 365, c.iv || 0.3));
+const lpIntr = (c, S) => c.right === "put" ? Math.max(0, c.strike - S) : Math.max(0, S - c.strike);
+const lpCallAt = (c, S, left) => left <= 0 ? lpIntr(c, S)
+  : Math.max(lpIntr(c, S), bsPrice(c.right || "call", S, c.strike, left / 365, c.iv || 0.3));
 function lpPayoff(r, c) {
   const W = 400, H = 170, pl = 46, pr = 8, pt = 10, pb = 22;
   const p = r.price, { lo, hi, sg } = lpSimRange(r, c), sim = lpSimOf(r, c), left = c.dte - sim.days;
-  const pnl = s => (Math.max(0, s - c.strike) - c.cost) * 100;
+  const pnl = s => (lpIntr(c, s) - c.cost) * 100;
   const xs = [...Array(61)].map((_, i) => lo + (hi - lo) * i / 60);
   const mid = left > 0 ? xs.map(s => (lpCallAt(c, s, left) - c.cost) * 100) : null;
-  const yMin = Math.min(pnl(lo), ...(mid || [])), yMax = Math.max(pnl(hi), c.contract_cost * 0.5, ...(mid || []));
+  const yMin = Math.min(pnl(lo), pnl(hi), ...(mid || [])), yMax = Math.max(pnl(lo), pnl(hi), c.contract_cost * 0.5, ...(mid || []));
   const X = s => pl + (s - lo) / (hi - lo) * (W - pl - pr), Y = v => pt + (yMax - v) / (yMax - yMin) * (H - pt - pb);
   const k = v => Math.abs(v) >= 1000 ? (v / 1000).toFixed(1) + "K" : Math.round(v);
   const txt = (x, y, s, a = "middle", col = "var(--muted)") => `<text x="${x}" y="${y}" text-anchor="${a}" font-size="10" fill="${col}">${s}</text>`;
@@ -4852,7 +4883,9 @@ function lpPayoff(r, c) {
 }
 function lpSimPanel(r, c) {
   const { lo, hi, sg } = lpSimRange(r, c), sim = lpSimOf(r, c), p = r.price;
-  const chips = [["−10%", p * 0.9], ["Now", p], ["+10%", p * 1.1], ["+20%", p * 1.2], ["+30%", p * 1.3], ["+1σ", p * (1 + sg)], ["Breakeven", c.breakeven]]
+  const chips = (lpPut()
+    ? [["+10%", p * 1.1], ["Now", p], ["−10%", p * 0.9], ["−20%", p * 0.8], ["−30%", p * 0.7], ["−1σ", p * (1 - sg)], ["Breakeven", c.breakeven]]
+    : [["−10%", p * 0.9], ["Now", p], ["+10%", p * 1.1], ["+20%", p * 1.2], ["+30%", p * 1.3], ["+1σ", p * (1 + sg)], ["Breakeven", c.breakeven]])
     .filter(([, x]) => x >= lo && x <= hi);
   return `<div class="lp-sim">
     <label>Stock at <input type="range" id="lpSimPx" min="${lo.toFixed(2)}" max="${hi.toFixed(2)}" step="${((hi - lo) / 400).toFixed(4)}" value="${sim.px}" aria-label="Stock price"> <b id="lpSimPxV"></b></label>
@@ -4870,7 +4903,7 @@ function lpSimPaint() {
   $("#lpSimDV").textContent = left <= 0 ? `expiration · ${when}` : `${when} · ${left} day${left === 1 ? "" : "s"} left`;
   const stat = (k, v, cls = "") => `<div class="lp-stat"><div class="k">${k}</div><div class="v ${cls}">${v}</div></div>`;
   $("#lpSimOut").innerHTML = stat("Profit / loss", signedUsd(Math.round(pl)), signed(pl)) + stat("Return", sgnPct(pl / c.contract_cost), signed(pl))
-    + stat("Call worth", "$" + Math.round(worth * 100).toLocaleString()) + stat("Stock move", sgnPct(sim.px / r.price - 1));
+    + stat(lpPut() ? "Put worth" : "Call worth", "$" + Math.round(worth * 100).toLocaleString()) + stat("Stock move", sgnPct(sim.px / r.price - 1));
   $("#lpPay").innerHTML = lpPayoff(r, c);
 }
 function lpSimSet(px, days) {
@@ -4891,7 +4924,7 @@ function lpCandGrid(r, c) {
     const f = mx > mn ? (a.score - mn) / (mx - mn) : 1;
     return `<button type="button" class="lp-cell${c.exp === a.exp && c.strike === a.strike ? " best" : ""}" data-pick="${a.exp}|${a.strike}"
       style="background:color-mix(in srgb, var(--lp-contract) ${Math.round(12 + f * 50)}%, var(--well))"
-      title="${esc(lpMon(a.exp))} ${a.strike}C · score ${a.score.toFixed(0)}/60 · ${lpMoney(a.contract_cost)}${a.liquid ? "" : " · thin"}">${a.score.toFixed(0)}</button>`;
+      title="${esc(lpMon(a.exp))} ${a.strike}${lpCP()} · score ${a.score.toFixed(0)}/60 · ${lpMoney(a.contract_cost)}${a.liquid ? "" : " · thin"}">${a.score.toFixed(0)}</button>`;
   }).join("")).join("");
   return `<div class="lp-sec"><h4>All candidates (contract score of 60) · click one to swap it in</h4>
     <div class="lp-grid" style="grid-template-columns:52px repeat(${ks.length},minmax(0,1fr))"><span></span>${ks.map(k => `<span class="hd">${k}</span>`).join("")}${cells}</div></div>`;
@@ -4913,44 +4946,44 @@ function lpDrawer(quiet) {
   el.classList.toggle("open", !!r);
   el.setAttribute("aria-hidden", r ? "false" : "true");
   if (!r) return;
-  if (!quiet) for (const t of Object.keys(LP_TERMS)) if (t !== lpTerm) lpLoadOther(t);
+  if (!quiet) for (const t of Object.keys(LP_TERMS_OF())) if (t !== lpTerm) lpLoadOther(t);
   const c = lpBest(r), st = Math.min(40, r.stock_score), ct = Math.max(0, r.score - st), sg = c ? lpSigma(r, c.dte) : null;
   const names = { time_value: "Time value/yr", breakeven: "Breakeven/yr", iv_hv: "IV vs realized", spread: "Spread", oi: "Open interest", be_sigma: "Breakeven vs 1σ" };
-  const maxes = lpTerm === "leap" ? { time_value: 25, breakeven: 10, iv_hv: 10, spread: 10, oi: 5 } : { be_sigma: 25, iv_hv: 15, spread: 10, oi: 10 };
-  const cmp = Object.entries(LP_TERMS).map(([t, label]) => {
+  const maxes = lpLong() ? { time_value: 25, breakeven: 10, iv_hv: 10, spread: 10, oi: 5 } : { be_sigma: 25, iv_hv: 15, spread: 10, oi: 10 };
+  const cmp = Object.entries(LP_TERMS_OF()).map(([t, label]) => {
     const od = t === lpTerm ? lpData : lpOther[t], orow = od && od.rows.find(x => x.ticker === r.ticker), b = orow && orow.best;
     const sub = orow ? (b ? `${lpMoney(b.contract_cost)} · BE ${sgnPct(b.be_pct, 0)}` : esc(orow.note || "none")) : od ? (od.job.running || od.status === "loading" ? "scanning…" : "not in this scan") : "loading…";
     return `<button type="button" data-term="${t}" aria-pressed="${t === lpTerm}"><span class="t">${label}</span><span class="s">${orow ? Math.round(orow.score) : "–"}</span>
-      <span class="c">${b ? esc(lpMon(b.exp)) + " " + b.strike + "C" : "&nbsp;"}</span><span class="k">${sub}</span></button>`;
+      <span class="c">${b ? esc(lpMon(b.exp)) + " " + b.strike + lpCP() : "&nbsp;"}</span><span class="k">${sub}</span></button>`;
   }).join("");
   const scrollTop = el.scrollTop;
   el.innerHTML = `
     <div class="lp-dh"><div style="flex:1;min-width:0"><h3>${esc(r.ticker)}</h3><div class="sub">${esc(r.name || "")}${r.sector ? " · " + esc(r.sector) : ""}</div>
       <div class="px">${f2(r.price)} <span class="${signed(r.ret12)}" style="font-size:12px">${sgnPct(r.ret12)} 1Y</span></div></div>
       <button class="ghost small" type="button" id="lpClose" aria-label="Close detail">✕</button></div>
-    <div class="lp-sec"><h4>Which call fits</h4><div class="lp-cmp">${cmp}</div></div>
+    <div class="lp-sec"><h4>Which ${lpRt()} fits</h4><div class="lp-cmp">${cmp}</div></div>
     <div class="lp-sec"><h4>Score ${Math.round(r.score)} of 100</h4>
       <div class="lp-split"><i style="width:${st}%;background:var(--lp-stock)"></i><i style="width:${ct}%;background:var(--lp-contract)"></i></div>
-      <div class="lp-parts"><span>Trend</span><span>${r.stock_parts.trend.toFixed(0)}/15</span><span>Relative strength</span><span>${r.stock_parts.rel_strength.toFixed(1)}/15</span>
-        <span>Rule of 40${r.rule40 != null ? ` (${r.rule40.toFixed(0)})` : ""}</span><span>${r.stock_parts.rule40.toFixed(1)}/10</span>
+      <div class="lp-parts"><span>${lpPut() ? "Downtrend" : "Trend"}</span><span>${r.stock_parts.trend.toFixed(0)}/15</span><span>Relative ${lpPut() ? "weakness" : "strength"}</span><span>${r.stock_parts.rel_strength.toFixed(1)}/15</span>
+        <span>Rule of 40${r.rule40 != null ? ` (${r.rule40.toFixed(0)})` : ""}${lpPut() ? " · weak = better" : ""}</span><span>${r.stock_parts.rule40.toFixed(1)}/10</span>
         ${c ? Object.entries(c.parts).map(([k, v]) => `<span>${names[k] || k}</span><span>${v.toFixed(1)}/${maxes[k] ?? ""}</span>`).join("") : ""}
         ${r.penalty ? `<span>Thin (no liquid contract)</span><span>−${r.penalty}</span>` : ""}</div></div>
     ${c ? `
-    <div class="lp-sec"><h4>${esc(lpMon(c.exp))} ${f2(c.strike)} call · ${c.dte} days${c.liquid ? "" : " · thin"}${c.est ? " · estimated price" : ""}</h4>
+    <div class="lp-sec"><h4>${esc(lpMon(c.exp))} ${f2(c.strike)} ${lpRt()} · ${c.dte} days${c.liquid ? "" : " · thin"}${c.est ? " · estimated price" : ""}</h4>
       <div class="lp-stats">
         <div class="lp-stat"><div class="k">Cost</div><div class="v">${lpMoney(c.contract_cost)}</div></div>
         <div class="lp-stat"><div class="k">Breakeven</div><div class="v">${f2(c.breakeven)}</div></div>
         <div class="lp-stat"><div class="k">Move needed</div><div class="v">${sgnPct(c.be_pct)}</div></div>
         <div class="lp-stat"><div class="k">Delta</div><div class="v">${c.delta.toFixed(2)}</div></div>
         <div class="lp-stat"><div class="k">Leverage</div><div class="v">${c.leverage.toFixed(1)}×</div></div>
-        <div class="lp-stat"><div class="k">${lpTerm === "leap" ? "Time val/yr" : "BE vs 1σ"}</div><div class="v">${lpMetric(c).txt}</div></div>
+        <div class="lp-stat"><div class="k">${lpLong() ? "Time val/yr" : "BE vs 1σ"}</div><div class="v">${lpMetric(c).txt}</div></div>
         <div class="lp-stat"><div class="k">IV / HV</div><div class="v">${c.iv_hv == null ? "–" : c.iv_hv.toFixed(2)}</div></div>
         <div class="lp-stat"><div class="k">Spread</div><div class="v">${c.spread == null ? "–" : lpPct(c.spread)}</div></div>
         <div class="lp-stat"><div class="k">Open int.</div><div class="v">${int(c.oi)}</div></div>
       </div></div>
     <div class="lp-sec"><h4>Profit / loss (1 contract): drag to see potential profit</h4><div id="lpPay">${lpPayoff(r, c)}</div>
       ${lpSimPanel(r, c)}
-      <div class="lp-callout"><span style="color:var(--lp-contract)">━</span> at expiration · <span style="color:#e0a526">╍</span> on the date you pick (Black-Scholes at today's IV ${lpPct(c.iv, 0)}) · ● your what-if. Shaded = a normal 1σ move by expiration${sg ? ` (±${lpPct(sg, 0)})` : ""}. Breakeven needs <b>${sgnPct(c.be_pct)}</b>${sg ? `, <b>${(c.be_pct / sg).toFixed(2)}σ</b>` : ""}. Dashed line = today's price.</div></div>
+      <div class="lp-callout"><span style="color:var(--lp-contract)">━</span> at expiration · <span style="color:#e0a526">╍</span> on the date you pick (Black-Scholes at today's IV ${lpPct(c.iv, 0)}) · ● your what-if. Shaded = a normal 1σ move by expiration${sg ? ` (±${lpPct(sg, 0)})` : ""}. Breakeven needs <b>${sgnPct(c.be_pct)}</b>${sg ? `, <b>${(Math.abs(c.be_pct) / sg).toFixed(2)}σ</b>` : ""}. Dashed line = today's price.</div></div>
     ${lpCandGrid(r, c)}` : `<div class="lp-callout">${esc(r.note || "No candidate contract for this term.")}</div>`}
     <div class="lp-sec"><h4>One-year trend</h4><a class="spark-link ${signed(r.ret12)}" role="link" data-tv="${esc(r.ticker.replace("-", "."))}" title="Open ${esc(r.ticker)} on TradingView in Chrome">${spark(r.spark).replace('<svg class="spark', '<svg style="width:100%;height:64px" class="spark')}</a>
       <div class="lp-parts"><span>vs 200-day</span><span>${sgnPct(r.vs200)}</span><span>vs SPY, 6 months</span><span>${sgnPct(r.rs6)}</span>
@@ -4984,7 +5017,7 @@ async function lpToBuilder(ticker, exp, strike) {
   try {
     const chain = await api(`/api/chain?ticker=${encodeURIComponent(ticker)}&exp=${exp}`);
     if (B.ticker === chain.ticker) B.legs = [];
-    await addLegFromChain(chain, "call", strike, "buy");
+    await addLegFromChain(chain, lpRt(), strike, "buy");
     lpClose();
     showTab("builder");
   } catch (err) { toast("Couldn't open the Builder: " + err.message, false); }
@@ -5036,7 +5069,8 @@ function lpSetTerm(t) {
   if (lpOther[t]) lpShow(lpOther[t]);
   loadLeaps();
 }
-$("#lpTerm").onclick = e => { const b = e.target.closest("button[data-term]"); if (b) lpSetTerm(b.dataset.term); };
+$("#lpTerm").onclick = e => { const b = e.target.closest("button[data-term]"); if (b) lpSetTerm((lpPut() ? "p" : "") + b.dataset.term); };
+$("#lpSide").onclick = e => { const b = e.target.closest("button[data-side]"); if (b && b.dataset.side !== lpRt()) { lpOther = {}; lpSetTerm((b.dataset.side === "put" ? "p" : "") + lpBase()); } };
 $("#lpQ").oninput = e => {
   lpF.q = e.target.value.trim().toLowerCase();
   if (lpData) renderLeaps();
@@ -5061,7 +5095,7 @@ function lpLookMsg() {
   const t = lpLookQ();
   if (!t || !lpData) return "";
   const v = lpLook[lpData.term + "|" + t];
-  return v === "loading" ? `Looking up ${esc(t)}: checking its calls…` : v && v.error ? esc(v.error.startsWith(t) ? v.error : `${t}: ${v.error}`) : "";
+  return v === "loading" ? `Looking up ${esc(t)}: checking its ${lpRt()}s…` : v && v.error ? esc(v.error.startsWith(t) ? v.error : `${t}: ${v.error}`) : "";
 }
 async function lpMaybeLookup() {
   const t = lpLookQ();

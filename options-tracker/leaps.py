@@ -32,6 +32,17 @@ the same stock score, but the contract pass looks at calls SHORT_MIN_DAYS-SHORT_
 at or just above 10% (or 20%) over the live stock price (never below it). These are all premium, so time value/yr doesn't
 apply; the contract score (60) = breakeven vs the stock's 1-sigma move to expiry 25, IV/HV 15, spread 10, OI 10.
 
+Puts (owner request 2026-11-07: "leap puts, same criteria as leap calls, 10 and 20 out of the money as well"):
+every term has a put twin ("pleap", "potm10", "potm20") that mirrors it.
+- stock: a downtrend scores (close below the 200-day and 50-day, 50-day below the 200-day), relative
+  weakness vs SPY scores, and a weak Rule of 40 scores (unknown: half credit).
+- LEAPS puts: 365+ days out, delta -0.70 to -0.85. Time value/yr = (cost - intrinsic) / years / price,
+  with no dividend charge (a put holder doesn't owe them the way a short seller does). A mid below
+  intrinsic is a stale quote and is skipped. Breakeven = strike - cost.
+- OTM puts: 85-150 days out, nearest strikes at or below 10% (or 20%) under the live price.
+- whole market: stocks over $10B below the 200-day, 50-day under the 200-day, 1-year return behind SPY.
+Breakeven moves are scored by the move needed in the trade's direction (down for puts).
+
 Earnings within EARNINGS_WARN_DAYS days are flagged, not scored. It's a scanner, not advice.
 
 Two lists: your watchlist (leaps_watch.json, gitignored; until it exists, the tracker's Earnings
@@ -73,10 +84,22 @@ OTM_BAND = 0.05               # strike from the target up to 5% over it (e.g. 10
 OTM_STRIKES = 2               # nearest strikes at or above the target, per expiration
 SHORT_MAX_SPREAD = 0.10       # OTM premiums are small, so allow a wider spread before "thin"
 TERMS = {
-    "leap":  {"label": "LEAPS (365+ days, deep ITM)"},
-    "otm10": {"label": "90-day calls, 10% OTM", "otm": 0.10},
-    "otm20": {"label": "90-day calls, 20% OTM", "otm": 0.20},
+    "leap":   {"label": "LEAPS (365+ days, deep ITM)", "right": "call"},
+    "otm10":  {"label": "90-day calls, 10% OTM", "otm": 0.10, "right": "call"},
+    "otm20":  {"label": "90-day calls, 20% OTM", "otm": 0.20, "right": "call"},
+    "pleap":  {"label": "LEAPS puts (365+ days, deep ITM)", "right": "put"},
+    "potm10": {"label": "90-day puts, 10% OTM", "otm": 0.10, "right": "put"},
+    "potm20": {"label": "90-day puts, 20% OTM", "otm": 0.20, "right": "put"},
 }
+LONG_TERMS = ("leap", "pleap")   # deep in-the-money, 365+ days; the rest are 90-day OTM
+
+
+def _is_long(term):
+    return term in LONG_TERMS
+
+
+def _right(term):
+    return TERMS[term]["right"]
 THIN_PENALTY = 15             # points off when no candidate is liquid (hard to get filled, hard to exit)
 
 _lock = threading.Lock()
@@ -176,8 +199,10 @@ def _fundamentals(sym):
 # ---------- contracts ----------
 
 def _candidates(sym, spot_hint, div_rate=0.0, term="leap"):
-    if term != "leap":
-        return _otm_candidates(sym, spot_hint, TERMS[term]["otm"])
+    right = _right(term)
+    if not _is_long(term):
+        return _otm_candidates(sym, spot_hint, TERMS[term]["otm"], right)
+    put = right == "put"
     today = datetime.now(ET).date()
     try:
         price = spot_price(sym)
@@ -187,69 +212,87 @@ def _candidates(sym, spot_hint, div_rate=0.0, term="leap"):
     exps = [e for e in expirations(sym) if (datetime.strptime(e, "%Y-%m-%d").date() - today).days >= MIN_DAYS]
     out = []
     for exp in exps:
-        rows = chain_rows(sym, exp)["call"]
+        rows = chain_rows(sym, exp)[right]
         spot = option_spot(sym, exp) or price   # the price the quotes were made at: for delta, like the Chain tab
         t = years_to_expiry(exp)
         dte = (datetime.strptime(exp, "%Y-%m-%d").date() - today).days
         for r in rows:
-            g = greeks("call", spot, r["strike"], t, r["iv"])
-            if not g or not DELTA_LO <= g["delta"] <= DELTA_HI:
+            g = greeks(right, spot, r["strike"], t, r["iv"])
+            if not g or not DELTA_LO <= abs(g["delta"]) <= DELTA_HI:
                 continue
             real = _price_ok(r)
             cost = (r["bid"] + r["ask"]) / 2 if real else r["mark"]
             if not cost or cost <= 0:
                 continue
-            intrinsic = max(0.0, price - r["strike"])
-            divs = div_rate * t
-            carry = cost - intrinsic + divs
-            if carry < STALE_FLOOR * r["strike"] * (1 - math.exp(-RISK_FREE_RATE * t)):
-                skipped += 1      # priced under what the call can be worth: stale or placeholder quote
-                continue
+            if put:
+                intrinsic = max(0.0, r["strike"] - price)
+                divs = 0.0
+                carry = cost - intrinsic
+                if cost < intrinsic * 0.98:
+                    skipped += 1  # mid under intrinsic: a stale or placeholder quote
+                    continue
+            else:
+                intrinsic = max(0.0, price - r["strike"])
+                divs = div_rate * t
+                carry = cost - intrinsic + divs
+                if carry < STALE_FLOOR * r["strike"] * (1 - math.exp(-RISK_FREE_RATE * t)):
+                    skipped += 1  # priced under what the call can be worth: stale or placeholder quote
+                    continue
             extrinsic = max(0.0, cost - intrinsic)
-            be = (r["strike"] + cost) / price - 1
+            bkeven = r["strike"] - cost if put else r["strike"] + cost
+            be = bkeven / price - 1
+            need = -be if put else be            # the move needed in the trade's direction
             spread = (r["ask"] - r["bid"]) / cost if real else None
             out.append({
                 "exp": exp, "dte": dte, "strike": r["strike"], "delta": g["delta"], "theta": g["theta"],
                 "iv": r["iv"], "iv_est": r.get("iv_est", False), "est": not real,
                 "bid": r["bid"], "ask": r["ask"], "cost": cost, "contract_cost": cost * 100,
                 "intrinsic": intrinsic, "extrinsic": extrinsic, "dividends": divs,
-                "tv_year": carry / t / price, "tv_pct": extrinsic / cost,
-                "breakeven": r["strike"] + cost, "be_pct": be, "be_year": be / t,
+                "tv_year": max(0.0, carry) / t / price, "tv_pct": extrinsic / cost,
+                "breakeven": bkeven, "be_pct": be, "be_need": need, "be_year": need / t, "right": right,
                 "spread": spread, "oi": r["oi"], "volume": r["volume"],
-                "leverage": g["delta"] * price / cost,
+                "leverage": abs(g["delta"]) * price / cost,
                 "liquid": real and r["oi"] >= MIN_OI and spread is not None and spread <= MAX_SPREAD,
             })
     return out, skipped
 
 
-def _otm_candidates(sym, spot_hint, otm):
-    """Calls SHORT_MIN_DAYS-SHORT_MAX_DAYS out, strike within OTM_BAND of price x (1 + otm)."""
+def _otm_candidates(sym, spot_hint, otm, right="call"):
+    """Calls (puts) SHORT_MIN_DAYS-SHORT_MAX_DAYS out, strike within OTM_BAND of price x (1 + otm) (puts: x (1 - otm))."""
+    put = right == "put"
     today = datetime.now(ET).date()
     try:
         price = spot_price(sym)
     except QuoteError:
         price = spot_hint
-    target = price * (1 + otm)
+    target = price * (1 - otm) if put else price * (1 + otm)
     exps = [e for e in expirations(sym)
             if SHORT_MIN_DAYS <= (datetime.strptime(e, "%Y-%m-%d").date() - today).days <= SHORT_MAX_DAYS]
     out = []
     for exp in exps:
         # the OTM_STRIKES nearest strikes at or above price x (1 + otm), never below it
         # (the first one always counts, even when strikes are spaced wider than OTM_BAND)
-        above = sorted((r for r in chain_rows(sym, exp)["call"] if r["strike"] >= target), key=lambda r: r["strike"])
-        rows = [r for i, r in enumerate(above[:OTM_STRIKES]) if i == 0 or r["strike"] <= target * (1 + OTM_BAND)]
+        # puts: the nearest strikes at or below price x (1 - otm), never above it
+        if put:
+            near = sorted((r for r in chain_rows(sym, exp)["put"] if r["strike"] <= target), key=lambda r: -r["strike"])
+            rows = [r for i, r in enumerate(near[:OTM_STRIKES]) if i == 0 or r["strike"] >= target * (1 - OTM_BAND)]
+        else:
+            above = sorted((r for r in chain_rows(sym, exp)["call"] if r["strike"] >= target), key=lambda r: r["strike"])
+            rows = [r for i, r in enumerate(above[:OTM_STRIKES]) if i == 0 or r["strike"] <= target * (1 + OTM_BAND)]
         spot = option_spot(sym, exp) or price
         t = years_to_expiry(exp)
         dte = (datetime.strptime(exp, "%Y-%m-%d").date() - today).days
         for r in rows:
-            g = greeks("call", spot, r["strike"], t, r["iv"])
+            g = greeks(right, spot, r["strike"], t, r["iv"])
             if not g:
                 continue
             real = _price_ok(r)
             cost = (r["bid"] + r["ask"]) / 2 if real else r["mark"]
             if not cost or cost <= 0:
                 continue
-            be = (r["strike"] + cost) / price - 1
+            bkeven = r["strike"] - cost if put else r["strike"] + cost
+            be = bkeven / price - 1
+            need = -be if put else be
             spread = (r["ask"] - r["bid"]) / cost if real else None
             out.append({
                 "exp": exp, "dte": dte, "strike": r["strike"], "delta": g["delta"], "theta": g["theta"],
@@ -258,9 +301,9 @@ def _otm_candidates(sym, spot_hint, otm):
                 "intrinsic": 0.0, "extrinsic": cost, "dividends": 0.0,
                 "otm_pct": r["strike"] / price - 1,
                 "tv_year": cost / t / price, "tv_pct": 1.0,
-                "breakeven": r["strike"] + cost, "be_pct": be, "be_year": be / t, "t": t,
+                "breakeven": bkeven, "be_pct": be, "be_need": need, "be_year": need / t, "t": t, "right": right,
                 "spread": spread, "oi": r["oi"], "volume": r["volume"],
-                "leverage": g["delta"] * price / cost,
+                "leverage": abs(g["delta"]) * price / cost,
                 "liquid": real and r["oi"] >= MIN_OI and spread is not None and spread <= SHORT_MAX_SPREAD,
             })
     return out, 0
@@ -269,7 +312,7 @@ def _otm_candidates(sym, spot_hint, otm):
 def _otm_score(c, rv):
     iv_hv = c["iv"] / rv if rv else None
     sig = rv * math.sqrt(c["t"]) if rv else None          # the stock's 1-sigma move to expiry
-    c["be_sigma"] = c["be_pct"] / sig if sig else None
+    c["be_sigma"] = c["be_need"] / sig if sig else None
     parts = {
         "be_sigma": 25 * (_lin(c["be_sigma"], 0.75, 2.5) if c["be_sigma"] is not None else 0.0),
         "iv_hv": 15 * (_lin(iv_hv, 1.0, 1.6) if iv_hv is not None else 0.5),
@@ -291,7 +334,14 @@ def _contract_score(c, rv):
     return parts, iv_hv
 
 
-def _stock_score(s):
+def _stock_score(s, put=False):
+    if put:   # the mirror image: a downtrend, lagging SPY, weak fundamentals
+        trend = (7 if s["vs200"] is not None and s["vs200"] < 0 else 0) \
+            + (5 if s["sma50"] and s["sma200"] and s["sma50"] < s["sma200"] else 0) \
+            + (3 if s["vs50"] is not None and s["vs50"] < 0 else 0)
+        rs = 7.5 * _lin(s["rs6"], -0.15, 0.10) + 7.5 * _lin(s["rs12"], -0.25, 0.15)
+        r40 = 10 * _lin(s["rule40"], 0, 40) if s["rule40"] is not None else 5.0
+        return {"trend": trend, "rel_strength": rs, "rule40": r40}
     trend = (7 if s["vs200"] is not None and s["vs200"] > 0 else 0) \
         + (5 if s["sma50"] and s["sma200"] and s["sma50"] > s["sma200"] else 0) \
         + (3 if s["vs50"] is not None and s["vs50"] > 0 else 0)
@@ -326,12 +376,12 @@ def _analyze(sym, spy, term="leap"):
         days = (datetime.strptime(row["earnings"], "%Y-%m-%d").date() - datetime.now(ET).date()).days
         row["earnings_days"] = days
         row["earnings_soon"] = 0 <= days <= EARNINGS_WARN_DAYS
-    stock = _stock_score(row)
+    stock = _stock_score(row, _right(term) == "put")
     cands, skipped = _candidates(sym, price, row.get("div_rate") or 0.0, term)
     row["skipped_stale"] = skipped
     row["div_yield"] = (row.get("div_rate") or 0.0) / price if price else None
     for c in cands:
-        c["parts"], c["iv_hv"] = (_contract_score if term == "leap" else _otm_score)(c, row["rv"])
+        c["parts"], c["iv_hv"] = (_contract_score if _is_long(term) else _otm_score)(c, row["rv"])
         c["score"] = sum(c["parts"].values())
     liquid = [c for c in cands if c["liquid"]]
     pool = liquid or cands
@@ -343,10 +393,11 @@ def _analyze(sym, spy, term="leap"):
                candidates=len(cands), liquid_count=len(liquid), penalty=penalty,
                score=max(0.0, sum(stock.values()) + (best["score"] if best else 0) - penalty))
     if not cands:
-        row["note"] = (f"No calls {MIN_DAYS}+ days out with delta {DELTA_LO:.2f}-{DELTA_HI:.2f}" if term == "leap" else
-                       f"No calls {SHORT_MIN_DAYS}-{SHORT_MAX_DAYS} days out near {TERMS[term]['otm']:.0%} OTM")
+        kind = _right(term) + "s"
+        row["note"] = (f"No {kind} {MIN_DAYS}+ days out with delta {DELTA_LO:.2f}-{DELTA_HI:.2f}" if _is_long(term) else
+                       f"No {kind} {SHORT_MIN_DAYS}-{SHORT_MAX_DAYS} days out near {TERMS[term]['otm']:.0%} OTM")
     elif not liquid:
-        row["note"] = f"None liquid (OI >= {MIN_OI}, spread <= {(MAX_SPREAD if term == 'leap' else SHORT_MAX_SPREAD):.0%}); best shown anyway"
+        row["note"] = f"None liquid (OI >= {MIN_OI}, spread <= {(MAX_SPREAD if _is_long(term) else SHORT_MAX_SPREAD):.0%}); best shown anyway"
     return row
 
 
@@ -387,7 +438,7 @@ def _load(st):
         st["data"] = None
 
 
-def _market_universe(job):
+def _market_universe(job, put=False):
     """The strongest uptrending stocks from the Screener's last scan: close above the 200-day SMA,
     50-day above the 200-day, 1-year return ahead of SPY's. Ranked by the same trend + relative
     strength points the LEAPS score uses (Rule of 40 needs a slow per-stock lookup, so it's
@@ -417,16 +468,24 @@ def _market_universe(job):
     for r in rows.values():
         if r.get("type") != "stock" or (r.get("mktcap") or 0) < MARKET_MIN_CAP:
             continue
-        if not (r.get("vs200") and r["vs200"] > 0 and r.get("sma50") and r.get("sma200") and r["sma50"] > r["sma200"]):
+        if not (r.get("vs200") is not None and r.get("sma50") and r.get("sma200")):
             continue
-        if spy12 is None or r.get("chg1y") is None or r["chg1y"] <= spy12:
-            continue
+        if put:   # downtrend lagging SPY
+            if not (r["vs200"] < 0 and r["sma50"] < r["sma200"]):
+                continue
+            if spy12 is None or r.get("chg1y") is None or r["chg1y"] >= spy12:
+                continue
+        else:
+            if not (r["vs200"] > 0 and r["sma50"] > r["sma200"]):
+                continue
+            if spy12 is None or r.get("chg1y") is None or r["chg1y"] <= spy12:
+                continue
         w = r.get("spark") or []
         r6 = w[-1] / w[-27] - 1 if len(w) >= 27 and w[-27] else None
         pre = _stock_score({"vs200": r["vs200"], "sma50": r["sma50"], "sma200": r["sma200"],
                             "vs50": r["price"] / r["sma50"] - 1, "rule40": 0,
                             "rs6": r6 - spy6 if r6 is not None and spy6 is not None else None,
-                            "rs12": r["chg1y"] - spy12})
+                            "rs12": r["chg1y"] - spy12}, put)
         picks.append((pre["trend"] + pre["rel_strength"], r.get("mktcap") or 0, r["ticker"]))
     picks.sort(reverse=True)
     stats = {"screened": sum(1 for r in rows.values() if r.get("type") == "stock"), "uptrend": len(picks),
@@ -440,7 +499,7 @@ def _scan(mode, term, tickers):
     try:
         stats = {}
         if mode == "market":
-            tickers, stats = _market_universe(job)
+            tickers, stats = _market_universe(job, _right(term) == "put")
         job.update(phase="SPY baseline", done=0, total=len(tickers))
         spy = _closes("SPY")
         rows, failed = {}, {}
@@ -459,7 +518,7 @@ def _scan(mode, term, tickers):
                 job["done"] += 1
 
         st["partial"] = rows   # scan() shows these while the first scan of a list is still running
-        job["phase"] = "Checking LEAPS" if term == "leap" else "Checking " + TERMS[term]["label"]
+        job["phase"] = "Checking " + TERMS[term]["label"]
         with ThreadPoolExecutor(WORKERS) as ex:
             list(ex.map(one, tickers))
         with _lock:
@@ -483,7 +542,7 @@ def _start(mode, term, tickers):
 
 
 def scan(refresh=False, mode="watch", term="leap"):
-    """Latest results for one list ("watch" or "market") and term ("leap", "otm10", "otm20"); starts a
+    """Latest results for one list ("watch" or "market") and term (see TERMS); starts a
     background scan when there's none, it's stale, the watchlist changed, or refresh is set.
     Poll while job.running is true."""
     term = term or "leap"
@@ -506,9 +565,9 @@ def scan(refresh=False, mode="watch", term="leap"):
         job = dict(st["job"])
     base = {"mode": mode, "term": term, "watchlist": watch, "job": job, "stale": stale,
             "terms": {k: v["label"] for k, v in TERMS.items()},
-            "settings": {"term": term, "otm": TERMS[term].get("otm"), "short_min_days": SHORT_MIN_DAYS,
+            "settings": {"term": term, "right": _right(term), "long": _is_long(term), "otm": TERMS[term].get("otm"), "short_min_days": SHORT_MIN_DAYS,
                          "short_max_days": SHORT_MAX_DAYS, "otm_band": OTM_BAND, "min_days": MIN_DAYS, "delta_lo": DELTA_LO, "delta_hi": DELTA_HI, "min_oi": MIN_OI,
-                         "max_spread": MAX_SPREAD if term == "leap" else SHORT_MAX_SPREAD, "earnings_warn_days": EARNINGS_WARN_DAYS,
+                         "max_spread": MAX_SPREAD if _is_long(term) else SHORT_MAX_SPREAD, "earnings_warn_days": EARNINGS_WARN_DAYS,
                          "market_top": MARKET_TOP, "market_min_cap": MARKET_MIN_CAP}}
     if data is None:
         with _lock:
