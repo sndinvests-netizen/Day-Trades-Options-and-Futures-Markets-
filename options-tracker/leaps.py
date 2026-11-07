@@ -80,6 +80,7 @@ MAX_TICKERS = 60
 ALTERNATES = 4                # other candidate contracts returned per ticker
 STALE_FLOOR = 0.8             # carry (time value + dividends) below 80% of the interest on the strike = stale quote
 SHORT_MIN_DAYS, SHORT_MAX_DAYS = 85, 150   # "90-day" contracts: Hop/Skip boundary, a few monthly expirations
+SIX_MIN_DAYS, SIX_MAX_DAYS = 160, 240      # "6-month" contracts (owner request 2026-11-07), same OTM rules
 OTM_BAND = 0.05               # strike from the target up to 5% over it (e.g. 10%-15.5% above price for the 10% term)
 OTM_STRIKES = 2               # nearest strikes at or above the target, per expiration
 SHORT_MAX_SPREAD = 0.10       # OTM premiums are small, so allow a wider spread before "thin"
@@ -87,9 +88,13 @@ TERMS = {
     "leap":   {"label": "LEAPS (365+ days, deep ITM)", "right": "call"},
     "otm10":  {"label": "90-day calls, 10% OTM", "otm": 0.10, "right": "call"},
     "otm20":  {"label": "90-day calls, 20% OTM", "otm": 0.20, "right": "call"},
+    "s10":    {"label": "6-month calls, 10% OTM", "otm": 0.10, "right": "call", "days": (SIX_MIN_DAYS, SIX_MAX_DAYS)},
+    "s20":    {"label": "6-month calls, 20% OTM", "otm": 0.20, "right": "call", "days": (SIX_MIN_DAYS, SIX_MAX_DAYS)},
     "pleap":  {"label": "LEAPS puts (365+ days, deep ITM)", "right": "put"},
     "potm10": {"label": "90-day puts, 10% OTM", "otm": 0.10, "right": "put"},
     "potm20": {"label": "90-day puts, 20% OTM", "otm": 0.20, "right": "put"},
+    "ps10":   {"label": "6-month puts, 10% OTM", "otm": 0.10, "right": "put", "days": (SIX_MIN_DAYS, SIX_MAX_DAYS)},
+    "ps20":   {"label": "6-month puts, 20% OTM", "otm": 0.20, "right": "put", "days": (SIX_MIN_DAYS, SIX_MAX_DAYS)},
 }
 LONG_TERMS = ("leap", "pleap")   # deep in-the-money, 365+ days; the rest are 90-day OTM
 
@@ -100,6 +105,11 @@ def _is_long(term):
 
 def _right(term):
     return TERMS[term]["right"]
+
+
+def _days(term):
+    """Expiration window (min, max days) for an OTM term: 90-day by default, 6-month for s10/s20."""
+    return TERMS[term].get("days", (SHORT_MIN_DAYS, SHORT_MAX_DAYS))
 THIN_PENALTY = 15             # points off when no candidate is liquid (hard to get filled, hard to exit)
 
 _lock = threading.Lock()
@@ -201,7 +211,7 @@ def _fundamentals(sym):
 def _candidates(sym, spot_hint, div_rate=0.0, term="leap"):
     right = _right(term)
     if not _is_long(term):
-        return _otm_candidates(sym, spot_hint, TERMS[term]["otm"], right)
+        return _otm_candidates(sym, spot_hint, TERMS[term]["otm"], right, _days(term))
     put = right == "put"
     today = datetime.now(ET).date()
     try:
@@ -257,7 +267,7 @@ def _candidates(sym, spot_hint, div_rate=0.0, term="leap"):
     return out, skipped
 
 
-def _otm_candidates(sym, spot_hint, otm, right="call"):
+def _otm_candidates(sym, spot_hint, otm, right="call", days=(SHORT_MIN_DAYS, SHORT_MAX_DAYS)):
     """Calls (puts) SHORT_MIN_DAYS-SHORT_MAX_DAYS out, strike within OTM_BAND of price x (1 + otm) (puts: x (1 - otm))."""
     put = right == "put"
     today = datetime.now(ET).date()
@@ -267,7 +277,7 @@ def _otm_candidates(sym, spot_hint, otm, right="call"):
         price = spot_hint
     target = price * (1 - otm) if put else price * (1 + otm)
     exps = [e for e in expirations(sym)
-            if SHORT_MIN_DAYS <= (datetime.strptime(e, "%Y-%m-%d").date() - today).days <= SHORT_MAX_DAYS]
+            if days[0] <= (datetime.strptime(e, "%Y-%m-%d").date() - today).days <= days[1]]
     out = []
     for exp in exps:
         # the OTM_STRIKES nearest strikes at or above price x (1 + otm), never below it
@@ -395,7 +405,7 @@ def _analyze(sym, spy, term="leap"):
     if not cands:
         kind = _right(term) + "s"
         row["note"] = (f"No {kind} {MIN_DAYS}+ days out with delta {DELTA_LO:.2f}-{DELTA_HI:.2f}" if _is_long(term) else
-                       f"No {kind} {SHORT_MIN_DAYS}-{SHORT_MAX_DAYS} days out near {TERMS[term]['otm']:.0%} OTM")
+                       f"No {kind} {_days(term)[0]}-{_days(term)[1]} days out near {TERMS[term]['otm']:.0%} OTM")
     elif not liquid:
         row["note"] = f"None liquid (OI >= {MIN_OI}, spread <= {(MAX_SPREAD if _is_long(term) else SHORT_MAX_SPREAD):.0%}); best shown anyway"
     return row
@@ -565,8 +575,8 @@ def scan(refresh=False, mode="watch", term="leap"):
         job = dict(st["job"])
     base = {"mode": mode, "term": term, "watchlist": watch, "job": job, "stale": stale,
             "terms": {k: v["label"] for k, v in TERMS.items()},
-            "settings": {"term": term, "right": _right(term), "long": _is_long(term), "otm": TERMS[term].get("otm"), "short_min_days": SHORT_MIN_DAYS,
-                         "short_max_days": SHORT_MAX_DAYS, "otm_band": OTM_BAND, "min_days": MIN_DAYS, "delta_lo": DELTA_LO, "delta_hi": DELTA_HI, "min_oi": MIN_OI,
+            "settings": {"term": term, "right": _right(term), "long": _is_long(term), "otm": TERMS[term].get("otm"), "short_min_days": _days(term)[0],
+                         "short_max_days": _days(term)[1], "otm_band": OTM_BAND, "min_days": MIN_DAYS, "delta_lo": DELTA_LO, "delta_hi": DELTA_HI, "min_oi": MIN_OI,
                          "max_spread": MAX_SPREAD if _is_long(term) else SHORT_MAX_SPREAD, "earnings_warn_days": EARNINGS_WARN_DAYS,
                          "market_top": MARKET_TOP, "market_min_cap": MARKET_MIN_CAP}}
     if data is None:

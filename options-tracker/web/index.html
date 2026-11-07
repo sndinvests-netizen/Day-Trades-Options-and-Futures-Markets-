@@ -1120,6 +1120,8 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
           <button type="button" data-term="leap" title="365+ days out, deep in the money (delta 0.70-0.85)">LEAPS</button>
           <button type="button" data-term="otm10" title="Hop/Skip: about 90 days out (85-150), strike at least 10% out of the money">90d 10%</button>
           <button type="button" data-term="otm20" title="Hop/Skip: about 90 days out (85-150), strike at least 20% out of the money">90d 20%</button>
+          <button type="button" data-term="s10" title="Skip: about 6 months out (160-240 days), strike at least 10% out of the money">6m 10%</button>
+          <button type="button" data-term="s20" title="Skip: about 6 months out (160-240 days), strike at least 20% out of the money">6m 20%</button>
         </div>
         <span class="grow"></span>
         <span class="lp-meta" id="lpCount"></span>
@@ -4646,7 +4648,8 @@ scrSync();
 /* ================= LEAPS finder ================= */
 // One filter bar, a 7-column table (score ring, breakeven bar) and a slide-in detail panel per ticker.
 // Calls and puts: each call term has a put twin ("p" + term) with the same criteria, mirrored.
-const LP_ALL = { leap: "LEAPS", otm10: "90d +10% OTM", otm20: "90d +20% OTM", pleap: "LEAPS puts", potm10: "90d −10% OTM", potm20: "90d −20% OTM" };
+const LP_ALL = { leap: "LEAPS", otm10: "90d +10% OTM", otm20: "90d +20% OTM", s10: "6m +10% OTM", s20: "6m +20% OTM",
+  pleap: "LEAPS puts", potm10: "90d −10% OTM", potm20: "90d −20% OTM", ps10: "6m −10% OTM", ps20: "6m −20% OTM" };
 let lpData = null, lpTimer = null, lpSeq = 0, lpMode = store.get("lpMode", "watch"), lpTerm = store.get("lpTerm", "leap");
 if (!LP_ALL[lpTerm]) lpTerm = "leap";
 const lpPut = (t = lpTerm) => t.startsWith("p");
@@ -4684,7 +4687,8 @@ function lpSetMode(m) {
   for (const b of document.querySelectorAll("#lpMode button")) b.classList.toggle("on", b.dataset.mode === m);
   for (const b of document.querySelectorAll("#lpTerm button")) {
     b.classList.toggle("on", b.dataset.term === lpBase());
-    b.textContent = { leap: "LEAPS", otm10: `90d ${lpPut() ? "−" : "+"}10%`, otm20: `90d ${lpPut() ? "−" : "+"}20%` }[b.dataset.term];
+    const sg = lpPut() ? "−" : "+";
+    b.textContent = { leap: "LEAPS", otm10: `90d ${sg}10%`, otm20: `90d ${sg}20%`, s10: `6m ${sg}10%`, s20: `6m ${sg}20%` }[b.dataset.term];
   }
   for (const b of document.querySelectorAll("#lpSide button")) b.classList.toggle("on", b.dataset.side === lpRt());
   $("#lpFTrend").textContent = lpPut() ? "Below 200-day only" : "Above 200-day only";
@@ -4710,7 +4714,7 @@ function lpShow(d) {
 const LP_COLS = () => [
   ["ticker", "Ticker", "left sticky"],
   ["score", "Score", "", "0-100: stock 40 (purple) + contract 60 (blue), minus 15 when no contract is liquid. Open a row for the breakdown"],
-  ["b.dte", lpLong() ? (lpPut() ? "Best LEAPS put" : "Best LEAPS") : "Best " + lpRt(), "left", lpLong() ? `Deep in-the-money ${lpRt()} with the best contract score among liquid ones` : `Best-scoring liquid ${lpRt()} about 90 days out near the target strike`],
+  ["b.dte", lpLong() ? (lpPut() ? "Best LEAPS put" : "Best LEAPS") : "Best " + lpRt(), "left", lpLong() ? `Deep in-the-money ${lpRt()} with the best contract score among liquid ones` : `Best-scoring liquid ${lpRt()} ${lpBase().startsWith("s") ? "about 6 months" : "about 90 days"} out near the target strike`],
   ["b.contract_cost", "Cost", "", "Per contract (100 shares), at the mid"],
   lpLong() ? ["b.tv_year", "Time value/yr", "", lpPut() ? "Time value per year, as a % of the stock price. Under ~6% is cheap" : "(Time value + dividends you give up) per year, as a % of the stock price. Under ~6% is cheap"]
                     : ["b.be_sigma", "BE vs 1σ", "", "Breakeven move ÷ the stock's normal 1σ move by expiration. Under 1 = inside a normal move; over 2 = a long shot"],
