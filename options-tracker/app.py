@@ -248,7 +248,7 @@ class Handler(BaseHTTPRequestHandler):
         elif url.path == "/api/leaps/one":
             self.guard(lambda: leaps.lookup(q.get("ticker"), q.get("term") or "leap"))
         elif url.path == "/api/putsell/one":
-            self.guard(lambda: putsell.lookup(q.get("ticker")))
+            self.guard(lambda: putsell.lookup(q.get("ticker"), q.get("right") or "put"))
         elif url.path == "/api/putsell":
             self.guard(lambda: putsell.scan(q.get("refresh") == "1"))
         elif url.path == "/api/leaps":

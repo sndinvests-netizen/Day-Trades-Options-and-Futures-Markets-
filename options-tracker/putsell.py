@@ -27,6 +27,8 @@ CACHE_FILE = os.path.join(HERE, "putsell_cache.json")
 
 MAX_DAYS = 30
 DELTA_MIN, DELTA_MAX = 0.08, 0.30     # puts outside this band aren't returned
+CALL_DELTA = (0.15, 0.60)             # covered calls are written at 30 delta or more; show 0.15 up for context
+DELTA = {"put": (DELTA_MIN, DELTA_MAX), "call": CALL_DELTA}
 TARGETS = {"20": (0.175, 0.225), "15": (0.125, 0.175)}   # |delta| band for each target
 MIN_OI = 100
 MAX_SPREAD = 0.30                    # (ask - bid) / mid
@@ -61,8 +63,25 @@ def _earn(sym):
             "name": e.get("name")}
 
 
-def _puts(sym, spot=None):
-    """(spot, puts): every put 1..MAX_DAYS days out with |delta| in [DELTA_MIN, DELTA_MAX] and a bid."""
+def _row(right, spot, k, exp, dte, d, bid, ask, oi, iv):
+    """One contract. A cash-secured put ties up the strike; a covered call ties up the shares at
+    today's price, so its return is on the stock price."""
+    basis = k if right == "put" else spot
+    r = {"strike": k, "exp": exp, "dte": dte, "delta": round(d, 3), "bid": bid, "ask": ask, "oi": oi,
+         "iv": round(iv, 3), "spread": round((ask - bid) / ((bid + ask) / 2), 3),
+         "ret_week": round(bid / basis * 7 / max(dte, 7), 5), "ret_trade": round(bid / basis, 5)}
+    if right == "call":   # shares called away at the strike: premium plus the gain up to the strike
+        r["ret_called"] = round((bid + k - spot) / spot, 5)
+    return r
+
+
+def _otm(right, k, spot):
+    return k < spot if right == "put" else k > spot
+
+
+def _puts(sym, spot=None, right="put"):
+    """(spot, contracts): every out-of-the-money put (or call) 1..MAX_DAYS days out with |delta| in
+    [DELTA_MIN, DELTA_MAX] and a bid."""
     spot = spot or od.spot_price(sym)
     today = _today()
     out = []
@@ -71,7 +90,7 @@ def _puts(sym, spot=None):
         if dte < 0 or dte > MAX_DAYS:
             continue
         try:
-            rows = od.chain_rows(sym, e)["put"]
+            rows = od.chain_rows(sym, e)[right]
         except QuoteError:
             continue
         t = od.years_to_expiry(e)
@@ -79,18 +98,16 @@ def _puts(sym, spot=None):
             continue
         for p in rows:
             k, bid, ask = p["strike"], p["bid"], p["ask"]
-            if k >= spot or bid <= 0 or ask <= 0 or ask < bid:
+            if not _otm(right, k, spot) or bid <= 0 or ask <= 0 or ask < bid:
                 continue
             mid = (bid + ask) / 2
-            iv = od.implied_vol("put", spot, k, t, mid) or p["iv"]
+            iv = od.implied_vol(right, spot, k, t, mid) or p["iv"]
             if not iv:
                 continue
-            d = od.greeks("put", spot, k, t, iv)["delta"]
-            if not DELTA_MIN <= abs(d) <= DELTA_MAX:
+            d = od.greeks(right, spot, k, t, iv)["delta"]
+            if not DELTA[right][0] <= abs(d) <= DELTA[right][1]:
                 continue
-            out.append({"strike": k, "exp": e, "dte": dte, "delta": round(d, 3), "bid": bid, "ask": ask,
-                        "oi": p["oi"], "iv": round(iv, 3), "spread": round((ask - bid) / mid, 3),
-                        "ret_week": round(bid / k * 7 / max(dte, 7), 5), "ret_trade": round(bid / k, 5)})
+            out.append(_row(right, spot, k, e, dte, d, bid, ask, p["oi"], iv))
     out.sort(key=lambda p: -p["ret_week"])
     return spot, out
 
@@ -107,11 +124,11 @@ def _throttle():
         _last[0] = time.time()
 
 
-class RateLimited(Exception):
+class RateLimited(QuoteError):
     pass
 
 
-def _cboe_puts(sym):
+def _cboe_puts(sym, right="put"):
     """Same as _puts, from CBOE's delayed-quote feed: the whole chain in one request, with delta."""
     import urllib.error
     import urllib.request
@@ -130,20 +147,17 @@ def _cboe_puts(sym):
     today = _today()
     out = []
     for o in data.get("options") or []:
-        m = re.search(r"(\d{2})(\d{2})(\d{2})P(\d{8})$", o.get("option", ""))
+        m = re.search(r"(\d{2})(\d{2})(\d{2})%s(\d{8})$" % ("P" if right == "put" else "C"), o.get("option", ""))
         if not m:
             continue
         exp = f"20{m[1]}-{m[2]}-{m[3]}"
         dte = (date.fromisoformat(exp) - today).days
         k = int(m[4]) / 1000
         bid, ask, d = od._num(o.get("bid")), od._num(o.get("ask")), od._num(o.get("delta"))
-        if dte < 0 or dte > MAX_DAYS or k >= spot or bid <= 0 or ask < bid or not DELTA_MIN <= abs(d) <= DELTA_MAX:
+        if dte < 0 or dte > MAX_DAYS or not _otm(right, k, spot) or bid <= 0 or ask < bid or not DELTA[right][0] <= abs(d) <= DELTA[right][1]:
             continue
-        mid = (bid + ask) / 2
-        out.append({"strike": k, "exp": exp, "dte": dte, "delta": round(-abs(d), 3), "bid": bid, "ask": ask,
-                    "oi": int(od._num(o.get("open_interest"))), "iv": round(od._num(o.get("iv")), 3),
-                    "spread": round((ask - bid) / mid, 3),
-                    "ret_week": round(bid / k * 7 / max(dte, 7), 5), "ret_trade": round(bid / k, 5)})
+        out.append(_row(right, spot, k, exp, dte, -abs(d) if right == "put" else abs(d), bid, ask,
+                        int(od._num(o.get("open_interest"))), od._num(o.get("iv"))))
     out.sort(key=lambda p: -p["ret_week"])
     return spot, out
 
@@ -205,32 +219,37 @@ def _screener_row(sym):
     return (data or {}).get("rows", {}).get(sym) or {}
 
 
-def lookup(ticker):
+def lookup(ticker, right="put"):
+    """Every put (right="put", cash-secured) or call (right="call", covered) for one stock."""
+    if right not in ("put", "call"):
+        raise QuoteError("right must be put or call")
     sym = yahoo_symbol(str(ticker or "").strip().upper())
     if not re.fullmatch(r"[A-Z0-9.^=-]{1,12}", sym):
         raise QuoteError("Enter a ticker")
-    hit = _one.get(sym)
+    hit = _one.get((sym, right))
     if hit and time.time() - hit[0] < LOOKUP_SECONDS:
         return hit[1]
     try:
-        spot, puts = _puts(sym)
+        spot, puts = _puts(sym, right=right)
     except QuoteError as e:
-        if "Too Many Requests" not in str(e) and "Rate limited" not in str(e):
-            raise
-        spot, puts = _cboe_puts(sym)
+        # Yahoo rate limits (sometimes as an empty option list): try CBOE, keep Yahoo's error if that fails too
+        try:
+            spot, puts = _cboe_puts(sym, right)
+        except QuoteError:
+            raise e
     sr = _screener_row(sym)
     e = _earn(sym)
     row = {"ticker": sym, "name": sr.get("name") or e.get("name") or sym, "price": round(spot, 2),
            "sma200": sr.get("sma200"), "sma50": sr.get("sma50"), "earn": e.get("earn"),
-           "earn_est": e.get("earn_est"), "earn_session": e.get("earn_session"), "puts": puts,
+           "earn_est": e.get("earn_est"), "earn_session": e.get("earn_session"), "puts": puts, "right": right,
            "settings": settings(), "at": time.time()}
-    _one[sym] = (time.time(), row)
+    _one[(sym, right)] = (time.time(), row)
     return row
 
 
 def settings():
     return {"max_days": MAX_DAYS, "targets": TARGETS, "min_oi": MIN_OI, "max_spread": MAX_SPREAD,
-            "delta_min": DELTA_MIN, "delta_max": DELTA_MAX, "min_cap": MIN_CAP}
+            "delta_min": DELTA_MIN, "delta_max": DELTA_MAX, "call_delta": CALL_DELTA, "min_cap": MIN_CAP}
 
 
 # ---------- market scan ----------
