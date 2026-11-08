@@ -33,7 +33,7 @@ MAX_SPREAD = 0.30                    # (ask - bid) / mid
 EARN_CHECK_RET = 0.010               # the scan looks up earnings only for stocks paying at least 1%/wk
 MIN_CAP = 10e9
 WORKERS = 3
-CBOE_GAP = 0.35                      # seconds between CBOE requests (faster gets HTTP 429)
+CBOE_GAP = 0.6                      # seconds between CBOE requests (faster gets HTTP 429)
 RATE_WAIT = (20, 60, 120)            # back-off after a rate limit, then retry
 FRESH_SECONDS = 4 * 3600             # a scan is reused for 4 hours unless Refresh is pressed
 RETRY_SECONDS = 300
@@ -148,27 +148,37 @@ def _cboe_puts(sym):
     return spot, out
 
 
+_cboe_off = [0.0]                    # CBOE is skipped until this time after it rate limits us
+CBOE_COOLDOWN = 120
+
+
+def _limited(e):
+    return isinstance(e, RateLimited) or "Too Many Requests" in str(e) or "Rate limited" in str(e)
+
+
 def _any_puts(sym, spot=None):
-    """CBOE first (one request), Yahoo if CBOE has nothing; waits and retries on rate limits."""
-    for i, wait in enumerate((0,) + RATE_WAIT):
+    """CBOE first (one request per stock), Yahoo when CBOE has nothing or is rate limiting us.
+    Waits and retries only when both are rate limited."""
+    for wait in (0,) + RATE_WAIT:
         if wait:
             with _lock:
                 _job["phase"] = f"Rate limited, waiting {wait}s"
             time.sleep(wait)
             with _lock:
                 _job["phase"] = "Pricing puts 30 days out or less"
-        try:
+        if time.time() >= _cboe_off[0]:
             try:
                 got = _cboe_puts(sym)
                 if got[1]:
                     return got
+            except RateLimited:
+                _cboe_off[0] = time.time() + CBOE_COOLDOWN
             except QuoteError:
                 pass
+        try:
             return _puts(sym, spot)
-        except RateLimited:
-            continue
         except QuoteError as e:
-            if "Too Many Requests" not in str(e) and "Rate limited" not in str(e):
+            if not _limited(e):
                 raise
     raise QuoteError(f"{sym}: rate limited")
 
