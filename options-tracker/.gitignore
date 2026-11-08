@@ -19,3 +19,5 @@ leaps_market_cache.json.tmp
 trades.json.before-*
 leaps_*_cache.json
 leaps_*_cache.json.tmp
+putsell_cache.json
+putsell_cache.json.tmp

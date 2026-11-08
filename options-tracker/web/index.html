@@ -634,6 +634,30 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
 #scrTable .spark { width: 96px; }
 .lp-dot.ok { background: var(--up); }
 .lp-filters input.scr-num { width: 64px; padding: 4px 6px; text-align: right; }
+/* Sell Puts */
+.ps-tbl { min-width: 880px; }
+.ps-tbl td, .ps-tbl th { padding: 7px 10px; }
+.ps-tbl td.left, .ps-tbl th.left { text-align: left; }
+.ps-tbl tbody tr { cursor: pointer; }
+.ps-tbl tbody tr:hover td { background-color: var(--hover); }
+.ps-tbl tr.fit td { background-color: color-mix(in srgb, var(--up) 7%, transparent); }
+.ps-tbl tr.best td { background-color: color-mix(in srgb, var(--up) 16%, transparent); }
+.ps-tbl tr.off td { opacity: .55; }
+.ps-tbl tr.sel td { box-shadow: inset 0 1px 0 #5fa4e8, inset 0 -1px 0 #5fa4e8; }
+.ps-ret { font-weight: 700; padding: 1px 7px; border-radius: 7px; }
+.ps-ret.hi { color: var(--up); background: color-mix(in srgb, var(--up) 14%, transparent); }
+.ps-ret.mid { color: #2f7fd0; background: color-mix(in srgb, #5fa4e8 16%, transparent); }
+.ps-ret.lo { color: var(--muted); }
+.ps-why { font-size: 12px; } .ps-why.yes { color: var(--up); } .ps-why.no { color: var(--down); } .ps-why.near { color: var(--warn); }
+.ps-tag { font-size: 10px; font-weight: 700; color: #fff; background: var(--up); border-radius: 5px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px; }
+.ps-flag { font-size: 11px; padding: 0 6px; border-radius: 999px; margin-left: 4px; background: var(--warn-bg); color: var(--warn); }
+.ps-cards { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+.ps-card { background: var(--well); border-radius: 10px; padding: 7px 12px; font-size: 13px; }
+.ps-card small { display: block; font-size: 11px; color: var(--muted); }
+.ps-card.good { background: color-mix(in srgb, var(--up) 14%, var(--panel)); }
+.ps-card.bad { background: color-mix(in srgb, var(--down) 12%, var(--panel)); }
+.ps-look .scroll { max-height: 460px; overflow-y: auto; }
+.ps-look thead th { position: sticky; top: 0; background: var(--panel); z-index: 2; }
 /* LEAPS Finder: one filter bar, a 7-column table, and a slide-in detail panel */
 .lp-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .lp-top h2 { margin: 0; }
@@ -750,6 +774,7 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
       <button id="tab-trades">My Trades</button>
       <button id="tab-screener">Screener</button>
       <button id="tab-leaps">LEAPS</button>
+      <button id="tab-puts">Sell Puts</button>
     </div>
     <span class="note">Yahoo Finance data, delayed about 15 min. Greeks and projections use Black-Scholes (4% rate).<span id="mkt-dot" class="mkt-dot closed" role="img" aria-label="Market closed" title="Market closed"></span></span>
     <button type="button" class="vix-badge" id="vixBadge" title="VIX and your levels. Click to edit levels and alerts.">
@@ -1151,6 +1176,46 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
       <p class="note" id="lpHow"></p>
     </div>
     <aside class="lp-drawer lp-st" id="lpDrawer" aria-label="Contract detail" aria-hidden="true"></aside>
+  </section>
+  <section id="view-puts" class="hidden">
+    <div class="panel">
+      <div class="lp-top">
+        <h2>Sell Puts</h2>
+        <div class="tabs mini" id="psDelta" role="group" aria-label="Target delta">
+          <button type="button" data-d="20" title="Puts with delta 0.175-0.225 (about an 80% chance of expiring worthless)">20Δ</button>
+          <button type="button" data-d="15" title="Puts with delta 0.125-0.175: further out of the money, safer, pays less">15Δ safer</button>
+        </div>
+        <span class="grow"></span>
+        <span class="lp-meta" id="psCount"></span>
+        <button class="ghost small" type="button" id="psRefresh" title="Rescan the market now">Rescan</button>
+      </div>
+      <div class="lp-filters">
+        <label for="psMin">Min return / week <input type="number" class="scr-num" id="psMin" min="0" max="10" step="0.1" value="1.5">%</label>
+        <label for="psHi">Target <input type="number" class="scr-num" id="psHi" min="0" max="10" step="0.1" value="1.7">%</label>
+        <label for="psOi">Min open interest <input type="number" class="scr-num" id="psOi" min="0" step="50" value="100"></label>
+        <label for="psSpr">Max spread <input type="number" class="scr-num" id="psSpr" min="1" max="100" step="5" value="30">%</label>
+        <button type="button" class="chip" id="psFEarn" aria-pressed="true" title="Leave out puts whose stock reports earnings on or before expiration">Skip earnings</button>
+        <button type="button" class="chip" id="psFFits" aria-pressed="true" title="Whole-market list: show only the stocks with a put that fits">Fits only</button>
+      </div>
+      <div class="lp-progress" aria-hidden="true"><i id="psProg"></i></div>
+    </div>
+    <div class="panel ps-look">
+      <form class="lp-top" id="psForm" autocomplete="off">
+        <h2>Any ticker</h2>
+        <input id="psTicker" type="text" spellcheck="false" placeholder="e.g. NVDA" aria-label="Ticker to look up" style="width:120px;text-transform:uppercase">
+        <button type="submit" class="primary small">Show strikes</button>
+        <span class="lp-meta" id="psLookMeta">Every put 30 days out or less, ranked by return per week at the bid.</span>
+      </form>
+      <div id="psLook"></div>
+    </div>
+    <div id="psErr" class="err hidden"></div>
+    <div class="panel lp-st">
+      <h2 style="margin:0 0 10px">Whole market <span class="lp-meta" id="psMktMeta"></span></h2>
+      <div id="psBody"><div class="note empty">Open the Sell Puts tab to scan the market.</div></div>
+      <p class="note">Return / week = bid ÷ strike × 7 ÷ days to expiration (a put with under a week left counts as a week), on the full cash set aside: strike × 100, cash-secured.
+        For each stock the scan keeps the best-paying put in the delta band with 100+ open interest, a spread of 30% or less, and no earnings before expiration
+        (earnings are looked up for stocks paying 1%+ a week). Click a row to see all its strikes above; right-click opens its option chain. A screen, not advice.</p>
+    </div>
   </section>
   </main>
 
@@ -2151,7 +2216,7 @@ $("#vixSave").onclick = async () => {
 setInterval(loadVix, VIX_EVERY);
 
 /* ================= tabs ================= */
-const TABS = ["chain", "builder", "trades", "screener", "leaps"];
+const TABS = ["chain", "builder", "trades", "screener", "leaps", "puts"];
 function showTab(name) {
   for (const t of TABS) {
     $("#tab-" + t).classList.toggle("on", t === name);
@@ -2162,6 +2227,7 @@ function showTab(name) {
   if (name === "builder") openBuilder();
   if (name === "screener") loadScreener();
   if (name === "leaps") loadLeaps();
+  if (name === "puts") psOpen();
 }
 for (const t of TABS) $("#tab-" + t).onclick = () => showTab(t);
 const tabOn = name => !$("#view-" + name).classList.contains("hidden");
@@ -5231,6 +5297,168 @@ setTimer();
 const last = store.get("last", { ticker: "SPY" });
 $("#ticker").value = last.ticker;
 loadChain(last.ticker, last.exp);
+/* ================= Sell Puts ================= */
+// Cash-secured puts 30 days out or less. Return / week = bid / strike x 7 / max(days, 7).
+const PS_BANDS = { 20: [0.175, 0.225], 15: [0.125, 0.175] };
+let ps = Object.assign({ d: 20, min: 1.5, hi: 1.7, oi: 100, spr: 30, earn: true, fits: true, t: "" }, store.get("ps", {}));
+let psData = null, psLookData = null, psTimer = null, psSeq = 0, psLookSeq = 0;
+const psSave = () => store.set("ps", ps);
+const psDay = s => s ? new Date(s + "T12:00:00").toLocaleDateString([], { month: "short", day: "numeric" }) : "–";
+function psCheck(p, earn, opts = {}) {
+  // why a put does or doesn't fit the rules; ok = fits
+  const ad = Math.abs(p.delta), band = PS_BANDS[ps.d], ret = p.ret_week;
+  const earnIn = ps.earn && earn && earn <= p.exp;
+  if (earnIn) return { ok: false, why: `No: earnings ${psDay(earn)} before expiration`, cls: "no" };
+  if (p.oi < ps.oi) return { ok: false, why: `No: ${int(p.oi)} open interest`, cls: "no" };
+  if (p.spread > ps.spr / 100) return { ok: false, why: `No: ${pct(p.spread, 0)} spread`, cls: "no" };
+  if (ret < ps.min / 100) return { ok: false, why: `No: under ${ps.min}% a week`, cls: "no" };
+  if (!opts.skipBand && (ad < band[0] || ad > band[1]))
+    return { ok: false, why: ad > band[1] ? `Pays enough, riskier than ${ps.d}Δ` : `Pays enough, safer than ${ps.d}Δ`, cls: "near" };
+  return { ok: true, why: ret >= ps.hi / 100 ? `Yes: above ${ps.hi}%` : `Yes: in your ${ps.min}–${ps.hi}% range`, cls: "yes" };
+}
+const psRetCls = r => r >= ps.hi / 100 ? "hi" : r >= ps.min / 100 ? "mid" : "lo";
+function psSyncControls() {
+  for (const b of document.querySelectorAll("#psDelta button")) b.classList.toggle("on", +b.dataset.d === ps.d);
+  $("#psMin").value = ps.min; $("#psHi").value = ps.hi; $("#psOi").value = ps.oi; $("#psSpr").value = ps.spr;
+  $("#psFEarn").setAttribute("aria-pressed", ps.earn); $("#psFFits").setAttribute("aria-pressed", ps.fits);
+  if (ps.t && !$("#psTicker").value) $("#psTicker").value = ps.t;
+}
+function psOpen() {
+  psSyncControls();
+  loadPs();
+  if (ps.t && !psLookData) psLookup(ps.t);
+}
+async function loadPs(refresh) {
+  const seq = ++psSeq;
+  clearTimeout(psTimer);
+  try {
+    const d = await api("/api/putsell" + (refresh ? "?refresh=1" : ""));
+    if (seq !== psSeq) return;
+    psData = d;
+    $("#psErr").classList.add("hidden");
+    renderPs();
+    if (d.job.running && tabOn("puts")) psTimer = setTimeout(() => loadPs(), 4000);
+  } catch (err) {
+    if (seq !== psSeq) return;
+    $("#psErr").textContent = "Sell Puts scan: " + err.message;
+    $("#psErr").classList.remove("hidden");
+  }
+}
+function psMktRows() {
+  if (!psData) return [];
+  const out = [];
+  for (const r of psData.rows) {
+    const p = r.best && r.best[ps.d];
+    if (!p) continue;
+    const c = psCheck(p, r.earn);
+    if (ps.fits && !c.ok) continue;
+    out.push({ r, p, c });
+  }
+  out.sort((a, b) => (b.c.ok - a.c.ok) || (b.p.ret_week - a.p.ret_week));
+  return ps.fits ? out : out.slice(0, 60);
+}
+function renderPs() {
+  const d = psData;
+  if (!d) return;
+  const j = d.job, rows = psMktRows();
+  const bits = [];
+  if (j.running) bits.push(`<b>${esc(j.phase || "Scanning")}${j.total ? ` ${int(j.done)} of ${int(j.total)}` : ""}…</b>`);
+  if (d.scanned_at) bits.push(`scanned ${new Date(d.scanned_at * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`);
+  if (j.error && !j.running) bits.push(`<span class="warn">Last scan failed: ${esc(j.error)}</span>`);
+  $("#psCount").innerHTML = bits.join(" · ");
+  $("#psProg").style.width = j.running && j.total ? (j.done / j.total * 100) + "%" : "0";
+  const nFail = Object.keys(d.failed || {}).length;
+  const fits = d.rows.filter(r => r.best && r.best[ps.d] && psCheck(r.best[ps.d], r.earn).ok);
+  $("#psMktMeta").textContent = d.status === "loading" ? "" :
+    `· ${fits.length} stocks have a ${ps.d}Δ put paying ${ps.min}%+ a week (${fits.filter(r => r.best[ps.d].ret_week >= ps.hi / 100).length} pay ${ps.hi}%+) · ${int(d.universe)} stocks over $10B checked${nFail ? `, ${nFail} without option data` : ""}`;
+  if (d.status === "loading" && !rows.length) {
+    $("#psBody").innerHTML = `<div class="note empty">Pricing puts across the Screener's $10B+ stocks: ${esc(j.phase || "starting")}${j.total ? ` (${int(j.done)} of ${int(j.total)})` : ""}…<br>The first scan takes a few minutes. Look up any ticker above in the meantime.</div>`;
+    return;
+  }
+  if (!rows.length) {
+    $("#psBody").innerHTML = `<div class="note empty">No ${ps.d}Δ put pays ${ps.min}% a week under these rules. Try 20Δ, a lower minimum, or turn off Fits only.</div>`;
+    return;
+  }
+  const body = rows.map(({ r, p, c }) => {
+    const below200 = r.sma200 && r.price < r.sma200;
+    return `<tr data-t="${esc(r.ticker)}" class="${c.ok ? "" : "off"}${psLookData && psLookData.ticker === r.ticker ? " sel" : ""}" title="Click to see every ${esc(r.ticker)} strike · right-click to open its option chain">
+      <td class="left lp-tk"><b>${esc(r.ticker)}</b>${below200 ? `<span class="ps-flag" title="Below the 200-day average">below 200d</span>` : ""}<span class="tk-name">${esc(r.name && r.name !== r.ticker ? r.name : "")}</span></td>
+      <td>${f2(r.price)}</td>
+      <td class="left"><span class="lp-call">${f2(p.strike)} P ${psDay(p.exp)}<small>Δ ${p.delta.toFixed(2)} · ${p.dte} days · ${pct((r.price - p.strike) / r.price)} below</small></span></td>
+      <td><span class="lp-call">${usd(p.bid * 100)}<small>${f2(p.bid)} / ${f2(p.ask)}</small></span></td>
+      <td><span class="ps-ret ${psRetCls(p.ret_week)}">${pct(p.ret_week, 2)}</span><small class="note" style="display:block">${pct(p.ret_week * 4.33)}/mo on ${usd(p.strike * 100)}</small></td>
+      <td>${pct(p.iv, 0)}</td>
+      <td class="left"><span class="lp-earn${r.earn && r.earn <= p.exp ? " soon" : ""}">${r.earn ? psDay(r.earn) + (r.earn_est ? " est." : "") : r.earn_checked === false ? "not checked" : "–"}</span></td>
+      <td>${int(p.oi)} · ${pct(p.spread, 0)}</td>
+      <td class="left"><span class="ps-why ${c.cls}">${esc(c.why)}</span></td></tr>`;
+  }).join("");
+  $("#psBody").innerHTML = `<div class="scroll"><table class="ps-tbl"><thead><tr><th class="left">Stock</th><th>Price</th><th class="left">Best ${ps.d}Δ put</th><th>Credit</th><th>Return / week</th><th>IV</th><th class="left">Earnings</th><th>OI · spread</th><th class="left">Fits?</th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+async function psLookup(t) {
+  t = (t || "").trim().toUpperCase();
+  if (!t) return;
+  ps.t = t; psSave();
+  $("#psTicker").value = t;
+  const seq = ++psLookSeq;
+  $("#psLookMeta").textContent = `Loading ${t}'s puts…`;
+  try {
+    const d = await api("/api/putsell/one?ticker=" + encodeURIComponent(t));
+    if (seq !== psLookSeq) return;
+    psLookData = d;
+    renderPsLook();
+    renderPs();
+  } catch (err) {
+    if (seq !== psLookSeq) return;
+    psLookData = null;
+    $("#psLook").innerHTML = "";
+    $("#psLookMeta").innerHTML = `<span class="warn">${esc(err.message)}</span>`;
+  }
+}
+function renderPsLook() {
+  const d = psLookData;
+  if (!d) return;
+  const rows = d.puts.map(p => ({ p, c: psCheck(p, d.earn) }));
+  const fits = rows.filter(x => x.c.ok);
+  const best = fits.reduce((a, x) => !a || x.p.ret_week > a.p.ret_week ? x : a, null);
+  rows.sort((a, b) => (b.c.ok - a.c.ok) || ((b.c.cls === "near") - (a.c.cls === "near")) || (b.p.ret_week - a.p.ret_week));
+  $("#psLookMeta").textContent = `${d.ticker}: ${fits.length} of ${d.puts.length} strikes fit (${ps.d}Δ, ${ps.min}%+ a week, ${ps.oi}+ OI, spread ≤ ${ps.spr}%${ps.earn ? ", no earnings" : ""})`;
+  const below200 = d.sma200 && d.price < d.sma200;
+  const cards = `<div class="ps-cards">
+    <div class="ps-card"><small>${esc(d.name)}</small><b>${f2(d.price)}</b></div>
+    <div class="ps-card"><small>Next earnings</small><b>${d.earn ? psDay(d.earn) + (d.earn_est ? " est." : "") : "none listed"}</b></div>
+    ${d.sma200 ? `<div class="ps-card"><small>200-day</small><b>${f2(d.sma200)}</b> <span class="note">${below200 ? "price below" : "price above"}</span></div>` : ""}
+    ${best ? `<div class="ps-card good"><small>Best ${ps.d}Δ that fits</small><b>${f2(best.p.strike)} P ${psDay(best.p.exp)} · ${pct(best.p.ret_week, 2)}/wk · ${usd(best.p.bid * 100)} credit</b></div>`
+           : `<div class="ps-card bad"><small>Best ${ps.d}Δ that fits</small><b>none 30 days out or less</b></div>`}</div>`;
+  if (!rows.length) { $("#psLook").innerHTML = cards + `<div class="note empty">No puts 30 days out or less with delta 0.08–0.30 and a bid.</div>`; return; }
+  const body = rows.map(({ p, c }) => `<tr data-exp="${p.exp}" data-k="${p.strike}" class="${best && p === best.p ? "best" : c.ok ? "fit" : c.cls === "near" ? "" : "off"}" title="Click to sell this put in the Builder · right-click to open the chain">
+    <td class="left"><b>${f2(p.strike)} P</b> ${psDay(p.exp)} <span class="note">· ${p.dte}d</span>${best && p === best.p ? `<span class="ps-tag">best ${ps.d}Δ</span>` : ""}</td>
+    <td>${p.delta.toFixed(2)}</td><td>${pct((d.price - p.strike) / d.price)}</td><td>${f2(p.bid)} / ${f2(p.ask)}</td>
+    <td><span class="ps-ret ${psRetCls(p.ret_week)}">${pct(p.ret_week, 2)}</span></td>
+    <td>${usd(p.bid * 100)} <span class="note">(${pct(p.ret_trade, 2)})</span></td><td>${pct(p.iv, 0)}</td>
+    <td>${int(p.oi)} · ${pct(p.spread, 0)}</td><td class="left"><span class="ps-why ${c.cls}">${esc(c.why)}</span></td></tr>`).join("");
+  $("#psLook").innerHTML = cards + `<div class="scroll"><table class="ps-tbl"><thead><tr><th class="left">Put</th><th>Delta</th><th>Below price</th><th>Bid / ask</th><th>Return / week</th><th>Credit (trade)</th><th>IV</th><th>OI · spread</th><th class="left">Fits your rules?</th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+async function psToBuilder(ticker, exp, strike) {
+  try {
+    const chain = await api(`/api/chain?ticker=${encodeURIComponent(ticker)}&exp=${exp}`);
+    if (B.ticker === chain.ticker) B.legs = [];
+    await addLegFromChain(chain, "put", strike, "sell");
+    showTab("builder");
+  } catch (err) { toast("Couldn't open the Builder: " + err.message, false); }
+}
+function psToChain(t, exp) { $("#ticker").value = t; showTab("chain"); loadChain(t, exp); }
+$("#psForm").onsubmit = e => { e.preventDefault(); psLookup($("#psTicker").value); };
+$("#psRefresh").onclick = () => loadPs(true);
+$("#psDelta").onclick = e => { const b = e.target.closest("button[data-d]"); if (!b) return; ps.d = +b.dataset.d; psSave(); psSyncControls(); renderPs(); renderPsLook(); };
+for (const [id, key] of [["#psMin", "min"], ["#psHi", "hi"], ["#psOi", "oi"], ["#psSpr", "spr"]])
+  $(id).oninput = () => { const v = parseFloat($(id).value); if (isNaN(v) || v < 0) return; ps[key] = v; psSave(); renderPs(); renderPsLook(); };
+for (const [id, key] of [["#psFEarn", "earn"], ["#psFFits", "fits"]])
+  $(id).onclick = () => { ps[key] = !ps[key]; psSave(); psSyncControls(); renderPs(); renderPsLook(); };
+$("#psBody").onclick = e => { const tr = e.target.closest("tr[data-t]"); if (tr) { psLookup(tr.dataset.t); $("#psForm").scrollIntoView({ behavior: "smooth", block: "start" }); } };
+$("#psBody").oncontextmenu = e => { const tr = e.target.closest("tr[data-t]"); if (!tr) return; e.preventDefault(); psToChain(tr.dataset.t); };
+$("#psLook").onclick = e => { const tr = e.target.closest("tr[data-exp]"); if (tr && psLookData) psToBuilder(psLookData.ticker, tr.dataset.exp, +tr.dataset.k); };
+$("#psLook").oncontextmenu = e => { const tr = e.target.closest("tr[data-exp]"); if (!tr || !psLookData) return; e.preventDefault(); psToChain(psLookData.ticker, tr.dataset.exp); };
+
 const startTab = store.get("tab", "chain");
 if (startTab !== "chain") showTab(startTab);
 newsShown(store.get("news", true));
@@ -5269,6 +5497,7 @@ loadVix();
   update();
   setInterval(update, 30000);
 })();
+
 </script>
 </body>
 </html>

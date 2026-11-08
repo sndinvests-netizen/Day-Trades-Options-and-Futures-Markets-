@@ -24,6 +24,7 @@ import tracker
 import earnings
 import screener
 import leaps
+import putsell
 from econ_calendar import usd_events
 from fear_greed import fear_greed
 from breadth import breadth
@@ -246,6 +247,10 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(lambda: screener_feed(q))
         elif url.path == "/api/leaps/one":
             self.guard(lambda: leaps.lookup(q.get("ticker"), q.get("term") or "leap"))
+        elif url.path == "/api/putsell/one":
+            self.guard(lambda: putsell.lookup(q.get("ticker")))
+        elif url.path == "/api/putsell":
+            self.guard(lambda: putsell.scan(q.get("refresh") == "1"))
         elif url.path == "/api/leaps":
             self.guard(lambda: leaps.scan(q.get("refresh") == "1", q.get("mode") or "watch", q.get("term") or "leap"))
         else:
