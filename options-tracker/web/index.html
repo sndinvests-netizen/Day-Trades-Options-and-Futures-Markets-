@@ -1190,8 +1190,12 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
         <button class="ghost small" type="button" id="psRefresh" title="Rescan the market now">Rescan</button>
       </div>
       <div class="lp-filters">
-        <label for="psMin">Min return / week <input type="number" class="scr-num" id="psMin" min="0" max="10" step="0.1" value="1.5">%</label>
-        <label for="psHi">Target <input type="number" class="scr-num" id="psHi" min="0" max="10" step="0.1" value="1.7">%</label>
+        <div class="tabs mini" id="psUnit" role="group" aria-label="Return per week or per month">
+          <button type="button" data-u="wk" title="Return per week">Per week</button>
+          <button type="button" data-u="mo" title="Return per month (a week's return × 52 ÷ 12 = × 4.33)">Per month</button>
+        </div>
+        <label for="psMin">Min return <input type="number" class="scr-num" id="psMin" min="0" max="40" step="0.1" value="1.5">%</label>
+        <label for="psHi">Target <input type="number" class="scr-num" id="psHi" min="0" max="40" step="0.1" value="1.7">%</label>
         <label for="psOi">Min open interest <input type="number" class="scr-num" id="psOi" min="0" step="50" value="100"></label>
         <label for="psSpr">Max spread <input type="number" class="scr-num" id="psSpr" min="1" max="100" step="5" value="30">%</label>
         <button type="button" class="chip" id="psFEarn" aria-pressed="true" title="Leave out puts whose stock reports earnings on or before expiration">Skip earnings</button>
@@ -1212,7 +1216,7 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
     <div class="panel lp-st">
       <h2 style="margin:0 0 10px">Whole market <span class="lp-meta" id="psMktMeta"></span></h2>
       <div id="psBody"><div class="note empty">Open the Sell Puts tab to scan the market.</div></div>
-      <p class="note">Return / week = bid ÷ strike × 7 ÷ days to expiration (a put with under a week left counts as a week), on the full cash set aside: strike × 100, cash-secured.
+      <p class="note">Return / week = bid ÷ strike × 7 ÷ days to expiration (a put with under a week left counts as a week), on the full cash set aside: strike × 100, cash-secured. Per month = per week × 4.33 (52 weeks ÷ 12), the rate if you repeat the trade all month.
         For each stock the scan keeps the best-paying put in the delta band with 100+ open interest, a spread of 30% or less, and no earnings before expiration
         (earnings are looked up for stocks paying 1%+ a week). Click a row to see all its strikes above; right-click opens its option chain. A screen, not advice.</p>
     </div>
@@ -5300,7 +5304,12 @@ loadChain(last.ticker, last.exp);
 /* ================= Sell Puts ================= */
 // Cash-secured puts 30 days out or less. Return / week = bid / strike x 7 / max(days, 7).
 const PS_BANDS = { 20: [0.175, 0.225], 15: [0.125, 0.175] };
-let ps = Object.assign({ d: 20, min: 1.5, hi: 1.7, oi: 100, spr: 30, earn: true, fits: true, t: "" }, store.get("ps", {}));
+let ps = Object.assign({ d: 20, unit: "wk", min: 1.5, hi: 1.7, oi: 100, spr: 30, earn: true, fits: true, t: "" }, store.get("ps", {}));
+const PS_MO = 52 / 12;   // weeks per month
+const psU = () => ps.unit === "mo" ? PS_MO : 1;                 // display units per week
+const psMinW = () => ps.min / 100 / psU(), psHiW = () => ps.hi / 100 / psU();   // thresholds as weekly fractions
+const psUL = () => ps.unit === "mo" ? "a month" : "a week", psUS = () => ps.unit === "mo" ? "/mo" : "/wk";
+const psR = (w, d = 2) => pct(w * psU(), d);                    // a weekly return in the chosen unit
 let psData = null, psLookData = null, psTimer = null, psSeq = 0, psLookSeq = 0;
 const psSave = () => store.set("ps", ps);
 const psDay = s => s ? new Date(s + "T12:00:00").toLocaleDateString([], { month: "short", day: "numeric" }) : "–";
@@ -5311,14 +5320,15 @@ function psCheck(p, earn, opts = {}) {
   if (earnIn) return { ok: false, why: `No: earnings ${psDay(earn)} before expiration`, cls: "no" };
   if (p.oi < ps.oi) return { ok: false, why: `No: ${int(p.oi)} open interest`, cls: "no" };
   if (p.spread > ps.spr / 100) return { ok: false, why: `No: ${pct(p.spread, 0)} spread`, cls: "no" };
-  if (ret < ps.min / 100) return { ok: false, why: `No: under ${ps.min}% a week`, cls: "no" };
+  if (ret < psMinW()) return { ok: false, why: `No: under ${ps.min}% ${psUL()}`, cls: "no" };
   if (!opts.skipBand && (ad < band[0] || ad > band[1]))
     return { ok: false, why: ad > band[1] ? `Pays enough, riskier than ${ps.d}Δ` : `Pays enough, safer than ${ps.d}Δ`, cls: "near" };
-  return { ok: true, why: ret >= ps.hi / 100 ? `Yes: above ${ps.hi}%` : `Yes: in your ${ps.min}–${ps.hi}% range`, cls: "yes" };
+  return { ok: true, why: ret >= psHiW() ? `Yes: above ${ps.hi}%` : `Yes: in your ${ps.min}–${ps.hi}% range`, cls: "yes" };
 }
-const psRetCls = r => r >= ps.hi / 100 ? "hi" : r >= ps.min / 100 ? "mid" : "lo";
+const psRetCls = r => r >= psHiW() ? "hi" : r >= psMinW() ? "mid" : "lo";
 function psSyncControls() {
   for (const b of document.querySelectorAll("#psDelta button")) b.classList.toggle("on", +b.dataset.d === ps.d);
+  for (const b of document.querySelectorAll("#psUnit button")) b.classList.toggle("on", b.dataset.u === ps.unit);
   $("#psMin").value = ps.min; $("#psHi").value = ps.hi; $("#psOi").value = ps.oi; $("#psSpr").value = ps.spr;
   $("#psFEarn").setAttribute("aria-pressed", ps.earn); $("#psFFits").setAttribute("aria-pressed", ps.fits);
   if (ps.t && !$("#psTicker").value) $("#psTicker").value = ps.t;
@@ -5370,13 +5380,13 @@ function renderPs() {
   const nFail = Object.keys(d.failed || {}).length;
   const fits = d.rows.filter(r => r.best && r.best[ps.d] && psCheck(r.best[ps.d], r.earn).ok);
   $("#psMktMeta").textContent = d.status === "loading" ? "" :
-    `· ${fits.length} stocks have a ${ps.d}Δ put paying ${ps.min}%+ a week (${fits.filter(r => r.best[ps.d].ret_week >= ps.hi / 100).length} pay ${ps.hi}%+) · ${int(d.universe)} stocks over $10B checked${nFail ? `, ${nFail} without option data` : ""}`;
+    `· ${fits.length} stocks have a ${ps.d}Δ put paying ${ps.min}%+ ${psUL()} (${fits.filter(r => r.best[ps.d].ret_week >= psHiW()).length} pay ${ps.hi}%+) · ${int(d.universe)} stocks over $10B checked${nFail ? `, ${nFail} without option data` : ""}`;
   if (d.status === "loading" && !rows.length) {
     $("#psBody").innerHTML = `<div class="note empty">Pricing puts across the Screener's $10B+ stocks: ${esc(j.phase || "starting")}${j.total ? ` (${int(j.done)} of ${int(j.total)})` : ""}…<br>The first scan takes a few minutes. Look up any ticker above in the meantime.</div>`;
     return;
   }
   if (!rows.length) {
-    $("#psBody").innerHTML = `<div class="note empty">No ${ps.d}Δ put pays ${ps.min}% a week under these rules. Try 20Δ, a lower minimum, or turn off Fits only.</div>`;
+    $("#psBody").innerHTML = `<div class="note empty">No ${ps.d}Δ put pays ${ps.min}% ${psUL()} under these rules. Try 20Δ, a lower minimum, or turn off Fits only.</div>`;
     return;
   }
   const body = rows.map(({ r, p, c }) => {
@@ -5386,13 +5396,14 @@ function renderPs() {
       <td>${f2(r.price)}</td>
       <td class="left"><span class="lp-call">${f2(p.strike)} P ${psDay(p.exp)}<small>Δ ${p.delta.toFixed(2)} · ${p.dte} days · ${pct((r.price - p.strike) / r.price)} below</small></span></td>
       <td><span class="lp-call">${usd(p.bid * 100)}<small>${f2(p.bid)} / ${f2(p.ask)}</small></span></td>
-      <td><span class="ps-ret ${psRetCls(p.ret_week)}">${pct(p.ret_week, 2)}</span><small class="note" style="display:block">${pct(p.ret_week * 4.33)}/mo on ${usd(p.strike * 100)}</small></td>
+      <td><span class="${ps.unit === "wk" ? "ps-ret " + psRetCls(p.ret_week) : ""}">${pct(p.ret_week, 2)}</span><small class="note" style="display:block">on ${usd(p.strike * 100)}</small></td>
+      <td><span class="${ps.unit === "mo" ? "ps-ret " + psRetCls(p.ret_week) : ""}">${pct(p.ret_week * PS_MO, 2)}</span></td>
       <td>${pct(p.iv, 0)}</td>
       <td class="left"><span class="lp-earn${r.earn && r.earn <= p.exp ? " soon" : ""}">${r.earn ? psDay(r.earn) + (r.earn_est ? " est." : "") : r.earn_checked === false ? "not checked" : "–"}</span></td>
       <td>${int(p.oi)} · ${pct(p.spread, 0)}</td>
       <td class="left"><span class="ps-why ${c.cls}">${esc(c.why)}</span></td></tr>`;
   }).join("");
-  $("#psBody").innerHTML = `<div class="scroll"><table class="ps-tbl"><thead><tr><th class="left">Stock</th><th>Price</th><th class="left">Best ${ps.d}Δ put</th><th>Credit</th><th>Return / week</th><th>IV</th><th class="left">Earnings</th><th>OI · spread</th><th class="left">Fits?</th></tr></thead><tbody>${body}</tbody></table></div>`;
+  $("#psBody").innerHTML = `<div class="scroll"><table class="ps-tbl"><thead><tr><th class="left">Stock</th><th>Price</th><th class="left">Best ${ps.d}Δ put</th><th>Credit</th><th>Return / week</th><th>Return / month</th><th>IV</th><th class="left">Earnings</th><th>OI · spread</th><th class="left">Fits?</th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 async function psLookup(t) {
   t = (t || "").trim().toUpperCase();
@@ -5421,22 +5432,23 @@ function renderPsLook() {
   const fits = rows.filter(x => x.c.ok);
   const best = fits.reduce((a, x) => !a || x.p.ret_week > a.p.ret_week ? x : a, null);
   rows.sort((a, b) => (b.c.ok - a.c.ok) || ((b.c.cls === "near") - (a.c.cls === "near")) || (b.p.ret_week - a.p.ret_week));
-  $("#psLookMeta").textContent = `${d.ticker}: ${fits.length} of ${d.puts.length} strikes fit (${ps.d}Δ, ${ps.min}%+ a week, ${ps.oi}+ OI, spread ≤ ${ps.spr}%${ps.earn ? ", no earnings" : ""})`;
+  $("#psLookMeta").textContent = `${d.ticker}: ${fits.length} of ${d.puts.length} strikes fit (${ps.d}Δ, ${ps.min}%+ ${psUL()}, ${ps.oi}+ OI, spread ≤ ${ps.spr}%${ps.earn ? ", no earnings" : ""})`;
   const below200 = d.sma200 && d.price < d.sma200;
   const cards = `<div class="ps-cards">
     <div class="ps-card"><small>${esc(d.name)}</small><b>${f2(d.price)}</b></div>
     <div class="ps-card"><small>Next earnings</small><b>${d.earn ? psDay(d.earn) + (d.earn_est ? " est." : "") : "none listed"}</b></div>
     ${d.sma200 ? `<div class="ps-card"><small>200-day</small><b>${f2(d.sma200)}</b> <span class="note">${below200 ? "price below" : "price above"}</span></div>` : ""}
-    ${best ? `<div class="ps-card good"><small>Best ${ps.d}Δ that fits</small><b>${f2(best.p.strike)} P ${psDay(best.p.exp)} · ${pct(best.p.ret_week, 2)}/wk · ${usd(best.p.bid * 100)} credit</b></div>`
+    ${best ? `<div class="ps-card good"><small>Best ${ps.d}Δ that fits</small><b>${f2(best.p.strike)} P ${psDay(best.p.exp)} · ${pct(best.p.ret_week, 2)}/wk · ${pct(best.p.ret_week * PS_MO, 2)}/mo · ${usd(best.p.bid * 100)} credit</b></div>`
            : `<div class="ps-card bad"><small>Best ${ps.d}Δ that fits</small><b>none 30 days out or less</b></div>`}</div>`;
   if (!rows.length) { $("#psLook").innerHTML = cards + `<div class="note empty">No puts 30 days out or less with delta 0.08–0.30 and a bid.</div>`; return; }
   const body = rows.map(({ p, c }) => `<tr data-exp="${p.exp}" data-k="${p.strike}" class="${best && p === best.p ? "best" : c.ok ? "fit" : c.cls === "near" ? "" : "off"}" title="Click to sell this put in the Builder · right-click to open the chain">
     <td class="left"><b>${f2(p.strike)} P</b> ${psDay(p.exp)} <span class="note">· ${p.dte}d</span>${best && p === best.p ? `<span class="ps-tag">best ${ps.d}Δ</span>` : ""}</td>
     <td>${p.delta.toFixed(2)}</td><td>${pct((d.price - p.strike) / d.price)}</td><td>${f2(p.bid)} / ${f2(p.ask)}</td>
-    <td><span class="ps-ret ${psRetCls(p.ret_week)}">${pct(p.ret_week, 2)}</span></td>
+    <td><span class="${ps.unit === "wk" ? "ps-ret " + psRetCls(p.ret_week) : ""}">${pct(p.ret_week, 2)}</span></td>
+    <td><span class="${ps.unit === "mo" ? "ps-ret " + psRetCls(p.ret_week) : ""}">${pct(p.ret_week * PS_MO, 2)}</span></td>
     <td>${usd(p.bid * 100)} <span class="note">(${pct(p.ret_trade, 2)})</span></td><td>${pct(p.iv, 0)}</td>
     <td>${int(p.oi)} · ${pct(p.spread, 0)}</td><td class="left"><span class="ps-why ${c.cls}">${esc(c.why)}</span></td></tr>`).join("");
-  $("#psLook").innerHTML = cards + `<div class="scroll"><table class="ps-tbl"><thead><tr><th class="left">Put</th><th>Delta</th><th>Below price</th><th>Bid / ask</th><th>Return / week</th><th>Credit (trade)</th><th>IV</th><th>OI · spread</th><th class="left">Fits your rules?</th></tr></thead><tbody>${body}</tbody></table></div>`;
+  $("#psLook").innerHTML = cards + `<div class="scroll"><table class="ps-tbl"><thead><tr><th class="left">Put</th><th>Delta</th><th>Below price</th><th>Bid / ask</th><th>Return / week</th><th>Return / month</th><th>Credit (trade)</th><th>IV</th><th>OI · spread</th><th class="left">Fits your rules?</th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 async function psToBuilder(ticker, exp, strike) {
   try {
@@ -5449,6 +5461,13 @@ async function psToBuilder(ticker, exp, strike) {
 function psToChain(t, exp) { $("#ticker").value = t; showTab("chain"); loadChain(t, exp); }
 $("#psForm").onsubmit = e => { e.preventDefault(); psLookup($("#psTicker").value); };
 $("#psRefresh").onclick = () => loadPs(true);
+$("#psUnit").onclick = e => {
+  const b = e.target.closest("button[data-u]"); if (!b || b.dataset.u === ps.unit) return;
+  // switch units: per week to per month is × 4.33, and back
+  const f = b.dataset.u === "mo" ? PS_MO : 1 / PS_MO;
+  ps.unit = b.dataset.u; ps.min = +(ps.min * f).toFixed(1); ps.hi = +(ps.hi * f).toFixed(1);
+  psSave(); psSyncControls(); renderPs(); renderPsLook();
+};
 $("#psDelta").onclick = e => { const b = e.target.closest("button[data-d]"); if (!b) return; ps.d = +b.dataset.d; psSave(); psSyncControls(); renderPs(); renderPsLook(); };
 for (const [id, key] of [["#psMin", "min"], ["#psHi", "hi"], ["#psOi", "oi"], ["#psSpr", "spr"]])
   $(id).oninput = () => { const v = parseFloat($(id).value); if (isNaN(v) || v < 0) return; ps[key] = v; psSave(); renderPs(); renderPsLook(); };
