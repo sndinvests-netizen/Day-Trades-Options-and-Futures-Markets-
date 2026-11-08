@@ -62,9 +62,14 @@ def parse_date(s):
     return datetime.strptime(s, "%Y-%m-%d").date()
 
 
+def today():
+    """Today's date in New York, like options_data and leaps: on a Pacific clock after 9 PM
+    (or on a UTC server in the evening) the local date is a day off from the market's date."""
+    return datetime.now(ZoneInfo("America/New_York")).date()
+
+
 def dte(exp, on=None):
-    # New York date, like options_data and leaps: on a Pacific clock after 9 PM date.today() is a day behind
-    return (parse_date(exp) - (on or datetime.now(ZoneInfo("America/New_York")).date())).days
+    return (parse_date(exp) - (on or today())).days
 
 
 def category(days):
@@ -176,7 +181,7 @@ def add_position(trades, ticker, legs, strategy="", fees=None, opened=None, note
     if not legs:
         raise TradeError("Add at least one leg")
     try:
-        opened = parse_date(opened) if opened else date.today()
+        opened = parse_date(opened) if opened else today()
     except ValueError:
         raise TradeError("dates must be YYYY-MM-DD")
     for leg in legs:
@@ -237,7 +242,7 @@ def add_shares(trades, ticker, lots, price, fees=0.0, opened=None, notes="", ass
     can be shown with and without that premium (see share_holdings).
     """
     try:
-        opened = parse_date(opened) if opened else date.today()
+        opened = parse_date(opened) if opened else today()
     except ValueError:
         raise TradeError("dates must be YYYY-MM-DD")
     if not lots or lots < 1:
@@ -360,7 +365,7 @@ def roll_trade(trades, trade_id, exit_premium, strike, exp, premium, contracts=N
     new_type = type or kind(t)
     if new_type == kind(t) and strike == t["strike"] and exp == t["exp"]:
         raise TradeError("The new contract has the same strike and expiration")
-    rolled = rolled or date.today().isoformat()
+    rolled = rolled or today().isoformat()
     if n < t["contracts"]:
         t = split_trade(trades, t, n)
     open_fees = None if fees is None else 0.0
@@ -435,7 +440,7 @@ def add_to_trade(trades, trade_id, contracts, premium, fees=None, added=None):
     if premium is None or premium <= 0:
         raise TradeError("Price per share needed (above 0)")
     try:
-        added = parse_date(added) if added else date.today()
+        added = parse_date(added) if added else today()
     except ValueError:
         raise TradeError("dates must be YYYY-MM-DD")
     if added > parse_date(t["exp"]):
@@ -512,7 +517,7 @@ def close_trade(trades, trade_id, premium=None, expired=False, assigned=False, f
     if fees is None:
         fees = closing_fees(t["ticker"], [(t, t["contracts"], price)]) if status == "closed" else 0.0
     t.update(status=status, exit_premium=price, exit_fees=fees,
-             closed=(closed or date.today().isoformat()),
+             closed=(closed or today().isoformat()),
              realized=round(pnl(t, price, fees), 2))
     return t
 
