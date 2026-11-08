@@ -4508,7 +4508,7 @@ function renderScreener() {
       + (r.type === "etf" ? `<span class="lp-dot muted" title="ETF"></span>` : "");
     const oiTip = r.oi == null ? (r.oi_error ? "Lookup failed: " + r.oi_error : r.at_support ? "Checking…" : "Not checked: open interest is looked up only for stocks at support") :
       `Calls ${int(r.oi_calls)} · puts ${int(r.oi_puts)} · ${r.oi_exps} expirations${r.oi_date ? " · as of " + r.oi_date : ""}`;
-    return `<tr tabindex="0" data-t="${esc(r.ticker)}" class="${scrSel === r.ticker ? "sel" : ""}${fresh ? " in" : ""}">
+    return `<tr tabindex="0" data-t="${esc(r.ticker)}" title="Click for details · right-click to open the ${esc(r.ticker)} option chain" class="${scrSel === r.ticker ? "sel" : ""}${fresh ? " in" : ""}">
       <td class="left sticky lp-tk"><b>${esc(r.ticker)}</b><span class="lp-dots">${dots}</span>
         <span class="tk-name" title="${esc(r.name || "")}">${esc(r.name && r.name !== r.ticker ? r.name : "")}${r.mktcap ? ` · ${capFmt(r.mktcap)}` : ""}</span></td>
       <td><span class="lp-call">${f2(r.price)}<small class="${signed(r.day_pct)}">${sgnPct(r.day_pct, 2)}</small></span></td>
@@ -4620,6 +4620,15 @@ $("#scrBody").onclick = e => {
   if (e.target.closest("a.spark-link")) return;   // the Trend sparkline opens TradingView instead
   const tr = e.target.closest("tr[data-t]");
   if (tr) scrOpenRow(tr.dataset.t);
+};
+// Right-click a stock row: go straight to its option chain
+$("#scrBody").oncontextmenu = e => {
+  const tr = e.target.closest("tr[data-t]");
+  if (!tr) return;
+  e.preventDefault();
+  const tk = tr.dataset.t;
+  scrSel = null; scrDrawer();
+  $("#ticker").value = tk; showTab("chain"); loadChain(tk);
 };
 $("#scrBody").onkeydown = e => { const tr = e.target.closest("tr[data-t]"); if (tr && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); scrOpenRow(tr.dataset.t); } };
 $("#scrDrawer").onclick = async e => {
