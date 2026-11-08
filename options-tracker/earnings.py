@@ -35,9 +35,12 @@ _cache = None
 def watchlist():
     try:
         with open(WATCH_FILE) as f:
-            return json.load(f)
+            w = json.load(f)
+        if isinstance(w, list):
+            return [str(t) for t in w]
     except (OSError, ValueError):
-        return list(DEFAULT_WATCH)
+        pass
+    return list(DEFAULT_WATCH)
 
 
 def save_watchlist(tickers):
@@ -48,8 +51,9 @@ def save_watchlist(tickers):
             raise ValueError(f"{t or 'blank'} is not a ticker")
         if t not in out:
             out.append(t)
-    with open(WATCH_FILE, "w") as f:
+    with open(WATCH_FILE + ".tmp", "w") as f:
         json.dump(out[:60], f, indent=2)
+    os.replace(WATCH_FILE + ".tmp", WATCH_FILE)
     return out[:60]
 
 
@@ -91,6 +95,8 @@ def _fetch(sym):
             return dict(row, kind="none")
         # step in Eastern wall-clock time so a 4:00 PM report stays 4:00 PM across a DST change
         ts, projected = int((datetime.fromtimestamp(last, ET) + timedelta(weeks=13)).timestamp()), True
+        if ts < now - 86400:   # the projected date has already passed and Yahoo still has nothing: don't show a past date
+            return dict(row, kind="none")
     est = projected or bool(info.get("isEarningsDateEstimate")) or ts != info.get("earningsTimestamp")
     eps = None
     try:
@@ -135,8 +141,9 @@ def upcoming(held):
         rows = list(pool.map(_get, tickers))
     with _lock:
         try:
-            with open(CACHE_FILE, "w") as f:
+            with open(CACHE_FILE + ".tmp", "w") as f:
                 json.dump(_load_cache(), f)
+            os.replace(CACHE_FILE + ".tmp", CACHE_FILE)
         except OSError:
             pass
     out = []

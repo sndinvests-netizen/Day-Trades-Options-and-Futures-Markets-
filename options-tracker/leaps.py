@@ -61,7 +61,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 import earnings
-from options_data import (ET, RISK_FREE_RATE, QuoteError, _price_ok, _yf, chain_rows, expirations, greeks,
+from options_data import (ET, RISK_FREE_RATE, QuoteError, _price_ok, _yf, am_put, am_put_iv, chain_rows, expirations, greeks,
                           option_spot, spot_price, years_to_expiry, yahoo_symbol)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -144,8 +144,9 @@ def save_watchlist(tickers):
         raise ValueError("add at least one ticker")
     if len(clean) > MAX_TICKERS:
         raise ValueError(f"at most {MAX_TICKERS} tickers")
-    with open(WATCH_FILE, "w") as f:
+    with open(WATCH_FILE + ".tmp", "w") as f:
         json.dump(clean, f, indent=2)
+    os.replace(WATCH_FILE + ".tmp", WATCH_FILE)
     return clean
 
 
@@ -227,21 +228,36 @@ def _candidates(sym, spot_hint, div_rate=0.0, term="leap"):
         t = years_to_expiry(exp)
         dte = (datetime.strptime(exp, "%Y-%m-%d").date() - today).days
         for r in rows:
-            g = greeks(right, spot, r["strike"], t, r["iv"])
-            if not g or not DELTA_LO <= abs(g["delta"]) <= DELTA_HI:
-                continue
             real = _price_ok(r)
             cost = (r["bid"] + r["ask"]) / 2 if real else r["mark"]
-            if not cost or cost <= 0:
-                continue
             if put:
+                # Listed puts can be exercised early: Black-Scholes delta badly understates deep in-the-money
+                # puts (it picked a $600 TSLA put with the stock at $358). Solve IV and delta on an American tree.
+                if r["strike"] < spot or not cost or cost <= 0:
+                    continue          # out-of-the-money puts never reach delta DELTA_LO
                 intrinsic = max(0.0, r["strike"] - price)
-                divs = 0.0
-                carry = cost - intrinsic
-                if cost < intrinsic * 0.98:
+                if cost < intrinsic:
                     skipped += 1  # mid under intrinsic: a stale or placeholder quote
                     continue
+                iv_am = am_put_iv(spot, r["strike"], t, cost) if real else (r["iv"] or None)
+                if not iv_am:
+                    continue          # no time value left to solve from: delta is about -1, too deep
+                val, dl = am_put(spot, r["strike"], t, iv_am, with_delta=True)
+                if not DELTA_LO <= -dl <= DELTA_HI:
+                    continue
+                theta = am_put(spot, r["strike"], max(t - 1 / 365, 1 / 365), iv_am) - val
+                g = {"delta": dl, "theta": theta}
+                r = dict(r, iv=iv_am)
+                # A put's price carries the dividends the stock will pay (they lower the price); a short seller
+                # would pay them, so they aren't a cost of the put: take them out of its time value.
+                divs = div_rate * t
+                carry = cost - intrinsic - divs
             else:
+                g = greeks(right, spot, r["strike"], t, r["iv"])
+                if not g or not DELTA_LO <= abs(g["delta"]) <= DELTA_HI:
+                    continue
+                if not cost or cost <= 0:
+                    continue
                 intrinsic = max(0.0, price - r["strike"])
                 divs = div_rate * t
                 carry = cost - intrinsic + divs
@@ -478,7 +494,7 @@ def _market_universe(job, put=False):
     for r in rows.values():
         if r.get("type") != "stock" or (r.get("mktcap") or 0) < MARKET_MIN_CAP:
             continue
-        if not (r.get("vs200") is not None and r.get("sma50") and r.get("sma200")):
+        if not (r.get("vs200") is not None and r.get("sma50") and r.get("sma200") and r.get("price")):
             continue
         if put:   # downtrend lagging SPY
             if not (r["vs200"] < 0 and r["sma50"] < r["sma200"]):

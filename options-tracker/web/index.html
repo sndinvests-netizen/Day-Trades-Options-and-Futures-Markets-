@@ -1491,17 +1491,20 @@ function newsShown(on) {
   store.set("news", on);
   if (on) loadNews();
 }
+let newsSeq = 0;
 async function loadNews() {
   if ($("#newsPanel").classList.contains("hidden")) return;
-  const want = current ? current.ticker : "";
+  const want = current ? current.ticker : "", seq = ++newsSeq;
   newsKey = want; newsAt = Date.now();
   try {
     const r = await fetch("/api/news?tickers=" + encodeURIComponent(want));
     const d = await r.json();
+    if (seq !== newsSeq) return;   // a newer ticker's headlines were asked for while this loaded
     if (!r.ok) throw new Error(d.error || r.status);
     newsData = d;
     renderNews();
   } catch (e) {
+    if (seq !== newsSeq) return;
     $("#newsList").innerHTML = `<li class="note">Couldn't load headlines: ${esc(e.message)}</li>`;
   }
 }
@@ -1759,7 +1762,9 @@ $("#earnPanel").onclick = e => {
   if (b && earnData) earnSave(earnData.watch.filter(t => t !== b.dataset.rm));
 };
 document.addEventListener("click", e => { if (!$("#earnPanel").hidden && e.target.isConnected && !e.target.closest(".earn-wrap") && !e.target.closest(".vix-alert")) earnOpen(false); });
-document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#earnPanel").hidden) { earnOpen(false); $("#earnBtn").focus(); } });
+/* Escape closes one panel per press: only on the tab that's showing, never while a dialog (Roll, Close…) is open */
+function escOk(e, tab) { return e.key === "Escape" && !e.defaultPrevented && !document.querySelector("dialog[open]") && (!tab || tabOn(tab)); }
+document.addEventListener("keydown", e => { if (escOk(e) && !$("#earnPanel").hidden) { e.preventDefault(); earnOpen(false); $("#earnBtn").focus(); } });
 loadEarn();
 setInterval(() => { if (Date.now() - earnAt > EARN_EVERY) loadEarn(); else { renderEarn(); earnTick(); } }, 60000);
 
@@ -2025,7 +2030,7 @@ function vixRow(l = { price: "", dir: "up", label: "", note: "", color: "#6faee9
     <input class="vx-wide" data-k="note" value="${esc(l.note)}" placeholder="What to do when it crosses" aria-label="What to do"></div>`;
 }
 /* ---- VIX panel ---- */
-let vxHist = null, vxN = store.get("vxRange", 126);
+let vxHist = null, vxHistAt = 0, vxN = store.get("vxRange", 126);
 const vxOpen = () => $("#vixDrawer").classList.contains("open");
 function openVixDlg() {
   $("#vixRows").innerHTML = vixSorted().map(l => vixRow(l)).join("");
@@ -2035,7 +2040,7 @@ function openVixDlg() {
   $("#vixDrawer").classList.add("open");
   $("#vixDrawer").setAttribute("aria-hidden", "false");
   vxRender();
-  if (!vxHist) api("/api/vix/history").then(h => { vxHist = h; vxRender(); }).catch(e => { $("#vxChart").innerHTML = `<div class="note">No VIX history: ${esc(e.message)}</div>`; });
+  if (!vxHist || Date.now() - vxHistAt > 3600e3) api("/api/vix/history").then(h => { vxHist = h; vxHistAt = Date.now(); vxRender(); }).catch(e => { $("#vxChart").innerHTML = `<div class="note">No VIX history: ${esc(e.message)}</div>`; });
 }
 function vxClose() { $("#vixDrawer").classList.remove("open"); $("#vixDrawer").setAttribute("aria-hidden", "true"); }
 function vxRender() {
@@ -2051,8 +2056,15 @@ function vxRender() {
   $("#vxGauge").innerHTML = vxGauge(d.level, ls);
   for (const b of document.querySelectorAll("#vxRange button")) b.classList.toggle("on", +b.dataset.n === vxN);
   if (!vxHist) return;
-  const all = vxHist.closes.slice(0, -1).concat([d.level]);   // today's close = the live level
-  const xs = vxN ? all.slice(-vxN) : all, dates = vxN ? vxHist.dates.slice(-vxN) : vxHist.dates;
+  // the live level is today's close: replace the last close only if it's today's, else add today
+  const todayNY = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  const lastC = vxHist.closes[vxHist.closes.length - 1];
+  const isToday = vxHist.dates[vxHist.dates.length - 1] === todayNY;
+  const wkday = !/Sat|Sun/.test(new Date().toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "short" }));
+  const addToday = !isToday && wkday && Math.abs(d.level - lastC) > 0.005;   // weekend/holiday: the live level is just the last close
+  const all = isToday ? vxHist.closes.slice(0, -1).concat([d.level]) : addToday ? vxHist.closes.concat([d.level]) : vxHist.closes;
+  const allDates = addToday ? vxHist.dates.concat([todayNY]) : vxHist.dates;
+  const xs = vxN ? all.slice(-vxN) : all, dates = vxN ? allDates.slice(-vxN) : allDates;
   $("#vxChart").innerHTML = vxChart(xs, dates, ls);
   const yr = all, rank = yr.filter(v => v <= d.level).length / yr.length;
   const avg20 = all.slice(-20).reduce((a, b) => a + b, 0) / Math.min(20, all.length);
@@ -2098,7 +2110,7 @@ function vxChart(xs, dates, ls) {
 }
 $("#vxRange").onclick = e => { const b = e.target.closest("button[data-n]"); if (!b) return; vxN = +b.dataset.n; store.set("vxRange", vxN); vxRender(); };
 $("#vxClose").onclick = vxClose;
-document.addEventListener("keydown", e => { if (e.key === "Escape" && vxOpen() && !document.querySelector("dialog[open]")) vxClose(); });
+document.addEventListener("keydown", e => { if (escOk(e) && vxOpen()) { e.preventDefault(); vxClose(); } });
 $("#vixRows").addEventListener("input", e => { if (e.target.dataset.k === "color") e.target.closest(".vx-lv").style.setProperty("--c", e.target.value); });
 $("#vxTv").onclick = async () => { try { await api("/api/open-chart", { symbol: "TVC:VIX" }); } catch (err) { toast("Couldn't open VIX in Chrome: " + err.message, false); } };
 $("#vxDraw").onclick = async () => {
@@ -2208,6 +2220,7 @@ function renderChain() {
   ].map(([k, v, sub]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${esc(sub)}</div></div>`).join("");
   $("#chainTitle").textContent = `${d.ticker} ${d.exp}`;
   if (chainSel != null && (chainSel.t !== d.ticker || chainSel.exp !== d.exp)) chainSel = null;
+  if (flowKey !== d.ticker + " " + d.exp) { flowSel = null; flowKey = d.ticker + " " + d.exp; }
 
   const more = $("#moreGreeks").checked;
   const cols = ["delta", ...(more ? ["gamma", "theta", "vega"] : []), "iv", "oi", "volume", "last", "bid", "ask"];
@@ -2330,7 +2343,7 @@ $("#chDrawer").onclick = async e => {
   if (tv) { try { await api("/api/open-chart", { symbol: tv.dataset.chtv }); } catch (err) { toast(`Couldn't open ${tv.dataset.chtv} in Chrome: ${err.message}`, false); } }
 };
 $("#chain").addEventListener("keydown", e => { const td = e.target.closest("td[data-sk]"); if (td && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); chSelect(+td.dataset.sk); } });
-document.addEventListener("keydown", e => { if (e.key === "Escape" && chainSel) chSelect(chainSel.k); });
+document.addEventListener("keydown", e => { if (escOk(e, "chain") && chainSel) { e.preventDefault(); chSelect(chainSel.k); } });
 
 function setClickMode(m) {
   clickMode = m;
@@ -2397,6 +2410,7 @@ async function loadGex(ticker, quiet) {
   try {
     const d = await api(`/api/gex?ticker=${encodeURIComponent(ticker)}&days=${days}&exps=${exps}`);
     if (seq !== gexSeq) return;
+    if (gexData && gexData.ticker !== d.ticker) gexSel = null;   // same strike on another ticker is a different level
     gexData = d;
     $("#gexErr").classList.add("hidden");
     $("#gexBody").classList.remove("hidden");
@@ -2492,7 +2506,8 @@ $("#gexMode").onclick = e => {
   renderGex();
 };
 {
-  const e = store.get("gexExps", null), r = store.get("gexRange", null), m = store.get("gexMode", "net");
+  const e = store.get("gexExps", null), r = store.get("gexRange", null), m0 = store.get("gexMode", "net");
+  const m = m0 === "split" ? "split" : "net";
   if (e && [...$("#gexExps").options].some(o => o.value === e)) $("#gexExps").value = e;
   if (r && [...$("#gexRange").options].some(o => o.value === r)) $("#gexRange").value = r;
   for (const b of document.querySelectorAll("#gexMode button")) b.classList.toggle("on", b.dataset.mode === m);
@@ -2603,7 +2618,7 @@ ctxMenu.addEventListener("click", async e => {
   } catch (err) { toast(`Couldn't draw it: ${err.message}`, false); }
 });
 document.addEventListener("click", e => { if (!ctxMenu.hidden && !ctxMenu.contains(e.target)) ctxClose(); });
-document.addEventListener("keydown", e => { if (e.key === "Escape" && !ctxMenu.hidden) ctxClose(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !ctxMenu.hidden) { e.preventDefault(); ctxClose(); } });
 window.addEventListener("scroll", ctxClose, true);
 window.addEventListener("blur", ctxClose);
 
@@ -2664,10 +2679,10 @@ $("#gexView").onclick = e => {
   renderGex();
 };
 for (const b of document.querySelectorAll("#gexView button")) b.classList.toggle("on", b.dataset.view === gexView);
-document.addEventListener("keydown", e => { if (e.key === "Escape" && gexSel != null) { gexSel = null; renderGex(); gexDrawer(); } });
+document.addEventListener("keydown", e => { if (escOk(e, "chain") && gexSel != null) { e.preventDefault(); gexSel = null; renderGex(); gexDrawer(); } });
 
 /* ---- Unusual activity: flow table with sentiment, filters and an order-details panel ---- */
-let flowSel = null, flowF = Object.assign({ kind: "all", min: 0, sort: "premium" }, store.get("flowF", {}));
+let flowSel = null, flowKey = null, flowF = Object.assign({ kind: "all", min: 0, sort: "premium" }, store.get("flowF", {}));
 function flowRows(d) {
   const t0 = today();
   return d.unusual.map(r => {
@@ -2768,7 +2783,7 @@ function flowSync() {
   $("#flowMin").value = String(flowF.min); $("#flowSort").value = flowF.sort;
 }
 flowSync();
-document.addEventListener("keydown", e => { if (e.key === "Escape" && flowSel) { flowSel = null; renderFlow(); } });
+document.addEventListener("keydown", e => { if (escOk(e, "chain") && flowSel) { e.preventDefault(); flowSel = null; renderFlow(); } });
 
 /* ================= builder ================= */
 // [side, type, strike steps from the money (0 = at the money), qty, "far" = later expiration]
@@ -2801,7 +2816,9 @@ $("#bStrategy").innerHTML = ["Custom", ...Object.keys(TEMPLATES)].map(n => `<opt
 
 async function getChain(exp) {
   if (B.chains[exp]) return B.chains[exp];
-  const d = await api(`/api/chain?ticker=${encodeURIComponent(B.ticker)}&exp=${exp}`);
+  const ticker = B.ticker;
+  const d = await api(`/api/chain?ticker=${encodeURIComponent(ticker)}&exp=${exp}`);
+  if (B.ticker !== ticker) return d;   // the Builder moved to another ticker while this loaded: don't mix its chain in
   B.chains[d.exp] = d;
   B.spot = modelSpot(d);
   return d;
@@ -2853,10 +2870,12 @@ async function applyTemplate(name) {
   B.strategy = name;
   const tpl = TEMPLATES[name];
   if (!tpl) { renderBuilder(); return; }
+  const seq = B.seq;   // a ticker change or a leg clicked in from the Chain while this loads wins
   const near = B.exp;
   let far = B.exps.find(e => daysTo(e) >= daysTo(near) + 28) || B.exps.filter(e => e > near).pop() || near;
   await getChain(near);
   if (tpl.some(t => t[4] === "far")) await getChain(far);
+  if (seq !== B.seq) return;
   const ks = strikesFor(near), spot = B.spot;
   const T = Math.max(daysTo(near), 1) / 365;
   const step = Math.max(spot * atmIv(near) * Math.sqrt(T) * 0.5, spot * 0.005);
@@ -2903,8 +2922,10 @@ function builderError(err) {
 
 async function addLegFromChain(chain, type, strike, side) {
   try {
+    ++B.seq;   // cancels a Builder load or template still in flight, so it can't wipe this leg
     if (B.ticker !== chain.ticker) {
-      Object.assign(B, { ticker: chain.ticker, spot: modelSpot(chain), exps: chain.expirations, chains: {}, legs: [], exp: chain.exp, strategy: "Custom" });
+      Object.assign(B, { ticker: chain.ticker, spot: modelSpot(chain), exps: chain.expirations, chains: {}, legs: [], exp: chain.exp, strategy: "Custom", day: 0, scrub: null });
+      resetIv();   // an IV shift set for the old ticker shouldn't carry over
       $("#bTicker").value = chain.ticker;
       builderStarted = true;
     }
@@ -3425,7 +3446,7 @@ async function openInBuilder(legRows) {
     const opts = legRows.filter(t => t.type !== "stock");
     if (B.ticker !== first.ticker) {
       if (!(await setBuilderTicker(first.ticker, opts.length ? opts[0].exp : null))) return;
-    } else if (opts.length) B.exp = opts[0].exp;
+    } else { ++B.seq; if (opts.length) B.exp = opts[0].exp; }
     builderStarted = true;
     for (const t of opts) if (B.exps.includes(t.exp)) await getChain(t.exp);
     B.legs = legRows.map(t => {
@@ -3531,15 +3552,19 @@ $("#bDrawer").onclick = async e => {
   const tv = e.target.closest("button[data-tvb]");
   if (tv) { try { await api("/api/open-chart", { symbol: tv.dataset.tvb }); } catch (err) { toast(`Couldn't open ${tv.dataset.tvb} in Chrome: ${err.message}`, false); } }
 };
-document.addEventListener("keydown", e => { if (e.key === "Escape" && bSel != null) { bSel = null; renderLegs(); } });
+document.addEventListener("keydown", e => { if (escOk(e, "builder") && bSel != null) { e.preventDefault(); bSel = null; renderLegs(); } });
 
 /* ================= trades ================= */
 let tradeData = null;
 
+let tradesSeq = 0;
 async function loadTrades(quiet) {
   if (!quiet) $("#openGroups").innerHTML = '<p class="note">Loading quotes…</p>';
+  const seq = ++tradesSeq;
   try {
-    tradeData = await api("/api/positions");
+    const d = await api("/api/positions");
+    if (seq !== tradesSeq) return;   // a newer load (e.g. right after a close) already started: don't show older data
+    tradeData = d;
     $("#tradesErr").classList.add("hidden");
     renderTrades();
   } catch (err) {
@@ -3714,7 +3739,7 @@ function renderTrades() {
             <td>${usd(Math.abs(now))}</td><td class="${signed(un)}">${usd(un, true)}</td>
             <td>${(delta > 0 ? "+" : "") + delta.toFixed(0)} sh</td><td>${dtes.length ? Math.min(...dtes) : "–"}</td>
             <td>${a && a.bes.length ? a.bes.slice(0, 2).map(f2).join(" / ") : "–"}</td>
-            <td>${a ? (a.maxP == null ? "unlimited" : usd(a.maxP)) : "–"}</td><td>${a ? (a.maxL == null ? "unlimited" : usd(-a.maxL)) : "–"}</td>
+            <td>${a ? (a.maxP == null ? "unlimited" : usd(a.maxP)) : "–"}</td><td>${a ? (a.maxL == null ? "unlimited" : usd(a.risk)) : "–"}</td>
             <td class="left">${alertHtml(alertsOf(p))}</td></tr>`;
           return headRow + p.map(t => `<tr class="pos-leg${selCls(p)}" data-pos="${posKey(p)}"><td class="left">${t.id}</td><td class="left contract">${esc(t.label)} ${t.exp || ""}</td><td></td><td></td>${legCells(t)}<td colspan="4"></td></tr>`).join("");
         }).join("") + "</tbody></table></div>";
@@ -3809,7 +3834,7 @@ function trDrawer() {
       ${stat("Position delta", (delta > 0 ? "+" : "") + delta.toFixed(0) + " sh")}
       ${stat("Breakeven", a && a.bes.length ? a.bes.slice(0, 2).map(f2).join(" / ") : !multi && t0.stats ? f2(t0.stats.breakeven) : "–")}
       ${stat("Max profit", a ? (a.maxP == null ? "unlimited" : usd(a.maxP)) : !multi && t0.stats ? usd(t0.stats.max_profit) : "–", "up")}
-      ${stat("Max loss", a ? (a.maxL == null ? "unlimited" : usd(-a.maxL)) : !multi && t0.stats ? usd(t0.stats.max_loss) : "–", "down")}
+      ${stat("Max loss", a ? (a.maxL == null ? "unlimited" : usd(a.risk)) : !multi && t0.stats ? usd(t0.stats.max_loss) : "–", "down")}
       ${roi ? stat(esc(roi.kind) + " ROI", `${p1(roi.roi)} · ${p1(roi.mon)}/mo`, "up") : ""}
     </div></div>
     ${spot ? `<div class="lp-sec"><h4>Payoff</h4>${trChart(legs, spot)}
@@ -3845,7 +3870,7 @@ $("#trDrawer").onclick = async e => {
   const tv = e.target.closest("button[data-trtv]");
   if (tv) { try { await api("/api/open-chart", { symbol: tv.dataset.trtv }); } catch (err) { toast(`Couldn't open ${tv.dataset.trtv} in Chrome: ${err.message}`, false); } }
 };
-document.addEventListener("keydown", e => { if (e.key === "Escape" && trSel) { trSel = null; trDrawer(); } });
+document.addEventListener("keydown", e => { if (escOk(e, "trades") && trSel) { e.preventDefault(); trSel = null; trDrawer(); } });
 /* Wide open-position tables get a second scrollbar above them, kept in step with the bottom one,
    so you can slide sideways without scrolling down to the end of the table. */
 // Notes on open positions start collapsed. Remember which ones are open so the live refresh doesn't close them.
@@ -3857,7 +3882,11 @@ document.addEventListener("toggle", e => {
   d.open ? openNotes.add(d.dataset.noteKey) : openNotes.delete(d.dataset.noteKey);
 }, true);
 
+const topBarObs = new WeakMap();   // root -> its ResizeObservers, disconnected on the next render
 function syncTopBars(root) {
+  for (const o of topBarObs.get(root) || []) o.disconnect();
+  const obs = [];
+  topBarObs.set(root, obs);
   root.querySelectorAll(".scroll-top").forEach(top => {
     const box = top.nextElementSibling, table = box.querySelector("table");
     const size = () => { top.firstElementChild.style.width = table.scrollWidth + "px"; top.style.display = table.scrollWidth > box.clientWidth + 1 ? "" : "none"; };
@@ -3874,7 +3903,9 @@ function syncTopBars(root) {
       });
     };
     link(top, box); link(box, top);
-    new ResizeObserver(size).observe(box);
+    const ro = new ResizeObserver(size);
+    ro.observe(box);
+    obs.push(ro);
   });
 }
 
@@ -4020,13 +4051,21 @@ function openDelete(id) {
   const all = [...tradeData.open, ...tradeData.closed];
   const t = all.find(x => x.id === id);
   if (!t) return;
-  const legs = t.group ? all.filter(x => x.group === t.group) : [t];
+  // The closed part of a partial close: deleting it undoes the close (the server puts the contracts back)
+  const undoClose = t.split_from && (t.status === "closed" || t.status === "expired");
+  const legs = undoClose ? (t.group ? all.filter(x => x.group === t.group && x.split_from && x.status !== "open" && x.closed === t.closed) : [t])
+             : t.group ? all.filter(x => x.group === t.group) : [t];
   deletingId = id;
-  $("#delTitle").textContent = legs.length > 1 ? `Delete ${t.ticker} ${t.strategy} (all ${legs.length} legs)?` : `Delete trade #${t.id}?`;
+  $("#delTitle").textContent = undoClose ? `Undo this partial close of ${t.ticker}?`
+    : legs.length > 1 ? `Delete ${t.ticker} ${t.strategy} (all ${legs.length} legs)?` : `Delete trade #${t.id}?`;
   $("#delList").innerHTML = legs.map(x => `<li>${x.side === "buy" ? "Bought" : "Sold"} ${x.contracts} ${esc(x.ticker)} ${esc(x.label)} ${x.exp || ""} @ ${f2(x.premium)}
     <span class="note">(${x.status === "open" ? "open" : x.status + " " + usd(x.realized, true)})</span></li>`).join("");
   const prev = t.rolled_from && all.find(x => x.id === t.rolled_from && x.status === "rolled" && x.rolled_to === t.id);
   if (prev) $("#delList").innerHTML += `<li class="note">This undoes the roll: #${prev.id} ${esc(prev.label)} ${prev.exp} goes back to open.</li>`;
+  if (undoClose) $("#delList").innerHTML += `<li class="note">The contracts go back on the open position they were closed from.</li>`;
+  const lot = legs.some(x => x.status === "assigned" && x.type === "put") &&
+    all.find(x => legs.some(l => l.id === x.assigned_from && l.contracts === x.contracts) && x.status === "open");
+  if (lot) $("#delList").innerHTML += `<li class="note">The ${lot.contracts * 100} ${esc(lot.ticker)} shares from this assignment (#${lot.id}) are removed too.</li>`;
   $("#delErr").textContent = "";
   $("#delDlg").showModal();
 }
@@ -4551,7 +4590,7 @@ function scrDrawer(quiet) {
   const ladder = [["52-week high", r.high52], ["200-day MA", r.sma200], ["50-day MA", r.sma50], [`Support (${SUP_NAME[r.support_type] || r.support_type || "–"}${r.touches ? " ×" + r.touches : ""})`, r.support]]
     .filter(l => l[1] != null).sort((a, b) => b[1] - a[1]);
   const pc = r.oi_calls && r.oi_puts ? r.oi_puts / r.oi_calls : null;
-  const callShare = r.oi_calls && r.oi ? r.oi_calls / r.oi * 100 : null;
+  const callShare = r.oi ? (r.oi_calls || 0) / r.oi * 100 : 0;
   const scrollTop = el.scrollTop;
   el.innerHTML = `
     <div class="lp-dh"><div style="flex:1;min-width:0"><h3>${esc(r.ticker)}</h3><div class="sub">${esc(r.name && r.name !== r.ticker ? r.name : "")}${r.sector ? " · " + esc(r.sector) : ""}${r.mktcap ? " · " + capFmt(r.mktcap) : ""}</div>
@@ -4651,7 +4690,7 @@ $("#scrDrawer").onclick = async e => {
     } catch (err) { toast("Couldn't add it: " + err.message, false); }
   }
 };
-document.addEventListener("keydown", e => { if (e.key === "Escape" && scrSel) scrClose(); });
+document.addEventListener("keydown", e => { if (escOk(e, "screener") && scrSel) { e.preventDefault(); scrClose(); } });
 scrSync();
 
 /* ================= LEAPS finder ================= */
@@ -4712,6 +4751,10 @@ function lpShow(d) {
   lpInject();
   lpMaybeLookup();
   lpOther[d.term] = d;
+  if (lpPick) {   // point the picked contract at the refreshed quote, not the old object
+    const r = lpSel && d.rows.find(x => x.ticker === lpSel), p = lpPick;
+    lpPick = r ? [r.best, ...(r.alternates || [])].find(a => a && a.exp === p.exp && a.strike === p.strike) || null : null;
+  }
   $("#lpErr").classList.add("hidden");
   if (document.activeElement !== $("#lpTickers")) $("#lpTickers").value = d.watchlist.join(", ");
   renderLeaps();
@@ -4725,7 +4768,7 @@ const LP_COLS = () => [
   ["score", "Score", "", "0-100: stock 40 (purple) + contract 60 (blue), minus 15 when no contract is liquid. Open a row for the breakdown"],
   ["b.dte", lpLong() ? (lpPut() ? "Best LEAPS put" : "Best LEAPS") : "Best " + lpRt(), "left", lpLong() ? `Deep in-the-money ${lpRt()} with the best contract score among liquid ones` : `Best-scoring liquid ${lpRt()} ${lpBase().startsWith("s") ? "about 6 months" : "about 90 days"} out near the target strike`],
   ["b.contract_cost", "Cost", "", "Per contract (100 shares), at the mid"],
-  lpLong() ? ["b.tv_year", "Time value/yr", "", lpPut() ? "Time value per year, as a % of the stock price. Under ~6% is cheap" : "(Time value + dividends you give up) per year, as a % of the stock price. Under ~6% is cheap"]
+  lpLong() ? ["b.tv_year", "Time value/yr", "", lpPut() ? "(Time value − dividends the put's price carries) per year, as a % of the stock price. Under ~6% is cheap" : "(Time value + dividends you give up) per year, as a % of the stock price. Under ~6% is cheap"]
                     : ["b.be_sigma", "BE vs 1σ", "", "Breakeven move ÷ the stock's normal 1σ move by expiration. Under 1 = inside a normal move; over 2 = a long shot"],
   ["b.be_pct", "Price → breakeven", "left", "● price · | strike · ◆ breakeven, over the shaded 1σ move by expiration. Sorts by the move needed"],
   ["earnings_days", "Earnings", "", "Next report; flagged within 14 days"],
@@ -4943,15 +4986,22 @@ function lpCandGrid(r, c) {
     <div class="lp-grid" style="grid-template-columns:52px repeat(${ks.length},minmax(0,1fr))"><span></span>${ks.map(k => `<span class="hd">${k}</span>`).join("")}${cells}</div></div>`;
 }
 
+const lpOtherBusy = new Set();   // terms with a fetch or retry timer already pending: one poll chain per term
 async function lpLoadOther(t) {
+  if (lpOtherBusy.has(t)) return;
   if (lpOther[t] && lpOther[t].status === "ok" && !lpOther[t].job.running) return;
+  lpOtherBusy.add(t);
+  let again = false;
   try {
     const d = await api(`/api/leaps?mode=${lpMode}&term=${t}`);
-    if (d.mode !== lpMode) return;
-    lpOther[t] = d;
-    lpDrawer(true);
-    if (d.job.running || d.status === "loading") setTimeout(() => lpSel && lpLoadOther(t), 4000);
+    if (d.mode === lpMode) {
+      lpOther[t] = d;
+      lpDrawer(true);
+      again = d.job.running || d.status === "loading";
+    }
   } catch (err) { /* the card just says it isn't available */ }
+  if (again) setTimeout(() => { lpOtherBusy.delete(t); if (lpSel && tabOn("leaps")) lpLoadOther(t); }, 4000);
+  else lpOtherBusy.delete(t);
 }
 
 function lpDrawer(quiet) {
@@ -5051,7 +5101,10 @@ function lpCsv() {
 
 async function lpWatchAdd(t) {
   try {
-    const d = await api("/api/leaps/watch", { tickers: [...(lpData?.watchlist || []), t], term: lpTerm });
+    // lpData is null right after a term/mode switch: read the saved list rather than overwrite it with just [t]
+    const cur = lpData?.watchlist || (await api(`/api/leaps?mode=watch&term=${lpTerm}`)).watchlist || [];
+    if (cur.includes(t)) return toast(`${t} is already on your LEAPS watchlist.`, false);
+    const d = await api("/api/leaps/watch", { tickers: [...cur, t], term: lpTerm });
     if (lpData) { lpData.watchlist = d.watchlist; for (const r of lpData.rows) r.watched = d.watchlist.includes(r.ticker); renderLeaps(); lpDrawer(true); }
     toast(`${t} added to your LEAPS watchlist.`, false);
   } catch (err) { toast("Couldn't add it: " + err.message, false); }
@@ -5164,7 +5217,7 @@ $("#lpDrawer").onclick = async e => {
   const w = e.target.closest("button[data-w]");
   if (w) return lpWatchAdd(w.dataset.w);
 };
-document.addEventListener("keydown", e => { if (e.key === "Escape" && lpSel) lpClose(); });
+document.addEventListener("keydown", e => { if (escOk(e, "leaps") && lpSel) { e.preventDefault(); lpClose(); } });
 
 /* ================= start ================= */
 $("#range").value = store.get("range", "20");

@@ -10,6 +10,7 @@ econ_cache.json (gitignored), which also covers restarts and outages.
 import json
 import os
 import re
+import threading
 import time
 import urllib.request
 from datetime import datetime
@@ -65,8 +66,16 @@ def _load_disk():
         return None, None
 
 
+_lock = threading.Lock()   # ForexFactory asks not to be polled hard: one download at a time
+
+
 def _raw():
     """The week's raw events, refreshed at most every 15 minutes, falling back to the last good copy."""
+    with _lock:
+        return _raw_locked()
+
+
+def _raw_locked():
     now = time.time()
     if _mem["events"] is None:
         _mem["events"], _mem["fetched"] = _load_disk()
@@ -79,8 +88,9 @@ def _raw():
             events = _download()
             _mem.update(events=events, fetched=now, at=now, error=None)
             try:
-                with open(CACHE_FILE, "w") as f:
+                with open(CACHE_FILE + ".tmp", "w") as f:
                     json.dump({"fetched": now, "events": events}, f)
+                os.replace(CACHE_FILE + ".tmp", CACHE_FILE)
             except OSError:
                 pass
         except Exception as e:   # network, HTTP 429, bad JSON: keep serving the last good copy

@@ -25,9 +25,10 @@ import os
 import shutil
 import sys
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from fees import order_fees
-from options_data import QuoteError, greeks, quote, spot_price, years_to_expiry
+from options_data import QuoteError, greeks, option_spot, quote, spot_price, years_to_expiry
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DB = os.path.join(HERE, "trades.json")
@@ -48,8 +49,11 @@ def save(db, trades):
     # Keep the previous version as trades.json.bak, so one bad edit or delete can be undone.
     if os.path.exists(db):
         shutil.copyfile(db, db + ".bak")
-    with open(db, "w") as f:
+    # Write a temp file and swap it in, so a crash mid-write can't leave trades.json truncated.
+    tmp = db + ".tmp"
+    with open(tmp, "w") as f:
         json.dump(trades, f, indent=2)
+    os.replace(tmp, db)
 
 
 # ---------- math ----------
@@ -59,7 +63,8 @@ def parse_date(s):
 
 
 def dte(exp, on=None):
-    return (parse_date(exp) - (on or date.today())).days
+    # New York date, like options_data and leaps: on a Pacific clock after 9 PM date.today() is a day behind
+    return (parse_date(exp) - (on or datetime.now(ZoneInfo("America/New_York")).date())).days
 
 
 def category(days):
@@ -128,7 +133,10 @@ def live(trade):
                 "delta": 1.0, "position_delta": sign(trade) * MULTIPLIER * trade["contracts"],
                 "unrealized": upnl, "unrealized_pct": upnl / cost if cost else 0, "warning": None}
     q = quote(trade["ticker"], trade["exp"], trade["strike"], kind(trade))
-    g = greeks(kind(trade), q["spot"], trade["strike"], years_to_expiry(trade["exp"]), q["iv"])
+    # delta at the price the option quotes were made at (as the Chain tab does), not Yahoo's last trade:
+    # the IV was solved against it, and on a 0DTE/weekly the gap moves delta a lot
+    opt_s = option_spot(trade["ticker"], trade["exp"]) or q["spot"]
+    g = greeks(kind(trade), opt_s, trade["strike"], years_to_expiry(trade["exp"]), q["iv"])
     delta = g["delta"] if g else None
     upnl = pnl(trade, q["mark"])
     warning = None
@@ -280,7 +288,32 @@ def delete_position(trades, trade_id):
     t = next((t for t in trades if t["id"] == trade_id), None)
     if t is None:
         raise TradeError(f"No trade #{trade_id}")
+    # The closed part of a partial close (close 2 of 5): deleting it undoes that close, so its contracts
+    # go back on the open leg they were split from, like deleting a roll's new leg. Without this the
+    # position silently lost them (5 open -> close 2 -> delete the close -> 3 open).
+    if t.get("split_from") and t["status"] in ("closed", "expired"):
+        pieces = ([x for x in trades if x.get("group") == t["group"] and x.get("split_from")
+                   and x["status"] in ("closed", "expired") and x.get("closed") == t.get("closed")]
+                  if t.get("group") else [t])
+        for p in pieces:
+            parent = next((x for x in trades if x["id"] == p["split_from"] and x["status"] == "open"
+                           and x["premium"] == p["premium"]), None)
+            if parent:
+                parent.update(contracts=parent["contracts"] + p["contracts"], fees=round(parent["fees"] + p["fees"], 2))
+                trades.remove(p)
+            else:   # the leg it came from is gone or closed since: reopen the piece on its own
+                for k in ("exit_premium", "exit_fees", "closed", "realized"):
+                    p.pop(k, None)
+                p["status"] = "open"
+        return pieces
     removed = [x for x in trades if x.get("group") == t["group"]] if t.get("group") else [t]
+    # An assigned short put brought in a share lot: take it out too, if it's still whole and untouched.
+    for x in list(removed):
+        if x["status"] == "assigned" and kind(x) == "put":
+            lot = next((s for s in trades if s.get("assigned_from") == x["id"] and s["status"] == "open"
+                        and s["contracts"] == x["contracts"]), None)
+            if lot:
+                removed.append(lot)
     ids = {x["id"] for x in removed}
     trades[:] = [x for x in trades if x["id"] not in ids]
     # Deleting the new leg of a roll undoes the roll: the leg it came from is open again.
@@ -563,7 +596,7 @@ def cmd_list(args, trades):
     if not rows:
         print("No trades.")
         return
-    for cat in ("Hop", "Skip", "Leap"):
+    for cat in ("Hop", "Skip", "Leap", "Shares"):
         group = [t for t in rows if t["category"] == cat]
         if not group:
             continue
@@ -806,7 +839,7 @@ def main(argv=None):
 
     l = sub.add_parser("list", help="show trades")
     l.add_argument("--status", choices=["open", "closed", "all"], default="open")
-    l.add_argument("--category", choices=["hop", "skip", "leap"])
+    l.add_argument("--category", choices=["hop", "skip", "leap", "shares"])
     l.add_argument("--type", choices=["put", "call"])
     l.add_argument("--live", action="store_true", help="pull live prices, P&L, delta, assignment risk")
 

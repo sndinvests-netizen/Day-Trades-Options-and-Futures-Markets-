@@ -50,6 +50,8 @@ BREAK = 0.02                  # a close more than 2% under the level ...
 BREAK_DAYS = 5                # ... in the last 5 sessions means it broke
 OI_NEAR = DEFAULT_NEAR / 100  # after a scan, fetch OI for stocks at support at the default distance
 HIST_BATCH = 100
+HIST_TIMEOUT = 120     # seconds before a hung yf.download batch is given up on
+OI_TIMEOUT = 150       # seconds for one ticker's open-interest lookup (all expirations, with retries)
 OI_WORKERS = 3               # parallel option-chain lookups; more gets Yahoo rate limiting
 INTRADAY_SECONDS = 3600       # while the market is open, rescan after an hour
 RETRY_SECONDS = 300           # after a failed scan (Yahoo down or rate limiting), wait 5 minutes before trying again
@@ -280,8 +282,8 @@ def _history(universe):
         df = None
         for attempt in range(3):
             try:
-                df = yf.download(batch, period="1y", interval="1d", auto_adjust=False, group_by="ticker",
-                                 threads=True, progress=False)
+                df = _capped(lambda: yf.download(batch, period="1y", interval="1d", auto_adjust=False,
+                                                 group_by="ticker", threads=True, progress=False), HIST_TIMEOUT)
                 break
             except Exception as e:
                 if attempt == 2:
@@ -303,7 +305,35 @@ def _history(universe):
     return rows, failed
 
 
+def _capped(fn, seconds, *args):
+    """Run fn in a side thread and give up after `seconds`. yfinance calls can hang for good (breadth saw it
+    2026-10-23); without a cap one hung batch leaves the scan marked running and no later scan ever starts."""
+    box = {}
+
+    def run():
+        try:
+            box["data"] = fn(*args)
+        except Exception as e:
+            box["error"] = e
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(seconds)
+    if t.is_alive():
+        raise TimeoutError(f"Yahoo took over {seconds} s")
+    if "error" in box:
+        raise box["error"]
+    return box["data"]
+
+
 # ---------- option open interest ----------
+
+def _fetch_oi_capped(sym):
+    try:
+        return _capped(_fetch_oi, OI_TIMEOUT, sym)
+    except TimeoutError as e:
+        return {"error": f"TimeoutError: {e}", "date": _today(), "at": time.time()}
+
 
 def _fetch_oi(sym):
     yf = _yf()
@@ -347,23 +377,26 @@ def _queue_oi(syms, front=False):
 
 def _oi_worker():
     global _oi_running
-    done = 0
+    done, stopped = 0, False
     try:
         with ThreadPoolExecutor(OI_WORKERS) as pool:
             while True:
                 with _lock:
                     batch = [_oi_queue.pop(0) for _ in range(min(OI_WORKERS, len(_oi_queue)))]
+                    if not batch:   # clear the flag under the same lock, so a ticker queued right now starts a new worker
+                        _oi_running, stopped = False, True
                 if not batch:
                     break
-                for sym, res in zip(batch, pool.map(_fetch_oi, batch)):
+                for sym, res in zip(batch, pool.map(_fetch_oi_capped, batch)):
                     with _lock:
                         _oi[sym] = res
                 done += len(batch)
                 if done % 20 < OI_WORKERS:
                     _save()
     finally:
-        with _lock:
-            _oi_running = False
+        if not stopped:   # crashed out of the loop
+            with _lock:
+                _oi_running = False
         _save()
 
 

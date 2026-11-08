@@ -153,8 +153,9 @@ def save_vix_levels(levels):
                     "note": str(l.get("note", "")).strip()[:300],
                     "color": str(l.get("color", "#6faee9"))[:20]})
     out.sort(key=lambda l: l["price"])
-    with open(VIX_LEVELS, "w") as f:
+    with open(VIX_LEVELS + ".tmp", "w") as f:
         json.dump(out, f, indent=2)
+    os.replace(VIX_LEVELS + ".tmp", VIX_LEVELS)
     return out
 
 
@@ -217,10 +218,9 @@ class Handler(BaseHTTPRequestHandler):
         elif url.path == "/api/quote":
             # One contract's bid/ask/mark, e.g. the new leg in the Roll dialog.
             ticker, kind = q.get("ticker", "").strip(), q.get("type", "put")
-            strike = num(q, "strike")
-            if not ticker or not q.get("exp") or not strike or kind not in ("put", "call"):
+            if not ticker or not q.get("exp") or not q.get("strike") or kind not in ("put", "call"):
                 return self.send(400, {"error": "ticker, exp, strike and type put/call needed"})
-            self.guard(lambda: quote(ticker, q["exp"], strike, kind))
+            self.guard(lambda: quote(ticker, q["exp"], num(q, "strike"), kind))
         elif url.path == "/api/gex":
             ticker = q.get("ticker", "").strip()
             if not ticker:
@@ -262,6 +262,13 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
         except ValueError:
             return self.send(400, {"error": "bad JSON"})
+        # A body that isn't an object, or legs/levels that aren't lists of objects, would crash the
+        # handlers below with a 500: answer 400 instead.
+        if not isinstance(body, dict):
+            return self.send(400, {"error": "the request body must be a JSON object"})
+        for k in ("legs", "levels"):
+            if body.get(k) is not None and not (isinstance(body[k], list) and all(isinstance(x, dict) for x in body[k])):
+                return self.send(400, {"error": f"{k} must be a list of objects"})
         path = urlparse(self.path).path
 
         def add():
@@ -393,7 +400,10 @@ _tv_lock = threading.Lock()
 
 
 def _osa(script, *args, timeout=20):
-    r = subprocess.run(["osascript", "-e", script, *[str(a) for a in args]], capture_output=True, text=True, timeout=timeout)
+    try:
+        r = subprocess.run(["osascript", "-e", script, *[str(a) for a in args]], capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise QuoteError(f"Chrome didn't answer within {timeout} s (a dialog may be open in a tab)")
     if r.returncode:
         err = r.stderr.strip()
         if "Allow JavaScript from Apple Events" in err:

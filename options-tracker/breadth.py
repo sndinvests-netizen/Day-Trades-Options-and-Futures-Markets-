@@ -90,9 +90,15 @@ def _download():
             "new_highs": new_hi, "new_lows": new_lo}
 
 
+_dl_thread = None   # the last download thread; a hung one is never stacked with another
+
+
 def _download_capped():
     """_download in a side thread, given up on after DOWNLOAD_SECONDS. yf.download's threaded batch can hang
     for good (seen 2026-10-23), and since it runs under _lock that froze every later breadth request."""
+    global _dl_thread
+    if _dl_thread is not None and _dl_thread.is_alive():
+        raise TimeoutError("the last Yahoo download is still hung; not starting another")
     box = {}
 
     def run():
@@ -101,7 +107,7 @@ def _download_capped():
         except Exception as e:
             box["error"] = e
 
-    t = threading.Thread(target=run, daemon=True)
+    t = _dl_thread = threading.Thread(target=run, daemon=True)
     t.start()
     t.join(DOWNLOAD_SECONDS)
     if t.is_alive():
@@ -137,9 +143,10 @@ def breadth():
                 data = _download_capped()
                 _mem.update(data=data, fetched=now, at=now, error=None)
                 try:
-                    with open(CACHE_FILE, "w") as f:
+                    with open(CACHE_FILE + ".tmp", "w") as f:
                         json.dump({"fetched": now, "data": data, "members": _mem["members"],
                                    "members_at": _mem["members_at"]}, f)
+                    os.replace(CACHE_FILE + ".tmp", CACHE_FILE)
                 except OSError:
                     pass
             except Exception as e:   # network, Yahoo rate limit, Wikipedia layout change: keep the last good copy

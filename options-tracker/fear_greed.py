@@ -7,6 +7,7 @@ kept in fng_cache.json (gitignored), which also covers restarts and outages.
 """
 import json
 import os
+import threading
 import time
 import urllib.request
 
@@ -70,8 +71,16 @@ def _load_disk():
         return None, None
 
 
+_lock = threading.Lock()   # two panels loading at once shouldn't both hit CNN
+
+
 def fear_greed():
     """Today's index, its earlier readings and the seven parts, falling back to the last good copy."""
+    with _lock:
+        return _fear_greed()
+
+
+def _fear_greed():
     now = time.time()
     if _mem["data"] is None:
         _mem["data"], _mem["fetched"] = _load_disk()
@@ -84,8 +93,9 @@ def fear_greed():
             data = _download()
             _mem.update(data=data, fetched=now, at=now, error=None)
             try:
-                with open(CACHE_FILE, "w") as f:
+                with open(CACHE_FILE + ".tmp", "w") as f:
                     json.dump({"fetched": now, "data": data}, f)
+                os.replace(CACHE_FILE + ".tmp", CACHE_FILE)
             except OSError:
                 pass
         except Exception as e:   # network, HTTP 418/429, changed format: keep serving the last good copy

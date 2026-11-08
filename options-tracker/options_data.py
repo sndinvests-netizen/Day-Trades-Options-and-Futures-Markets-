@@ -106,6 +106,52 @@ def bs_price(kind, spot, strike, t, iv, r=RISK_FREE_RATE):
     return disc * norm_cdf(-d2) - spot * norm_cdf(-d1)
 
 
+AM_STEPS = 150   # binomial steps for American puts: within a few cents of a 1,000-step tree on a 1-2 year LEAPS
+
+
+def am_put(spot, strike, t, iv, r=RISK_FREE_RATE, steps=AM_STEPS, with_delta=False):
+    """American (early-exercise) put value per share, from a Cox-Ross-Rubinstein binomial tree.
+    Listed US equity puts can be exercised early, so a deep in-the-money put trades near intrinsic and
+    its delta is near -1; Black-Scholes (European) understates both. with_delta=True returns (value, delta)."""
+    import numpy as np
+    if t <= 0 or not iv or iv <= 0:
+        v = max(0.0, strike - spot)
+        return (v, -1.0 if spot < strike else 0.0) if with_delta else v
+    dt = t / steps
+    u = math.exp(iv * math.sqrt(dt))
+    d = 1 / u
+    p = (math.exp(r * dt) - d) / (u - d)
+    disc = math.exp(-r * dt)
+    j = np.arange(steps + 1)
+    s = spot * u ** (steps - 2 * j)              # prices at expiry, high to low
+    v = np.maximum(strike - s, 0.0)
+    delta = None
+    for n in range(steps - 1, -1, -1):
+        s = s[:-1] * d                           # one step earlier: s_n[j] = spot * u^(n-2j)
+        v = np.maximum(disc * (p * v[:-1] + (1 - p) * v[1:]), strike - s)
+        if n == 1:
+            delta = (v[0] - v[1]) / (s[0] - s[1])
+    val = float(v[0])
+    return (val, float(delta)) if with_delta else val
+
+
+def am_put_iv(spot, strike, t, price, r=RISK_FREE_RATE):
+    """The IV at which the American put tree gives this price, or None when the price is at or under
+    intrinsic (nothing to solve from) or needs an IV outside 1%-500%."""
+    if not spot or not strike or t <= 0 or price <= 0:
+        return None
+    lo, hi = 0.01, 5.0
+    if not am_put(spot, strike, t, lo, r) < price < am_put(spot, strike, t, hi, r):
+        return None
+    for _ in range(30):
+        mid = (lo + hi) / 2
+        if am_put(spot, strike, t, mid, r) > price:
+            hi = mid
+        else:
+            lo = mid
+    return (lo + hi) / 2
+
+
 def implied_vol(kind, spot, strike, t, price, r=RISK_FREE_RATE):
     """The IV at which Black-Scholes gives this price, or None when the price has (almost)
     no time value to solve from (at or below intrinsic) or needs an IV outside 1%-500%."""
