@@ -227,8 +227,8 @@ def lookup(ticker, right="put"):
     if not re.fullmatch(r"[A-Z0-9.^=-]{1,12}", sym):
         raise QuoteError("Enter a ticker")
     hit = _one.get((sym, right))
-    if hit and time.time() - hit[0] < LOOKUP_SECONDS:
-        return hit[1]
+    if hit and time.time() - hit[0] < LOOKUP_SECONDS:   # quotes reused; your holding is always re-read
+        return dict(hit[1], holding=_holding(sym) if right == "call" else None)
     try:
         spot, puts = _puts(sym, right=right)
     except QuoteError as e:
@@ -242,9 +242,31 @@ def lookup(ticker, right="put"):
     row = {"ticker": sym, "name": sr.get("name") or e.get("name") or sym, "price": round(spot, 2),
            "sma200": sr.get("sma200"), "sma50": sr.get("sma50"), "earn": e.get("earn"),
            "earn_est": e.get("earn_est"), "earn_session": e.get("earn_session"), "puts": puts, "right": right,
+           "holding": _holding(sym) if right == "call" else None,
            "settings": settings(), "at": time.time()}
     _one[(sym, right)] = (time.time(), row)
     return row
+
+
+def _holding(sym):
+    """Your open share lots in `sym` from My Trades: shares, broker average cost, the average cost
+    after the option P&L you've realized on the ticker (calls and puts closed, expired or assigned),
+    and how many of the 100-share lots already have a call written against them."""
+    import tracker
+    try:
+        trades = tracker.load(tracker.DEFAULT_DB)
+    except Exception:
+        return None
+    h = next((x for x in tracker.share_holdings(trades) if x["ticker"] == sym), None)
+    if not h or not h["shares"]:
+        return None
+    opt = [t for t in trades if t["ticker"] == sym and tracker.kind(t) != "stock"]
+    realized = sum(t.get("realized") or 0 for t in opt if t["status"] != "open")
+    short_calls = sum(t["contracts"] for t in opt if t["status"] == "open" and tracker.kind(t) == "call" and t["side"] == "sell")
+    lots = h["shares"] // tracker.MULTIPLIER
+    return {"shares": h["shares"], "avg_cost": round(h["avg_cost"], 4), "option_pnl": round(realized, 2),
+            "net_cost": round((h["cost"] + h["fees"] - realized) / h["shares"], 4),
+            "lots": lots, "calls_open": short_calls, "lots_free": max(0, lots - short_calls)}
 
 
 def settings():

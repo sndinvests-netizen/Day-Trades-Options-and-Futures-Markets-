@@ -5448,6 +5448,10 @@ function renderPsLook() {
   const d = psLookData;
   if (!d) return;
   const call = d.right === "call", kind = call ? "C" : "P";
+  const H = call ? d.holding : null;   // your shares from My Trades
+  // called away at the strike: premium + strike vs your average cost (and vs cost after option P&L)
+  const vsCost = p => H ? (p.strike + p.bid - H.avg_cost) / H.avg_cost : null;
+  const vsNet = p => H ? (p.strike + p.bid - H.net_cost) / H.net_cost : null;
   const rows = d.puts.map(p => ({ p, c: psCheck(p, d.earn) }));
   const fits = rows.filter(x => x.c.ok);
   const best = fits.reduce((a, x) => !a || x.p.ret_week > a.p.ret_week ? x : a, null);
@@ -5457,20 +5461,23 @@ function renderPsLook() {
   const cards = `<div class="ps-cards">
     <div class="ps-card"><small>${esc(d.name)}</small><b>${f2(d.price)}</b></div>
     <div class="ps-card"><small>Next earnings</small><b>${d.earn ? psDay(d.earn) + (d.earn_est ? " est." : "") : "none listed"}</b></div>
+    ${H ? `<div class="ps-card"><small>You hold (My Trades)</small><b>${int(H.shares)} sh · avg ${f2(H.avg_cost)}</b>
+      <span class="note" title="Average cost minus the $${int(Math.round(H.option_pnl))} you've realized on ${esc(d.ticker)} options (closed, expired or assigned)">· ${f2(H.net_cost)} after ${usd(H.option_pnl)} option P&amp;L · ${H.lots_free} of ${H.lots} lots free to write</span></div>` : ""}
+    ${call && !H ? `<div class="ps-card"><small>You hold (My Trades)</small><b>no ${esc(d.ticker)} shares logged</b></div>` : ""}
     ${d.sma200 ? `<div class="ps-card"><small>200-day</small><b>${f2(d.sma200)}</b> <span class="note">${below200 ? "price below" : "price above"}</span></div>` : ""}
-    ${best ? `<div class="ps-card good"><small>Best ${psDL()} that fits</small><b>${f2(best.p.strike)} ${kind} ${psDay(best.p.exp)} · ${pct(best.p.ret_week, 2)}/wk · ${pct(best.p.ret_week * PS_MO, 2)}/mo · ${usd(best.p.bid * 100)} credit</b></div>`
+    ${best ? `<div class="ps-card good"><small>Best ${psDL()} that fits</small><b>${f2(best.p.strike)} ${kind} ${psDay(best.p.exp)} · ${pct(best.p.ret_week, 2)}/wk · ${pct(best.p.ret_week * PS_MO, 2)}/mo · ${usd(best.p.bid * 100)} credit${H ? ` · called: ${sgnPct(vsCost(best.p), 1)} vs your cost` : ""}</b></div>`
            : `<div class="ps-card bad"><small>Best ${psDL()} that fits</small><b>none 30 days out or less</b></div>`}
     <button class="ghost small" type="button" data-tvb="${esc(d.ticker.replace("-", "."))}" title="Open ${esc(d.ticker)} on your TradingView chart in Chrome" style="align-self:center">📈 Chart</button>
     <button class="ghost small" type="button" data-chain="${esc(d.ticker)}" title="Open ${esc(d.ticker)} in the Chain tab" style="align-self:center">Option chain</button></div>`;
   if (!rows.length) { $("#psLook").innerHTML = cards + `<div class="note empty">No ${call ? "calls" : "puts"} 30 days out or less with ${call ? "delta 0.15–0.60" : "delta 0.08–0.30"} and a bid.</div>`; return; }
   const body = rows.map(({ p, c }) => `<tr data-exp="${p.exp}" data-k="${p.strike}" class="${best && p === best.p ? "best" : c.ok ? "fit" : c.cls === "near" ? "" : "off"}" title="Click to sell this ${call ? "call" : "put"} in the Builder · right-click to open the chain">
-    <td class="left"><b>${f2(p.strike)} ${kind}</b> ${psDay(p.exp)} <span class="note">· ${p.dte}d</span>${best && p === best.p ? `<span class="ps-tag">best ${psDL()}</span>` : ""}</td>
+    <td class="left"><b>${f2(p.strike)} ${kind}</b> ${psDay(p.exp)} <span class="note">· ${p.dte}d</span>${best && p === best.p ? `<span class="ps-tag">best ${psDL()}</span>` : ""}${H && p.strike + p.bid < H.avg_cost ? `<span class="ps-flag" title="Called away here you'd sell below your average cost">below your cost</span>` : ""}</td>
     <td>${p.delta.toFixed(2)}</td><td>${pct(Math.abs(d.price - p.strike) / d.price)}</td><td>${f2(p.bid)} / ${f2(p.ask)}</td>
     <td><span class="${ps.unit === "wk" ? "ps-ret " + psRetCls(p.ret_week) : ""}">${pct(p.ret_week, 2)}</span></td>
     <td><span class="${ps.unit === "mo" ? "ps-ret " + psRetCls(p.ret_week) : ""}">${pct(p.ret_week * PS_MO, 2)}</span></td>
     <td>${usd(p.bid * 100)} <span class="note">(${pct(p.ret_trade, 2)})</span></td><td>${pct(p.iv, 0)}</td>
-    ${call ? `<td>${pct(p.ret_called, 2)}</td>` : ""}<td>${int(p.oi)} · ${pct(p.spread, 0)}</td><td class="left"><span class="ps-why ${c.cls}">${esc(c.why)}</span></td></tr>`).join("");
-  $("#psLook").innerHTML = cards + `<div class="scroll"><table class="ps-tbl"><thead><tr><th class="left">${call ? "Call" : "Put"}</th><th>Delta</th><th>${call ? "Above" : "Below"} price</th><th>Bid / ask</th><th>Return / week</th><th>Return / month</th><th>Credit (trade)</th><th>IV</th>${call ? `<th title="Premium plus the gain up to the strike, if the shares are called away">If called</th>` : ""}<th>OI · spread</th><th class="left">Fits your rules?</th></tr></thead><tbody>${body}</tbody></table></div>`;
+    ${call ? `<td>${pct(p.ret_called, 2)}</td>` : ""}${H ? `<td class="${signed(vsCost(p))}" title="Called away: strike ${f2(p.strike)} + premium ${f2(p.bid)} vs your ${f2(H.avg_cost)} average cost. After option P&L (cost ${f2(H.net_cost)}): ${sgnPct(vsNet(p), 1)}"><b>${sgnPct(vsCost(p), 1)}</b><small class="note" style="display:block">${signedUsd((p.strike + p.bid - H.avg_cost) * 100 * Math.max(H.lots_free, 1))} on ${int(Math.max(H.lots_free, 1) * 100)} sh</small></td>` : ""}<td>${int(p.oi)} · ${pct(p.spread, 0)}</td><td class="left"><span class="ps-why ${c.cls}">${esc(c.why)}</span></td></tr>`).join("");
+  $("#psLook").innerHTML = cards + `<div class="scroll"><table class="ps-tbl"><thead><tr><th class="left">${call ? "Call" : "Put"}</th><th>Delta</th><th>${call ? "Above" : "Below"} price</th><th>Bid / ask</th><th>Return / week</th><th>Return / month</th><th>Credit (trade)</th><th>IV</th>${call ? `<th title="Premium plus the gain from today's price up to the strike, if the shares are called away">If called</th>` : ""}${H ? `<th title="Strike + premium vs your average cost from My Trades, if the shares are called away">Called vs your cost</th>` : ""}<th>OI · spread</th><th class="left">Fits your rules?</th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 async function psToBuilder(ticker, exp, strike) {
   try {
