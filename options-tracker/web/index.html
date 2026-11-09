@@ -5358,6 +5358,7 @@ $("#lpQ").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); clearT
 
 /* Find box: a ticker that isn't in the current list gets its own LEAPS Finder check and joins the table */
 const lpLook = {};          // "term|TICKER" -> row, {error}, or "loading"
+const lpLookAt = {};        // "term|TICKER" -> when its lookup started
 let lpLookTimer = null;
 const lpLookQ = () => { const q = ($("#lpQ").value || "").trim().toUpperCase().replace(/\./g, "-"); return /^[A-Z][A-Z0-9-]{0,7}$/.test(q) ? q : null; };
 function lpInject() {
@@ -5377,15 +5378,18 @@ function lpLookMsg() {
 async function lpMaybeLookup() {
   const t = lpLookQ();
   if (!t || !lpData || lpData.rows.some(r => r.ticker === t)) return;
-  const term = lpData.term, key = term + "|" + t;
-  if (lpLook[key]) { lpInject(); return renderLeaps(); }
-  lpLook[key] = "loading";
+  const term = lpData.term, key = term + "|" + t, v = lpLook[key];
+  // A failed lookup (e.g. while Yahoo was rate limiting) used to stick until the page was reloaded;
+  // now an error is retried after 20 s, and a lookup stuck "loading" after 90 s.
+  const stale = v && (v === "loading" ? Date.now() - (lpLookAt[key] || 0) > 90000 : v.error && Date.now() - (v.at || 0) > 20000);
+  if (v && !stale) { lpInject(); return renderLeaps(); }
+  lpLook[key] = "loading"; lpLookAt[key] = Date.now();
   renderLeaps();
   try {
     const d = await api(`/api/leaps/one?ticker=${encodeURIComponent(t)}&term=${term}`);
     lpLook[key] = d.row;
     lpLook[term + "|" + d.row.ticker] = d.row;
-  } catch (err) { lpLook[key] = { error: err.message }; }
+  } catch (err) { lpLook[key] = { error: err.message, at: Date.now() }; }
   if (lpData && lpData.term === term) { lpInject(); renderLeaps(); lpDrawer(); }
 }
 $("#lpMin").oninput = e => { lpF.min = +e.target.value; $("#lpMinV").textContent = lpF.min; lpSaveFilters(); if (lpData) renderLeaps(); };
