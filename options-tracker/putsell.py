@@ -329,7 +329,8 @@ def lookup(ticker, right="put"):
     first, got = None, None
     for src in sources:
         try:
-            got = src()
+            with tradier.priority():
+                got = src()
             if got[1]:
                 break
         except QuoteError as e:

@@ -17,11 +17,41 @@ from options_data import QuoteError
 HERE = os.path.dirname(os.path.abspath(__file__))
 KEY_FILE = os.path.join(HERE, "tradier_key.txt")
 BASE = "https://api.tradier.com/v1"
-MIN_GAP = 0.5            # 120 a minute at most
-KEEP_SPARE = 3           # leave a few requests for one-ticker lookups while a scan runs
+MIN_GAP = 0.5            # background scans: 120 a minute at most
+SPARE = {False: 25, True: 1}   # requests a scan leaves free each minute so lookups you type never wait behind it
 
 _gate = threading.Lock()
 _state = {"last": 0.0, "available": None, "expiry": 0.0}
+_ctx = threading.local()
+
+
+class priority:
+    """with tradier.priority(): ... -- a lookup the user is waiting on goes ahead of background scans."""
+    def __enter__(self):
+        self.prev = getattr(_ctx, "hi", False)
+        _ctx.hi = True
+
+    def __exit__(self, *a):
+        _ctx.hi = self.prev
+
+
+def _slot():
+    """Wait for a request slot without holding the lock while waiting, so lookups can pass a waiting scan."""
+    hi = getattr(_ctx, "hi", False)
+    gap = 0.0 if hi else MIN_GAP
+    deadline = time.time() + 70
+    while True:
+        with _gate:
+            now = time.time()
+            if _state["available"] is not None and now >= _state["expiry"]:
+                _state["available"] = None          # Tradier's minute rolled over
+            short = _state["available"] is not None and _state["available"] <= SPARE[hi]
+            if (not short and now >= _state["last"] + gap) or now > deadline:
+                _state["last"] = now
+                if _state["available"] is not None:
+                    _state["available"] -= 1
+                return
+        time.sleep(0.05 if hi else 0.25)
 
 
 class RateLimited(QuoteError):
@@ -44,15 +74,7 @@ def _get(path, **params):
     key = _key()
     if not key:
         raise QuoteError("No Tradier key (tradier_key.txt)")
-    with _gate:
-        now = time.time()
-        if _state["available"] is not None and _state["available"] <= KEEP_SPARE and now < _state["expiry"]:
-            time.sleep(min(_state["expiry"] - now + 0.2, 65))
-            _state["available"] = None
-        wait = _state["last"] + MIN_GAP - time.time()
-        if wait > 0:
-            time.sleep(wait)
-        _state["last"] = time.time()
+    _slot()
     url = f"{BASE}{path}?{urllib.parse.urlencode(params)}"
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {key}", "Accept": "application/json"})
     try:

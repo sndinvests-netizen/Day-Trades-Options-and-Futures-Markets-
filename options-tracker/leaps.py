@@ -645,9 +645,11 @@ def lookup(ticker, term="leap"):
     if hit and time.time() - hit[0] < FRESH_SECONDS:
         row = hit[1]
     else:
-        if _spy_cache[1] is None or time.time() - _spy_cache[0] > FRESH_SECONDS:
-            _spy_cache[:] = [time.time(), _closes("SPY")]
-        row = _analyze(sym, _spy_cache[1], term)
+        import tradier
+        with tradier.priority():   # when Yahoo is rate limiting, go ahead of any scan running on Tradier
+            if _spy_cache[1] is None or time.time() - _spy_cache[0] > FRESH_SECONDS:
+                _spy_cache[:] = [time.time(), _closes("SPY")]
+            row = _analyze(sym, _spy_cache[1], term)
         row["lookup"] = True
         _one_cache[(sym, term)] = (time.time(), row)
     row["watched"] = sym in [yahoo_symbol(t) for t in watchlist()]
