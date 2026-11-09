@@ -460,7 +460,7 @@ tr.pos-leg td.contract { padding-left: 24px; }
 .earn-btn { display: inline-flex; align-items: center; gap: 6px; }
 .earn-count { font-size: 11px; font-weight: 700; border-radius: 9px; padding: 0 7px; background: var(--warn-bg); color: var(--warn); }
 .earn-count.risk { background: var(--down); color: #fff; }
-.earn-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 25; width: min(560px, calc(100vw - 32px));
+.earn-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 45; width: min(560px, calc(100vw - 32px));
   max-height: min(70vh, 640px); overflow: auto; box-shadow: 0 14px 36px rgba(0,0,0,.3); }
 .earn-panel[hidden] { display: none; }
 .earn-list { list-style: none; margin: 8px 0; padding: 0; }
@@ -1940,8 +1940,21 @@ async function earnSave(tickers) {
 function earnOpen(open) {
   $("#earnPanel").hidden = !open;
   $("#earnBtn").setAttribute("aria-expanded", String(open));
+  if (open) earnPlace();
   if (open && Date.now() - earnAt > 5 * 60000) loadEarn();
 }
+// Right-aligned to the button by default; when the header wraps and the button sits near the
+// left edge, that pushed the panel off screen. Shift it so it stays inside the window.
+function earnPlace() {
+  const p = $("#earnPanel");
+  if (p.hidden) return;
+  p.style.left = ""; p.style.right = "";
+  const wrap = p.parentElement.getBoundingClientRect(), w = p.offsetWidth, vw = document.documentElement.clientWidth;
+  const want = wrap.right - w;                                  // screen x of the panel's left edge
+  const x = Math.max(16, Math.min(want, vw - 16 - w));
+  if (x !== want) { p.style.left = (x - wrap.left) + "px"; p.style.right = "auto"; }
+}
+addEventListener("resize", earnPlace);
 $("#earnBtn").onclick = () => earnOpen($("#earnPanel").hidden);
 $("#earnClose").onclick = () => { earnOpen(false); $("#earnBtn").focus(); };
 $("#earnRefresh").onclick = loadEarn;
