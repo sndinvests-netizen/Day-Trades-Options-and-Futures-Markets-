@@ -21,3 +21,13 @@ leaps_*_cache.json
 leaps_*_cache.json.tmp
 putsell_cache.json
 putsell_cache.json.tmp
+news_watch.json
+smart_watch.json
+smart_alerts.json
+smart_alerted.json
+smartmoney_cache.json
+smartmoney_cache.json.tmp
+smartmoney_ptr/
+sec_contact.txt
+lan_key.txt
+tradier_key.txt

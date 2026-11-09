@@ -181,12 +181,31 @@ def _closes(sym, period="2y"):
     yf = _yf()
     try:
         h = yf.Ticker(sym).history(period=period, auto_adjust=True)
+        xs = [float(c) for c in h["Close"].tolist() if c == c and c > 0]
     except Exception as e:
-        raise QuoteError(f"{sym}: no price history ({e})")
-    xs = [float(c) for c in h["Close"].tolist() if c == c and c > 0]
+        xs = _tradier_closes(sym, period)   # Yahoo rate limiting: Tradier's daily bars instead
+        if not xs:
+            raise QuoteError(f"{sym}: no price history ({e})")
+    if len(xs) < 210:
+        xs = _tradier_closes(sym, period) or xs
     if len(xs) < 210:
         raise QuoteError(f"{sym}: not enough price history")
     return xs
+
+
+def _tradier_closes(sym, period="2y"):
+    """Daily closes from Tradier (not dividend-adjusted, unlike Yahoo's; fine for SMAs, RSI and returns)."""
+    from datetime import timedelta
+    try:
+        import tradier
+        if not tradier.enabled() or sym.startswith("^"):
+            return None
+        start = (datetime.now(ET).date() - timedelta(days=366 * int(period.rstrip("y") or 2))).isoformat()
+        h = (tradier._get("/markets/history", symbol=sym.replace("-", "/"), interval="daily", start=start)
+             .get("history") or {})
+        return [float(d["close"]) for d in tradier._list(h.get("day")) if d.get("close")] or None
+    except Exception:
+        return None
 
 
 def _fundamentals(sym):

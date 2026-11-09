@@ -19,6 +19,10 @@ The first run installs `yfinance` into `options-tracker/.venv`. It then opens **
 
 Your trades are saved to `options-tracker/trades.json`, which is kept out of git. This repo is public, so never commit that file.
 
+## Open it on your phone (home Wi-Fi)
+
+Put a random secret in `lan_key.txt` (not in git) and restart: the tracker then also listens on your home network. Open `http://<this Mac's Wi-Fi IP>:8765/?key=<the secret>` once on the phone; it saves a cookie and drops the key from the address. Anyone on the Wi-Fi without the key gets "Locked". Delete `lan_key.txt` and restart to go back to this-computer-only.
+
 ## Open it automatically on weekday mornings (macOS)
 
 `launch-morning.sh` starts the tracker if it isn't running and opens it in the browser. A launchd agent in `~/Library/LaunchAgents/com.soundinvestmentsolutions.optiontracker.plist` runs it Monday to Friday at 6:30 AM local time, at the 6:30 AM PT market open. It logs to `~/Library/Logs/option-tracker.log`.
@@ -99,6 +103,13 @@ If the Mac is asleep at 6:30 it runs when the Mac wakes up; if the Mac is shut d
 - **The contract (60 points):** every call 365+ days out with delta 0.70–0.85 is a candidate. The best one is the liquid one (open interest ≥ 100, spread ≤ 5%) with the highest contract score. The biggest part of that score is **time value per year**: (time value + the dividends a call holder gives up) ÷ years, as a % of the stock price, which is what holding the call costs you vs owning the shares. Quotes priced below what the call can be worth (stale or placeholder quotes) are skipped. Scored on time value/yr 25, breakeven per year 10, IV vs 1-year realized vol 10 (Yahoo has no free IV history for a true IV rank), spread 10 and open interest 5. A ticker with no liquid LEAPS loses 15 points and shows a **thin** tag.
 - Earnings within 14 days are flagged. Hover a score for its breakdown, click ▸ for up to 4 alternate contracts, and **Builder** loads the call into the Builder. **Download CSV** saves the table.
 - The scan takes about 2 seconds per ticker in the background and is reused for 4 hours (**Refresh** rescans). The last watchlist scan is kept in `leaps_cache.json` (not in git).
+
+**Smart Money tab.** What Congress, company insiders and big option traders are buying. A screen of public filings, not advice.
+
+- **Congress:** House trade reports (PTRs) from the last 60 days, read from the House Clerk's filing PDFs (`smartmoney.py`; parsed filings are cached in `smartmoney_ptr/`). Stocks and stock options only. Amounts are the reported ranges, and **Days late** is the gap between the trade and the filing (members get up to 45 days). **Clusters** are stocks two or more members bought within 30 days. House only: the Senate's disclosure site blocks automated access.
+- **Insiders:** open-market buys from the last 6 months for the tickers in `smart_watch.json` (not in git), from SEC EDGAR Form 4 (open-market purchases, code P). The SEC asks automated tools to name a contact, so put an email in `sec_contact.txt` (not in git); without it the tab falls back to Yahoo, which misses some filings.
+- **Options flow:** the latest open scans from the unusual-activity scanner (`~/.claude/scripts/uoa_scan.py`).
+- **Text me when:** the checkboxes are saved in `smart_alerts.json`. `python smartmoney.py alert` texts each new matching item once (`smart_alerted.json` remembers what was sent); run it each morning.
 
 ## Command line
 

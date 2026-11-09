@@ -199,9 +199,18 @@ def expirations(ticker):
 
     def fetch():
         try:
-            return list(yf.Ticker(ticker).options)
+            got = list(yf.Ticker(ticker).options)
         except Exception as e:
-            raise QuoteError(f"{ticker}: {e}")
+            got, err = [], QuoteError(f"{ticker}: {e}")
+        else:
+            err = None
+        if not got:   # Yahoo errored or (often when rate limiting) sent an empty list: ask Tradier
+            alt = _tradier(lambda t: t.expirations(_tsym(ticker)))
+            if alt:
+                return alt
+            if err:
+                raise err
+        return got
     exps = _cached(("exps", ticker), fetch)
     if not exps:
         raise QuoteError(f"No options listed for {ticker}")
@@ -216,6 +225,9 @@ def spot_price(ticker):
         try:
             return float(yf.Ticker(ticker).fast_info["last_price"])
         except Exception as e:
+            alt = _tradier(lambda t: t.spot(_tsym(ticker)))
+            if alt:
+                return alt
             raise QuoteError(f"{ticker}: no stock price ({e})")
     return _cached(("spot", ticker), fetch)
 
@@ -356,6 +368,43 @@ def _fill_missing(ticker, exp, out):
                 r["est"] = True
 
 
+def _tsym(ticker):
+    return ticker.replace("-", "/")   # Tradier writes class shares as BRK/B
+
+
+def _tradier(fn):
+    """Tradier as the backup when Yahoo fails: fn(tradier module) -> value, or None when there's no
+    Tradier key, the symbol is an index (^VIX) or Tradier fails too."""
+    try:
+        import tradier
+        if not tradier.enabled():
+            return None
+        return fn(tradier) or None
+    except Exception:
+        return None
+
+
+def _tradier_chain(t, ticker, exp):
+    """One expiration from Tradier in chain_rows' format (IV from Tradier's greeks, refreshed about hourly)."""
+    if ticker.startswith("^") or "=" in ticker:
+        return None
+    out = {"call": [], "put": []}
+    for o in t.chain(_tsym(ticker), exp):
+        kind = o.get("option_type")
+        if kind not in out:
+            continue
+        bid, ask, last = _num(o.get("bid")), _num(o.get("ask")), _num(o.get("last"))
+        lt = o.get("trade_date")
+        out[kind].append({"strike": _num(o.get("strike")), "bid": bid, "ask": ask, "last": last,
+                          "last_trade": datetime.fromtimestamp(lt / 1000, ET).isoformat() if lt else None,
+                          "quoted": ask > 0, "mark": (bid + ask) / 2 if ask > 0 else last,
+                          "volume": int(_num(o.get("volume"))), "oi": int(_num(o.get("open_interest"))),
+                          "iv": _num((o.get("greeks") or {}).get("mid_iv"))})
+    for rows in out.values():
+        rows.sort(key=lambda r: r["strike"])
+    return out if out["call"] or out["put"] else None
+
+
 def chain_rows(ticker, exp):
     """{'call': [...], 'put': [...]}: strike, bid, ask, last, last_trade, mark, volume, oi, iv,
     quoted (has a live ask), est (mark is a Black-Scholes estimate), iv_est (IV is borrowed)."""
@@ -368,7 +417,11 @@ def chain_rows(ticker, exp):
         try:
             ch = yf.Ticker(ticker).option_chain(exp)
         except Exception as e:
-            raise QuoteError(f"{ticker}: {e}")
+            out = _tradier(lambda t: _tradier_chain(t, ticker, exp))
+            if not out:
+                raise QuoteError(f"{ticker}: {e}")
+            _fill_missing(ticker, exp, out)
+            return out
         out = {}
         for kind, df in (("call", ch.calls), ("put", ch.puts)):
             rows = []
@@ -487,7 +540,7 @@ GEX_MAX_EXPS = 8     # ... but no more than this many
 GEX_RANGE = 0.25     # per-strike rows returned within this fraction of the stock price
 GEX_NEAR = 0.10      # Yahoo's open interest is judged on strikes within 10% of the price ...
 GEX_MIN_OI_SHARE = 0.3   # ... and counts as missing when fewer than this share of them have any
-CBOE_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/{}.json"
+CBOE_URL = "https://cdn-api.cboe.com/api/global/delayed_quotes/options/{}.json"   # cdn.cboe.com now 307-redirects here
 CBOE_CACHE_SECONDS = 300
 
 

@@ -759,6 +759,47 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
 .spark { display: block; width: 96px; height: 28px; margin-left: auto; overflow: visible; }
 .spark polyline { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
 .spark path { fill: currentColor; opacity: .12; stroke: none; }
+
+/* ---------- Smart Money ---------- */
+.sm-badge { display: inline-block; margin-left: 5px; padding: 0 7px; border-radius: 9px; background: var(--flag); color: #fff; font-size: 11px; font-weight: 700; }
+.sm-hits { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; margin-top: 10px; }
+.sm-hit { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; background: var(--itm); }
+.sm-hit .t { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.sm-hit .t b { font-size: 18px; cursor: pointer; }
+.sm-side { display: inline-block; padding: 0 9px; border-radius: 10px; font-size: 11px; font-weight: 700; }
+.sm-side.buy { background: rgba(18,128,92,.13); color: var(--up); }
+.sm-side.sell { background: rgba(194,59,59,.12); color: var(--down); }
+.sm-side.ex { background: var(--well); color: var(--muted); }
+.sm-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.sm-row > .sm-main { flex: 999 1 620px; min-width: 0; }
+.sm-row > .sm-side-col { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 0; }
+#view-smart td, #view-smart th { text-align: left; }
+#view-smart td.num, #view-smart th.num { text-align: right; }
+#view-smart td .tk { font-weight: 700; cursor: pointer; }
+#view-smart td .tk:hover, .sm-hit .t b:hover { text-decoration: underline; }
+#view-smart tr.mine td { background: var(--itm); }
+.sm-late { color: var(--warn); font-weight: 600; }
+#view-smart a { color: var(--muted); } #view-smart a:hover { color: var(--text); }
+.sm-clu { padding: 8px 0; border-top: 1px solid var(--line); }
+.sm-clu:first-of-type { border-top: 0; }
+.sm-alerts label { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; cursor: pointer; }
+.sm-alerts input { width: 16px; height: 16px; margin-top: 1px; }
+.sm-flow { padding: 8px 0; border-top: 1px solid var(--line); }
+.sm-flow:first-child { border-top: 0; }
+.sm-tablebox { max-height: 560px; overflow: auto; border-radius: 10px; }
+/* phones: the main tabs wrap onto two rows instead of running off the screen */
+@media (max-width: 640px) {
+  header > .tabs { flex-wrap: wrap; width: 100%; box-sizing: border-box; }
+  header > .tabs button { flex: 1 1 auto; white-space: nowrap; padding: 8px 10px; min-height: 40px; }
+  /* the chosen tab comes first; the side panels (red folder, fear & greed, news) follow below it */
+  .wrap.with-news .layout, .wrap.with-left .layout, .wrap.with-left.with-news .layout { grid-template-areas: "main" "econ" "news" !important; }
+  /* the "Show ..." buttons for hidden side panels sit in a row at the bottom instead of over the text */
+  .wrap:not(.with-econ) .econ-open, .wrap:not(.with-fng) .fng-open, .wrap:not(.with-brd) .brd-open {
+    top: auto !important; bottom: 8px; padding: 6px 10px; font-size: 12px; border-radius: 10px; }
+  .wrap:not(.with-econ) .econ-open { left: 8px; }
+  .wrap:not(.with-fng) .fng-open { left: 50%; transform: translateX(-50%); }
+  .wrap:not(.with-brd) .brd-open { left: auto; right: 8px; }
+}
 </style>
 </head>
 <body>
@@ -775,6 +816,7 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
       <button id="tab-screener">Screener</button>
       <button id="tab-leaps">LEAPS</button>
       <button id="tab-puts">Sell Puts &amp; Calls</button>
+      <button id="tab-smart">Smart Money <span class="sm-badge hidden" id="smBadge"></span></button>
     </div>
     <span class="note">Yahoo Finance data, delayed about 15 min. Greeks and projections use Black-Scholes (4% rate).<span id="mkt-dot" class="mkt-dot closed" role="img" aria-label="Market closed" title="Market closed"></span></span>
     <button type="button" class="vix-badge" id="vixBadge" title="VIX and your levels. Click to edit levels and alerts.">
@@ -1184,6 +1226,7 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
         <div class="tabs mini" id="psSide" role="group" aria-label="Puts or covered calls">
           <button type="button" data-s="put" title="Cash-secured puts: return on the cash set aside (strike × 100)">Cash-secured puts</button>
           <button type="button" data-s="call" title="Covered calls on 100 shares you own: return on the stock price">Covered calls</button>
+          <button type="button" data-s="itm" title="In-the-money covered calls about a week out (10 days or less): you earn the time value; the premium's intrinsic part cushions a drop">ITM calls · 1 wk</button>
         </div>
         <span class="ps-calldelta hidden lp-meta" title="Covered calls: delta 0.30 or more, out of the money">Delta 0.30+</span>
         <div class="tabs mini" id="psDelta" role="group" aria-label="Target delta">
@@ -1220,7 +1263,9 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
     <div id="psErr" class="err hidden"></div>
     <p class="note ps-calls-note hidden" style="margin:0 4px">Covered calls: return = call bid ÷ today's stock price (the 100 shares you hold), per week = × 7 ÷ days to expiration.
       "If called" adds the gain from today's price up to the strike if the shares are called away. Earnings before expiration can gap the stock through the strike.
-      Watch ex-dividend dates too: a call that's in the money before one can be assigned early. Click a strike to sell that call in the Builder. A screen, not advice.</p>
+      Watch ex-dividend dates too: a call that's in the money before one can be assigned early. Click a strike to sell that call in the Builder. A screen, not advice.<br>
+      ITM calls: the bid is intrinsic value (price − strike) plus time value. You keep only the time value if called away, so return = time value ÷ (price − bid), your net cost;
+      the whole premium cushions a drop down to the breakeven (price − bid). Expect to be called away more often than not.</p>
     <div class="panel lp-st ps-mkt">
       <h2 style="margin:0 0 10px">Whole market <span class="lp-meta" id="psMktMeta"></span></h2>
       <div id="psBody"><div class="note empty">Open the Sell Puts tab to scan the market.</div></div>
@@ -1228,6 +1273,80 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
         For each stock the scan keeps the best-paying put in the delta band with 100+ open interest, a spread of 30% or less, and no earnings before expiration
         (earnings are looked up for stocks paying 1%+ a week). Click a row to see all its strikes above; right-click opens its option chain. A screen, not advice.</p>
     </div>
+  </section>
+  <section id="view-smart" class="hidden">
+    <div class="panel">
+      <div class="lp-top">
+        <h2>Smart Money</h2>
+        <span class="lp-meta" id="smMeta">What Congress, company insiders and big option traders are buying.</span>
+        <span class="grow"></span>
+        <div class="tabs mini" id="smKind" role="group" aria-label="Show">
+          <button type="button" data-k="all" class="on">All</button>
+          <button type="button" data-k="congress">Congress</button>
+          <button type="button" data-k="insiders">Insiders</button>
+          <button type="button" data-k="flow">Options flow</button>
+        </div>
+        <button type="button" class="chip" id="smMine" aria-pressed="false" title="Show only stocks on your Smart Money watch list">My watchlists only</button>
+        <button class="ghost small" type="button" id="smRefresh" title="Pull the newest filings now">Refresh</button>
+      </div>
+      <div class="lp-progress" aria-hidden="true"><i id="smProg"></i></div>
+    </div>
+    <div id="smErr" class="err hidden"></div>
+    <div class="panel" id="smHitsBox">
+      <h2 style="margin:0">Alerts <span class="lp-meta">filings that match your "Text me when" rules, newest first</span></h2>
+      <div class="sm-hits" id="smHits"><div class="note">Loading…</div></div>
+    </div>
+    <div class="sm-row">
+      <div class="panel sm-main" data-smk="congress">
+        <div class="lp-top">
+          <h2>Congress trades</h2>
+          <span class="lp-meta" id="smCongMeta"></span>
+          <span class="grow"></span>
+          <div class="tabs mini" id="smSide" role="group" aria-label="Buys or sells">
+            <button type="button" data-s="all" class="on">All</button>
+            <button type="button" data-s="Buy">Buys</button>
+            <button type="button" data-s="Sell">Sells</button>
+          </div>
+          <input id="smFind" type="text" spellcheck="false" placeholder="Ticker or member" aria-label="Filter Congress trades by ticker or member" style="width:150px">
+        </div>
+        <div class="sm-tablebox" style="margin-top:10px">
+          <table>
+            <thead><tr><th>Filed</th><th>Member</th><th>Stock</th><th>Buy / sell</th><th>Traded</th><th>Amount</th><th>Whose</th><th class="num">Days late</th><th></th></tr></thead>
+            <tbody id="smCong"></tbody>
+          </table>
+        </div>
+        <p class="note" id="smCongNote">Amounts are the ranges members report, never exact. Stocks and stock options only; bonds, CDs and funds are left out. Members have up to 45 days to report, so 30+ days late is highlighted. House only: the Senate's disclosure site blocks automated access, so Senate trades need a paid feed (e.g. Quiver).</p>
+      </div>
+      <div class="sm-side-col">
+        <div class="panel" data-smk="congress">
+          <h2 style="margin:0 0 6px">Clusters <span class="lp-meta">same stock, 30 days</span></h2>
+          <div id="smClusters"></div>
+        </div>
+        <div class="panel sm-alerts">
+          <h2 style="margin:0 0 6px">Text me when</h2>
+          <label><input type="checkbox" data-a="congress_watch"> A member of Congress buys a stock on my watchlists</label>
+          <label><input type="checkbox" data-a="cluster"> 2 or more members buy the same stock within 30 days</label>
+          <label><input type="checkbox" data-a="insider_1m"> An insider buys $1M+ of a watchlist stock</label>
+          <label><input type="checkbox" data-a="ceo_cfo"> Any CEO or CFO buy on my watchlists</label>
+          <p class="note" style="margin:6px 0 0">Checked each morning at 6:00 AM PT. Each item texts once.</p>
+        </div>
+      </div>
+    </div>
+    <div class="panel" data-smk="insiders">
+      <div class="lp-top"><h2>Insider buys on your watchlists</h2><span class="lp-meta" id="smInsMeta">open-market purchases, last 6 months</span></div>
+      <div class="scroll" style="margin-top:10px">
+        <table>
+          <thead><tr><th>Date</th><th>Stock</th><th>Insider</th><th>Role</th><th class="num">Shares</th><th class="num">Avg price</th><th class="num">Value</th><th class="num">Price now</th><th class="num">Since</th></tr></thead>
+          <tbody id="smIns"></tbody>
+        </table>
+      </div>
+      <p class="note" id="smInsSrc">From SEC Form 4 filings (code P, open-market purchases), filed within 2 business days of the trade. Click a value to open the filing.</p>
+    </div>
+    <div class="panel" data-smk="flow">
+      <div class="lp-top"><h2>Unusual options flow</h2><span class="lp-meta">from the morning open scans (volume 500+ and 2× open interest)</span></div>
+      <div id="smFlow" style="margin-top:8px"></div>
+    </div>
+    <p class="note" id="smFoot">Sources: House Clerk financial disclosures, SEC EDGAR Form 4, the unusual-activity scanner. A screen of public filings, not advice.</p>
   </section>
   </main>
 
@@ -1238,7 +1357,7 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
       <span><button class="ghost small" type="button" id="newsRefresh">Refresh</button>
         <button class="ghost small" type="button" id="newsHide" title="Hide the news panel">Hide</button></span>
     </div>
-    <div class="note" id="newsAsof">Yahoo Finance headlines for your open positions and the chain you're viewing.</div>
+    <div class="note" id="newsAsof">Yahoo Finance headlines for your open positions, your news list and the chain you&#39;re viewing.</div>
     <div class="chips" id="newsChips"></div>
     <ul class="news-list" id="newsList"><li class="note">Loading headlines…</li></ul>
   </aside>
@@ -1590,7 +1709,7 @@ function renderNews() {
   if (!d) return;
   if (newsFilter !== "all" && !d.tickers.includes(newsFilter)) newsFilter = "all";
   $("#newsChips").innerHTML = ["all", ...d.tickers].map(t => `<button type="button" class="chip${t === newsFilter ? " on" : ""}" data-news="${esc(t)}"
-    title="${t === "all" ? "Every ticker" : d.held.includes(t) ? "You hold this" : "On the Chain tab"}">${t === "all" ? "All" : esc(t)}</button>`).join("");
+    title="${t === "all" ? "Every ticker" : d.held.includes(t) ? "You hold this" : (d.watch || []).includes(t) ? "On your news list" : "On the Chain tab"}">${t === "all" ? "All" : esc(t)}</button>`).join("");
   const list = d.stories.filter(s => newsFilter === "all" || s.tickers.includes(newsFilter));
   $("#newsList").innerHTML = list.length ? list.map(s => `<li><a href="${esc(s.link)}" target="_blank" rel="noopener noreferrer">${esc(s.title)}</a>
       <div class="meta note">${s.tickers.map(t => `<span class="tk">${esc(t)}</span>`).join("")}<span>${esc(s.publisher)}</span>
@@ -2228,7 +2347,7 @@ $("#vixSave").onclick = async () => {
 setInterval(loadVix, VIX_EVERY);
 
 /* ================= tabs ================= */
-const TABS = ["chain", "builder", "trades", "screener", "leaps", "puts"];
+const TABS = ["chain", "builder", "trades", "screener", "leaps", "puts", "smart"];
 function showTab(name) {
   for (const t of TABS) {
     $("#tab-" + t).classList.toggle("on", t === name);
@@ -2240,6 +2359,7 @@ function showTab(name) {
   if (name === "screener") loadScreener();
   if (name === "leaps") loadLeaps();
   if (name === "puts") psOpen();
+  if (name === "smart") loadSmart();
 }
 for (const t of TABS) $("#tab-" + t).onclick = () => showTab(t);
 const tabOn = name => !$("#view-" + name).classList.contains("hidden");
@@ -5313,8 +5433,8 @@ loadChain(last.ticker, last.exp);
 // Cash-secured puts 30 days out or less. Return / week = bid / strike x 7 / max(days, 7).
 const PS_BANDS = { 20: [0.175, 0.225], 15: [0.125, 0.175] };
 const PS_CALL_BAND = [0.295, 1];   // covered calls: 30 delta or more
-const psBand = () => ps.side === "call" ? PS_CALL_BAND : PS_BANDS[ps.d];
-const psDL = () => ps.side === "call" ? "30Δ+" : ps.d + "Δ";
+const psBand = () => ps.side === "call" ? PS_CALL_BAND : ps.side === "itm" ? [0, 1] : PS_BANDS[ps.d];
+const psDL = () => ps.side === "call" ? "30Δ+" : ps.side === "itm" ? "ITM" : ps.d + "Δ";
 let ps = Object.assign({ side: "put", d: 20, unit: "wk", min: 1.5, hi: 1.7, oi: 100, spr: 30, earn: true, fits: true, t: "" }, store.get("ps", {}));
 const PS_MO = 52 / 12;   // weeks per month
 const psU = () => ps.unit === "mo" ? PS_MO : 1;                 // display units per week
@@ -5341,10 +5461,11 @@ function psSyncControls() {
   for (const b of document.querySelectorAll("#psDelta button")) b.classList.toggle("on", +b.dataset.d === ps.d);
   for (const b of document.querySelectorAll("#psUnit button")) b.classList.toggle("on", b.dataset.u === ps.unit);
   for (const b of document.querySelectorAll("#psSide button")) b.classList.toggle("on", b.dataset.s === ps.side);
-  const calls = ps.side === "call";
+  const calls = ps.side !== "put";
   for (const el of document.querySelectorAll("#view-puts .ps-mkt")) el.classList.toggle("hidden", calls);
   $("#view-puts .ps-calls-note").classList.toggle("hidden", !calls);
-  $("#psTitle").textContent = calls ? "Covered Calls" : "Sell Puts";
+  $("#psTitle").textContent = ps.side === "itm" ? "ITM Covered Calls" : calls ? "Covered Calls" : "Sell Puts";
+  $("#view-puts .ps-calldelta").textContent = ps.side === "itm" ? "In the money · 10 days or less" : "Delta 0.30+";
   $("#psDelta").classList.toggle("hidden", calls);
   $("#view-puts .ps-calldelta").classList.toggle("hidden", !calls);
   $("#psMin").value = ps.min; $("#psHi").value = ps.hi; $("#psOi").value = ps.oi; $("#psSpr").value = ps.spr;
@@ -5429,7 +5550,7 @@ async function psLookup(t) {
   ps.t = t; psSave();
   $("#psTicker").value = t;
   const seq = ++psLookSeq;
-  $("#psLookMeta").textContent = `Loading ${t}'s ${ps.side === "call" ? "calls" : "puts"}…`;
+  $("#psLookMeta").textContent = `Loading ${t}'s ${ps.side === "put" ? "puts" : "calls"}…`;
   const side = ps.side;
   try {
     const d = await api("/api/putsell/one?ticker=" + encodeURIComponent(t) + "&right=" + side);
@@ -5447,7 +5568,7 @@ async function psLookup(t) {
 function renderPsLook() {
   const d = psLookData;
   if (!d) return;
-  const call = d.right === "call", kind = call ? "C" : "P";
+  const itm = d.right === "itm", call = d.right !== "put", kind = call ? "C" : "P";
   const H = call ? d.holding : null;   // your shares from My Trades
   // called away at the strike: premium + strike vs your average cost (and vs cost after option P&L)
   const vsCost = p => H ? (p.strike + p.bid - H.avg_cost) / H.avg_cost : null;
@@ -5456,8 +5577,11 @@ function renderPsLook() {
   const fits = rows.filter(x => x.c.ok);
   const best = fits.reduce((a, x) => !a || x.p.ret_week > a.p.ret_week ? x : a, null);
   rows.sort((a, b) => (b.c.ok - a.c.ok) || ((b.c.cls === "near") - (a.c.cls === "near")) || (b.p.ret_week - a.p.ret_week));
-  $("#psLookMeta").textContent = `${d.ticker}: ${fits.length} of ${d.puts.length} strikes fit (${psDL()}, ${ps.min}%+ ${psUL()}, ${ps.oi}+ OI, spread ≤ ${ps.spr}%${ps.earn ? ", no earnings" : ""})`;
+  $("#psLookMeta").textContent = `${d.ticker}: ${fits.length} of ${d.puts.length} strikes fit (${itm ? "in the money, 10 days or less" : psDL()}, ${ps.min}%+ ${psUL()}${itm ? " from time value" : ""}, ${ps.oi}+ OI, spread ≤ ${ps.spr}%${ps.earn ? ", no earnings" : ""})`;
   const below200 = d.sma200 && d.price < d.sma200;
+  const bestLine = p => itm
+    ? `${f2(p.strike)} C ${psDay(p.exp)} · ${pct(p.ret_week, 2)}/wk · ${usd(p.bid * 100)} credit = ${usd(p.intrinsic * 100)} intrinsic + ${usd(p.extrinsic * 100)} time value · ${pct(p.cushion, 1)} cushion`
+    : `${f2(p.strike)} ${kind} ${psDay(p.exp)} · ${pct(p.ret_week, 2)}/wk · ${pct(p.ret_week * PS_MO, 2)}/mo · ${usd(p.bid * 100)} credit`;
   const cards = `<div class="ps-cards">
     <div class="ps-card"><small>${esc(d.name)}</small><b>${f2(d.price)}</b></div>
     <div class="ps-card"><small>Next earnings</small><b>${d.earn ? psDay(d.earn) + (d.earn_est ? " est." : "") : "none listed"}</b></div>
@@ -5465,25 +5589,35 @@ function renderPsLook() {
       <span class="note" title="Average cost minus the $${int(Math.round(H.option_pnl))} you've realized on ${esc(d.ticker)} options (closed, expired or assigned)">· ${f2(H.net_cost)} after ${usd(H.option_pnl)} option P&amp;L · ${H.lots_free} of ${H.lots} lots free to write</span></div>` : ""}
     ${call && !H ? `<div class="ps-card"><small>You hold (My Trades)</small><b>no ${esc(d.ticker)} shares logged</b></div>` : ""}
     ${d.sma200 ? `<div class="ps-card"><small>200-day</small><b>${f2(d.sma200)}</b> <span class="note">${below200 ? "price below" : "price above"}</span></div>` : ""}
-    ${best ? `<div class="ps-card good"><small>Best ${psDL()} that fits</small><b>${f2(best.p.strike)} ${kind} ${psDay(best.p.exp)} · ${pct(best.p.ret_week, 2)}/wk · ${pct(best.p.ret_week * PS_MO, 2)}/mo · ${usd(best.p.bid * 100)} credit${H ? ` · called: ${sgnPct(vsCost(best.p), 1)} vs your cost` : ""}</b></div>`
-           : `<div class="ps-card bad"><small>Best ${psDL()} that fits</small><b>none 30 days out or less</b></div>`}
+    ${best ? `<div class="ps-card good"><small>Best ${psDL()} that fits</small><b>${bestLine(best.p)}${H ? ` · called: ${sgnPct(vsCost(best.p), 1)} vs your cost` : ""}</b></div>`
+           : `<div class="ps-card bad"><small>Best ${psDL()} that fits</small><b>none ${itm ? "10" : "30"} days out or less</b></div>`}
     <button class="ghost small" type="button" data-tvb="${esc(d.ticker.replace("-", "."))}" title="Open ${esc(d.ticker)} on your TradingView chart in Chrome" style="align-self:center">📈 Chart</button>
     <button class="ghost small" type="button" data-chain="${esc(d.ticker)}" title="Open ${esc(d.ticker)} in the Chain tab" style="align-self:center">Option chain</button></div>`;
-  if (!rows.length) { $("#psLook").innerHTML = cards + `<div class="note empty">No ${call ? "calls" : "puts"} 30 days out or less with ${call ? "delta 0.15–0.60" : "delta 0.08–0.30"} and a bid.</div>`; return; }
+  if (!rows.length) { $("#psLook").innerHTML = cards + `<div class="note empty">No ${itm ? "in-the-money calls with time value 10 days out or less" : call ? "calls 30 days out or less with delta 0.15–0.60" : "puts 30 days out or less with delta 0.08–0.30"} and a bid.</div>`; return; }
+  const retCells = p => `<td><span class="${ps.unit === "wk" ? "ps-ret " + psRetCls(p.ret_week) : ""}">${pct(p.ret_week, 2)}</span></td>
+    <td><span class="${ps.unit === "mo" ? "ps-ret " + psRetCls(p.ret_week) : ""}">${pct(p.ret_week * PS_MO, 2)}</span></td>`;
+  const costCell = p => H ? `<td class="${signed(vsCost(p))}" title="Called away: strike ${f2(p.strike)} + premium ${f2(p.bid)} vs your ${f2(H.avg_cost)} average cost. After option P&L (cost ${f2(H.net_cost)}): ${sgnPct(vsNet(p), 1)}"><b>${sgnPct(vsCost(p), 1)}</b><small class="note" style="display:block">${signedUsd((p.strike + p.bid - H.avg_cost) * 100 * Math.max(H.lots_free, 1))} on ${int(Math.max(H.lots_free, 1) * 100)} sh</small></td>` : "";
+  const costHead = H ? `<th title="Strike + premium vs your average cost from My Trades, if the shares are called away">Called vs your cost</th>` : "";
   const body = rows.map(({ p, c }) => `<tr data-exp="${p.exp}" data-k="${p.strike}" class="${best && p === best.p ? "best" : c.ok ? "fit" : c.cls === "near" ? "" : "off"}" title="Click to sell this ${call ? "call" : "put"} in the Builder · right-click to open the chain">
     <td class="left"><b>${f2(p.strike)} ${kind}</b> ${psDay(p.exp)} <span class="note">· ${p.dte}d</span>${best && p === best.p ? `<span class="ps-tag">best ${psDL()}</span>` : ""}${H && p.strike + p.bid < H.avg_cost ? `<span class="ps-flag" title="Called away here you'd sell below your average cost">below your cost</span>` : ""}</td>
     <td>${p.delta.toFixed(2)}</td><td>${pct(Math.abs(d.price - p.strike) / d.price)}</td><td>${f2(p.bid)} / ${f2(p.ask)}</td>
-    <td><span class="${ps.unit === "wk" ? "ps-ret " + psRetCls(p.ret_week) : ""}">${pct(p.ret_week, 2)}</span></td>
-    <td><span class="${ps.unit === "mo" ? "ps-ret " + psRetCls(p.ret_week) : ""}">${pct(p.ret_week * PS_MO, 2)}</span></td>
-    <td>${usd(p.bid * 100)} <span class="note">(${pct(p.ret_trade, 2)})</span></td><td>${pct(p.iv, 0)}</td>
-    ${call ? `<td>${pct(p.ret_called, 2)}</td>` : ""}${H ? `<td class="${signed(vsCost(p))}" title="Called away: strike ${f2(p.strike)} + premium ${f2(p.bid)} vs your ${f2(H.avg_cost)} average cost. After option P&L (cost ${f2(H.net_cost)}): ${sgnPct(vsNet(p), 1)}"><b>${sgnPct(vsCost(p), 1)}</b><small class="note" style="display:block">${signedUsd((p.strike + p.bid - H.avg_cost) * 100 * Math.max(H.lots_free, 1))} on ${int(Math.max(H.lots_free, 1) * 100)} sh</small></td>` : ""}<td>${int(p.oi)} · ${pct(p.spread, 0)}</td><td class="left"><span class="ps-why ${c.cls}">${esc(c.why)}</span></td></tr>`).join("");
-  $("#psLook").innerHTML = cards + `<div class="scroll"><table class="ps-tbl"><thead><tr><th class="left">${call ? "Call" : "Put"}</th><th>Delta</th><th>${call ? "Above" : "Below"} price</th><th>Bid / ask</th><th>Return / week</th><th>Return / month</th><th>Credit (trade)</th><th>IV</th>${call ? `<th title="Premium plus the gain from today's price up to the strike, if the shares are called away">If called</th>` : ""}${H ? `<th title="Strike + premium vs your average cost from My Trades, if the shares are called away">Called vs your cost</th>` : ""}<th>OI · spread</th><th class="left">Fits your rules?</th></tr></thead><tbody>${body}</tbody></table></div>`;
+    ${itm
+      ? `<td title="Price − strike: the part of the premium that only gives back the in-the-money gap">${f2(p.intrinsic)}<small class="note" style="display:block">${usd(p.intrinsic * 100)}</small></td>
+         <td title="Bid − intrinsic: what you keep if called away"><b>${f2(p.extrinsic)}</b><small class="note" style="display:block">${usd(p.extrinsic * 100)} · ${pct(p.extrinsic / p.bid, 0)} of premium</small></td>${retCells(p)}
+         <td title="The whole premium cushions a drop: the stock can fall this much before you lose">${pct(p.cushion, 1)}</td><td>${f2(p.breakeven)}</td>`
+      : `${retCells(p)}<td>${usd(p.bid * 100)} <span class="note">(${pct(p.ret_trade, 2)})</span></td>`}
+    <td>${pct(p.iv, 0)}</td>
+    ${call && !itm ? `<td>${pct(p.ret_called, 2)}</td>` : ""}${costCell(p)}<td>${int(p.oi)} · ${pct(p.spread, 0)}</td><td class="left"><span class="ps-why ${c.cls}">${esc(c.why)}</span></td></tr>`).join("");
+  const head = itm
+    ? `<th class="left">Call</th><th>Delta</th><th>In the money</th><th>Bid / ask</th><th title="Intrinsic value = price − strike, per share and per contract">Intrinsic value</th><th title="Time value = bid − intrinsic value: what you keep if called away">Time value</th><th>Return / week</th><th>Return / month</th><th>Downside cushion</th><th title="Price − bid: your net cost if you bought the shares today">Breakeven</th><th>IV</th>${costHead}`
+    : `<th class="left">${call ? "Call" : "Put"}</th><th>Delta</th><th>${call ? "Above" : "Below"} price</th><th>Bid / ask</th><th>Return / week</th><th>Return / month</th><th>Credit (trade)</th><th>IV</th>${call ? `<th title="Premium plus the gain from today's price up to the strike, if the shares are called away">If called</th>` : ""}${costHead}`;
+  $("#psLook").innerHTML = cards + `<div class="scroll"><table class="ps-tbl"><thead><tr>${head}<th>OI · spread</th><th class="left">Fits your rules?</th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 async function psToBuilder(ticker, exp, strike) {
   try {
     const chain = await api(`/api/chain?ticker=${encodeURIComponent(ticker)}&exp=${exp}`);
     if (B.ticker === chain.ticker) B.legs = [];
-    await addLegFromChain(chain, psLookData && psLookData.right === "call" ? "call" : "put", strike, "sell");
+    await addLegFromChain(chain, psLookData && psLookData.right !== "put" ? "call" : "put", strike, "sell");
     showTab("builder");
   } catch (err) { toast("Couldn't open the Builder: " + err.message, false); }
 }
@@ -5517,6 +5651,111 @@ $("#psLook").onclick = async e => {
   if (ch) return psToChain(ch.dataset.chain);
   const tr = e.target.closest("tr[data-exp]"); if (tr && psLookData) psToBuilder(psLookData.ticker, tr.dataset.exp, +tr.dataset.k); };
 $("#psLook").oncontextmenu = e => { const tr = e.target.closest("tr[data-exp]"); if (!tr || !psLookData) return; e.preventDefault(); psToChain(psLookData.ticker, tr.dataset.exp); };
+
+
+/* ================= Smart Money ================= */
+const sm = { kind: "all", side: "all", mine: false, find: "" };
+let smData = null, smTimer = null, smSeq = 0;
+const smDate = iso => iso ? new Date(iso + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+const smMoney = v => v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `$${Math.round(v / 1e3)}K` : `$${Math.round(v)}`;
+const smSide = s => `<span class="sm-side ${s === "Buy" ? "buy" : s === "Sell" ? "sell" : "ex"}">${esc(s)}</span>`;
+const smTk = t => `<span class="tk" data-smchain="${esc(t)}" title="Open ${esc(t)}'s option chain">${esc(t)}</span>`;
+async function loadSmart(refresh) {
+  const seq = ++smSeq;
+  clearTimeout(smTimer);
+  try {
+    const d = await api("/api/smartmoney" + (refresh ? "?refresh=1" : ""));
+    if (seq !== smSeq) return;
+    smData = d;
+    $("#smErr").classList.add("hidden");
+    renderSmart();
+    if (d.job.running && tabOn("smart")) smTimer = setTimeout(() => loadSmart(), 3000);
+  } catch (e) {
+    $("#smErr").textContent = "Smart Money: " + e.message;
+    $("#smErr").classList.remove("hidden");
+  }
+}
+function renderSmart() {
+  const d = smData; if (!d) return;
+  const j = d.job, mine = new Set(d.watch || []);
+  $("#smProg").style.width = j.running ? (j.total ? Math.round(100 * j.done / j.total) : 5) + "%" : "0";
+  const when = d.built_at ? new Date(d.built_at * 1000).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+  $("#smMeta").textContent = j.running ? `${j.phase}${j.total ? ` ${j.done}/${j.total}` : ""}…` + (when ? ` (showing ${when})` : "")
+    : j.error ? `Last refresh failed: ${j.error}` : when ? `Filings as of ${when}. Refreshes every 6 hours.` : "";
+  for (const a of document.querySelectorAll("#view-smart [data-a]")) a.checked = !!(d.alerts || {})[a.dataset.a];
+  for (const p of document.querySelectorAll("#view-smart [data-smk]")) p.classList.toggle("hidden", sm.kind !== "all" && p.dataset.smk !== sm.kind);
+  $("#smHitsBox").classList.toggle("hidden", sm.kind !== "all");
+  if (d.status !== "ok") { $("#smHits").innerHTML = `<div class="note">Pulling filings for the first time (about 30 seconds)…</div>`; return; }
+  const px = d.prices || {};
+
+  const hits = d.hits || [];
+  const fresh = hits.filter(h => Date.parse(h.date) > Date.now() - 14 * DAY).length;
+  $("#smBadge").textContent = fresh ? `${fresh} new` : ""; $("#smBadge").classList.toggle("hidden", !fresh);
+  $("#smHits").innerHTML = hits.length ? hits.slice(0, 12).map(h => `<div class="sm-hit">
+      <div class="t"><b data-smchain="${esc(h.ticker)}">${esc(h.ticker)}</b>${smSide(h.side)}</div>
+      <div style="font-weight:600">${esc(h.who)}</div>
+      <div class="note">${esc(h.what)}</div>
+      <div>${esc(h.detail)}${px[h.ticker] ? ` · now $${px[h.ticker].toFixed(2)}` : ""}</div></div>`).join("")
+    + (hits.length > 12 ? `<div class="note" style="align-self:center">+${hits.length - 12} more below</div>` : "")
+    : `<div class="note">Nothing matches your "Text me when" rules right now.</div>`;
+
+  const f = sm.find.trim().toLowerCase();
+  const rows = (d.congress || []).filter(t => (sm.side === "all" || t.side === sm.side) && (!sm.mine || mine.has(t.ticker))
+    && (!f || t.ticker.toLowerCase().startsWith(f) || t.member.toLowerCase().includes(f)));
+  const shown = rows.slice(0, 300);
+  $("#smCongMeta").textContent = `${rows.length} of ${(d.congress || []).length} trades from ${d.filings} House filings, last 60 days`;
+  $("#smCong").innerHTML = shown.map(t => `<tr class="${mine.has(t.ticker) ? "mine" : ""}">
+      <td class="note">${smDate(t.filed)}</td><td><b>${esc(t.member)}</b> <span class="note">${esc(t.dist)}</span></td>
+      <td>${smTk(t.ticker)}${t.asset_type === "OP" ? ' <span class="pill" title="Stock option">option</span>' : ""}</td>
+      <td>${smSide(t.side)}${t.partial ? ' <span class="note">partial</span>' : ""}</td><td>${smDate(t.traded)}</td>
+      <td>${esc(t.amount)}</td><td class="note">${esc(t.owner)}</td>
+      <td class="num ${t.late >= 30 ? "sm-late" : ""}">${t.late}</td>
+      <td><a class="sm-pdf" href="${esc(t.url)}" target="_blank" rel="noopener" title="The member's filing (PDF)">PDF</a></td></tr>`).join("")
+    || `<tr><td colspan="9" class="note">No trades match.</td></tr>`;
+  if (rows.length > shown.length) $("#smCong").insertAdjacentHTML("beforeend", `<tr><td colspan="9" class="note">Showing the newest 300; filter to narrow down.</td></tr>`);
+  const paper = d.paper || [];
+  $("#smCongNote").innerHTML = $("#smCongNote").innerHTML.split(" <span id=\"smPaper\">")[0]
+    + (paper.length ? ` <span id="smPaper">${paper.length} filing${paper.length > 1 ? "s were" : " was"} handwritten scans the reader can't parse: ${paper.slice(0, 6).map(p => `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.member)}</a>`).join(", ")}.</span>` : "");
+
+  $("#smClusters").innerHTML = (d.clusters || []).map(c => `<div class="sm-clu">
+      <div style="display:flex;justify-content:space-between"><span>${smTk(c.ticker)}</span><span class="note">${c.members.length} member${c.members.length > 1 ? "s" : ""} · ${c.buys} buys</span></div>
+      <div class="note">${esc(c.members.join(", "))} · ${smDate(c.first)} to ${smDate(c.last)}</div></div>`).join("")
+    || `<div class="note">No clusters in the last 30 days.</div>`;
+
+  const ins = (d.insiders || []).filter(x => !sm.mine || mine.has(x.ticker));
+  $("#smIns").innerHTML = ins.map(x => {
+    const now = px[x.ticker], chg = now && x.price ? (now / x.price - 1) * 100 : null;
+    return `<tr><td class="note">${smDate(x.date)}</td><td>${smTk(x.ticker)}</td><td><b>${esc(x.name)}</b></td><td class="note">${esc(x.role)}</td>
+      <td class="num">${x.shares.toLocaleString()}</td><td class="num">${x.price ? "$" + x.price.toFixed(2) : ""}</td>
+      <td class="num up"><b>${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener" title="The Form 4 filing" style="color:inherit">${smMoney(x.value)}</a>` : smMoney(x.value)}</b></td><td class="num">${now ? "$" + now.toFixed(2) : ""}</td>
+      <td class="num ${chg == null ? "" : chg >= 0 ? "up" : "down"}">${chg == null ? "" : (chg >= 0 ? "+" : "") + chg.toFixed(1) + "%"}</td></tr>`;
+  }).join("") || `<tr><td colspan="9" class="note">No open-market insider buys in the last 6 months.</td></tr>`;
+  const failed = Object.keys(d.insider_failed || {});
+  $("#smInsMeta").textContent = `open-market purchases, last 6 months, ${(d.watch || []).length} watch-list stocks` + (failed.length ? ` (couldn't read ${failed.join(", ")})` : "");
+
+  const fl = d.flow || [];
+  $("#smFlow").innerHTML = fl.map(x => `<div class="sm-flow">
+      <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">${smTk(x.ticker)} <span class="note">${smDate(x.day)} open scan</span>
+        ${x.flags.length ? '<span class="pill">unusual</span>' : '<span class="note">quiet</span>'}${x.lean ? ` <span class="note">lean ${esc(x.lean)}</span>` : ""}</div>
+      ${x.flags.map(g => `<div>· ${esc(g)}</div>`).join("")}
+      ${x.summary ? `<div class="note">${esc(x.summary)}</div>` : ""}</div>`).join("")
+    || `<div class="note">No open scans in the last 3 days. The scanner runs at 6:46 AM PT on the tickers you've asked it to watch.</div>`;
+}
+$("#smKind").onclick = e => { const b = e.target.closest("button"); if (!b) return; sm.kind = b.dataset.k;
+  for (const x of $("#smKind").children) x.classList.toggle("on", x === b); renderSmart(); };
+$("#smSide").onclick = e => { const b = e.target.closest("button"); if (!b) return; sm.side = b.dataset.s;
+  for (const x of $("#smSide").children) x.classList.toggle("on", x === b); renderSmart(); };
+$("#smMine").onclick = () => { sm.mine = !sm.mine; $("#smMine").setAttribute("aria-pressed", sm.mine); $("#smMine").classList.toggle("on", sm.mine); renderSmart(); };
+$("#smFind").oninput = e => { sm.find = e.target.value; renderSmart(); };
+$("#smRefresh").onclick = () => loadSmart(true);
+for (const a of document.querySelectorAll("#view-smart [data-a]")) a.onchange = async () => {
+  try { const r = await api("/api/smartmoney/alerts", { [a.dataset.a]: a.checked }); if (smData) { smData.alerts = r.alerts; loadSmart(); } }
+  catch (e) { a.checked = !a.checked; $("#smErr").textContent = "Couldn't save: " + e.message; $("#smErr").classList.remove("hidden"); }
+};
+$("#view-smart").addEventListener("click", e => {
+  const t = e.target.closest("[data-smchain]"); if (!t) return;
+  $("#ticker").value = t.dataset.smchain; showTab("chain"); loadChain(t.dataset.smchain);
+});
 
 const startTab = store.get("tab", "chain");
 if (startTab !== "chain") showTab(startTab);

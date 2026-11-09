@@ -20,6 +20,7 @@ from datetime import date, datetime
 
 import earnings
 import options_data as od
+import tradier
 from options_data import ET, QuoteError, yahoo_symbol
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -28,19 +29,31 @@ CACHE_FILE = os.path.join(HERE, "putsell_cache.json")
 MAX_DAYS = 30
 DELTA_MIN, DELTA_MAX = 0.08, 0.30     # puts outside this band aren't returned
 CALL_DELTA = (0.15, 0.60)             # covered calls are written at 30 delta or more; show 0.15 up for context
-DELTA = {"put": (DELTA_MIN, DELTA_MAX), "call": CALL_DELTA}
+ITM_DELTA = (0.50, 0.97)              # in-the-money covered calls: deeper than 0.97 has almost no time value
+ITM_DAYS = 10                         # in-the-money covered calls are written about a week out
+DELTA = {"put": (DELTA_MIN, DELTA_MAX), "call": CALL_DELTA, "itm": ITM_DELTA}
+MODES = ("put", "call", "itm")        # itm = in-the-money covered calls
+
+
+def _kind(mode):
+    return "call" if mode == "itm" else mode
+
+
+def _days(mode):
+    return ITM_DAYS if mode == "itm" else MAX_DAYS
 TARGETS = {"20": (0.175, 0.225), "15": (0.125, 0.175)}   # |delta| band for each target
 MIN_OI = 100
 MAX_SPREAD = 0.30                    # (ask - bid) / mid
 EARN_CHECK_RET = 0.010               # the scan looks up earnings only for stocks paying at least 1%/wk
 MIN_CAP = 10e9
 WORKERS = 3
-CBOE_GAP = 0.6                      # seconds between CBOE requests (faster gets HTTP 429)
+CBOE_GAP = 1.0                      # seconds between CBOE requests (0.6 still got rate limited)
 RATE_WAIT = (20, 60, 120)            # back-off after a rate limit, then retry
 FRESH_SECONDS = 4 * 3600             # a scan is reused for 4 hours unless Refresh is pressed
 RETRY_SECONDS = 300
 LOOKUP_SECONDS = 300                 # one ticker's lookup is reused for 5 minutes
 SCREENER_WAIT = 600
+OI_WAIT = 900                        # Yahoo fallback waits up to 15 min for the Screener's open-interest checks
 
 _lock = threading.Lock()
 _job = {"running": False, "done": 0, "total": 0, "phase": "", "started": 0, "finished": 0, "error": None}
@@ -65,7 +78,20 @@ def _earn(sym):
 
 def _row(right, spot, k, exp, dte, d, bid, ask, oi, iv):
     """One contract. A cash-secured put ties up the strike; a covered call ties up the shares at
-    today's price, so its return is on the stock price."""
+    today's price, so its return is on the stock price. An in-the-money covered call (right "itm")
+    earns only its time value: return = (bid - intrinsic) / (price - bid), the net cost of buying the
+    shares and selling the call, if the shares are called away. None if it has no time value."""
+    if right == "itm":
+        ext = bid - (spot - k)
+        if ext <= 0:
+            return None
+        net = spot - bid
+        return {"strike": k, "exp": exp, "dte": dte, "delta": round(d, 3), "bid": bid, "ask": ask, "oi": oi,
+                "iv": round(iv, 3), "spread": round((ask - bid) / ((bid + ask) / 2), 3),
+                "extrinsic": round(ext, 4), "intrinsic": round(spot - k, 4), "breakeven": round(net, 4),
+                "cushion": round(bid / spot, 5), "itm_pct": round((spot - k) / spot, 5),
+                "ret_week": round(ext / net * 7 / max(dte, 7), 5), "ret_trade": round(ext / net, 5),
+                "ret_called": round(ext / spot, 5)}
     basis = k if right == "put" else spot
     r = {"strike": k, "exp": exp, "dte": dte, "delta": round(d, 3), "bid": bid, "ask": ask, "oi": oi,
          "iv": round(iv, 3), "spread": round((ask - bid) / ((bid + ask) / 2), 3),
@@ -76,7 +102,8 @@ def _row(right, spot, k, exp, dte, d, bid, ask, oi, iv):
 
 
 def _otm(right, k, spot):
-    return k < spot if right == "put" else k > spot
+    """The strikes each mode looks at: puts below the price, covered calls above it, itm calls below it."""
+    return k < spot if right in ("put", "itm") else k > spot
 
 
 def _puts(sym, spot=None, right="put"):
@@ -87,10 +114,10 @@ def _puts(sym, spot=None, right="put"):
     out = []
     for e in od.expirations(sym):
         dte = (date.fromisoformat(e) - today).days
-        if dte < 0 or dte > MAX_DAYS:
+        if dte < 0 or dte > _days(right):
             continue
         try:
-            rows = od.chain_rows(sym, e)[right]
+            rows = od.chain_rows(sym, e)[_kind(right)]
         except QuoteError:
             continue
         t = od.years_to_expiry(e)
@@ -101,13 +128,15 @@ def _puts(sym, spot=None, right="put"):
             if not _otm(right, k, spot) or bid <= 0 or ask <= 0 or ask < bid:
                 continue
             mid = (bid + ask) / 2
-            iv = od.implied_vol(right, spot, k, t, mid) or p["iv"]
+            iv = od.implied_vol(_kind(right), spot, k, t, mid) or p["iv"]
             if not iv:
                 continue
-            d = od.greeks(right, spot, k, t, iv)["delta"]
+            d = od.greeks(_kind(right), spot, k, t, iv)["delta"]
             if not DELTA[right][0] <= abs(d) <= DELTA[right][1]:
                 continue
-            out.append(_row(right, spot, k, e, dte, d, bid, ask, p["oi"], iv))
+            r = _row(right, spot, k, e, dte, d, bid, ask, p["oi"], iv)
+            if r:
+                out.append(r)
     out.sort(key=lambda p: -p["ret_week"])
     return spot, out
 
@@ -154,10 +183,46 @@ def _cboe_puts(sym, right="put"):
         dte = (date.fromisoformat(exp) - today).days
         k = int(m[4]) / 1000
         bid, ask, d = od._num(o.get("bid")), od._num(o.get("ask")), od._num(o.get("delta"))
-        if dte < 0 or dte > MAX_DAYS or not _otm(right, k, spot) or bid <= 0 or ask < bid or not DELTA[right][0] <= abs(d) <= DELTA[right][1]:
+        if dte < 0 or dte > _days(right) or not _otm(right, k, spot) or bid <= 0 or ask < bid or not DELTA[right][0] <= abs(d) <= DELTA[right][1]:
             continue
-        out.append(_row(right, spot, k, exp, dte, -abs(d) if right == "put" else abs(d), bid, ask,
-                        int(od._num(o.get("open_interest"))), od._num(o.get("iv"))))
+        r = _row(right, spot, k, exp, dte, -abs(d) if right == "put" else abs(d), bid, ask,
+                 int(od._num(o.get("open_interest"))), od._num(o.get("iv")))
+        if r:
+            out.append(r)
+    out.sort(key=lambda p: -p["ret_week"])
+    return spot, out
+
+
+def _tradier_puts(sym, right="put"):
+    """Same as _puts, from Tradier: real-time bid/ask, one request per expiration plus a quote."""
+    tsym = sym.replace("-", "/")   # Tradier writes class shares as BRK/B
+    spot = tradier.spot(tsym)
+    today = _today()
+    out = []
+    for e in tradier.expirations(tsym):
+        dte = (date.fromisoformat(e) - today).days
+        if dte < 0:
+            continue
+        if dte > _days(right):
+            break
+        t = od.years_to_expiry(e)
+        for o in tradier.chain(tsym, e):
+            if o.get("option_type") != _kind(right):
+                continue
+            k, bid, ask = od._num(o.get("strike")), od._num(o.get("bid")), od._num(o.get("ask"))
+            if not _otm(right, k, spot) or bid <= 0 or ask < bid:
+                continue
+            g = o.get("greeks") or {}
+            d, iv = g.get("delta"), od._num(g.get("mid_iv"))
+            if d is None and t > 0:   # no greeks yet: work delta out from the mid price
+                iv = od.implied_vol(_kind(right), spot, k, t, (bid + ask) / 2) or iv
+                d = od.greeks(_kind(right), spot, k, t, iv)["delta"] if iv else None
+            if d is None or not DELTA[right][0] <= abs(d) <= DELTA[right][1]:
+                continue
+            r = _row(right, spot, k, e, dte, -abs(d) if right == "put" else abs(d), bid, ask,
+                     int(od._num(o.get("open_interest"))), iv)
+            if r:
+                out.append(r)
     out.sort(key=lambda p: -p["ret_week"])
     return spot, out
 
@@ -171,12 +236,13 @@ def _limited(e):
 
 
 def _any_puts(sym, spot=None):
-    """CBOE first (one request per stock), Yahoo when CBOE has nothing or is rate limiting us.
-    Waits and retries only when both are rate limited."""
+    """CBOE first (one request per stock), then Tradier (paced by its own rate-limit headers), then
+    Yahoo. Waits and retries only when all of them are rate limited."""
+    why = {}
     for wait in (0,) + RATE_WAIT:
         if wait:
             with _lock:
-                _job["phase"] = f"Rate limited, waiting {wait}s"
+                _job["phase"] = f"Rate limited, waiting {wait}s ({'; '.join(f'{k}: {v}' for k, v in why.items())})"
             time.sleep(wait)
             with _lock:
                 _job["phase"] = "Pricing puts 30 days out or less"
@@ -185,16 +251,43 @@ def _any_puts(sym, spot=None):
                 got = _cboe_puts(sym)
                 if got[1]:
                     return got
-            except RateLimited:
+            except RateLimited as e:
                 _cboe_off[0] = time.time() + CBOE_COOLDOWN
+                why["CBOE"] = str(e)[:80]
             except QuoteError:
                 pass
+        else:
+            why["CBOE"] = "cooling down"
+        if tradier.enabled():
+            try:
+                got = _tradier_puts(sym)
+                if got[1]:
+                    return got
+                why["Tradier"] = "no contracts"
+            except QuoteError as e:
+                why["Tradier"] = str(e)[:80]
+        _wait_for_screener_oi()
         try:
             return _puts(sym, spot)
         except QuoteError as e:
             if not _limited(e):
                 raise
+            why["Yahoo"] = str(e)[:80]
     raise QuoteError(f"{sym}: rate limited")
+
+
+def _wait_for_screener_oi():
+    """The Screener's open-interest checks also use Yahoo; running both gets Yahoo to rate limit.
+    Only the Yahoo fallback waits: CBOE lookups keep going."""
+    import screener
+    start = time.time()
+    while screener._oi_running and time.time() - start < OI_WAIT:
+        with _lock:
+            _job["phase"] = f"Waiting for the Screener's open-interest checks ({len(screener._oi_queue)} left)"
+        time.sleep(5)
+    with _lock:
+        if _job["phase"].startswith("Waiting for the Screener"):
+            _job["phase"] = "Pricing puts 30 days out or less"
 
 
 def _usable(p):
@@ -220,29 +313,36 @@ def _screener_row(sym):
 
 
 def lookup(ticker, right="put"):
-    """Every put (right="put", cash-secured) or call (right="call", covered) for one stock."""
-    if right not in ("put", "call"):
-        raise QuoteError("right must be put or call")
+    """Every put (right="put", cash-secured), covered call (right="call") or in-the-money covered call
+    about a week out (right="itm") for one stock."""
+    if right not in MODES:
+        raise QuoteError("right must be put, call or itm")
     sym = yahoo_symbol(str(ticker or "").strip().upper())
     if not re.fullmatch(r"[A-Z0-9.^=-]{1,12}", sym):
         raise QuoteError("Enter a ticker")
     hit = _one.get((sym, right))
     if hit and time.time() - hit[0] < LOOKUP_SECONDS:   # quotes reused; your holding is always re-read
-        return dict(hit[1], holding=_holding(sym) if right == "call" else None)
-    try:
-        spot, puts = _puts(sym, right=right)
-    except QuoteError as e:
-        # Yahoo rate limits (sometimes as an empty option list): try CBOE, keep Yahoo's error if that fails too
+        return dict(hit[1], holding=_holding(sym) if right != "put" else None)
+    # Tradier first (real-time), then Yahoo, then CBOE; keep the first error if all of them fail
+    sources = ([lambda: _tradier_puts(sym, right)] if tradier.enabled() else []) + \
+        [lambda: _puts(sym, right=right), lambda: _cboe_puts(sym, right)]
+    first, got = None, None
+    for src in sources:
         try:
-            spot, puts = _cboe_puts(sym, right)
-        except QuoteError:
-            raise e
+            got = src()
+            if got[1]:
+                break
+        except QuoteError as e:
+            first = first or e
+    if got is None:
+        raise first
+    spot, puts = got
     sr = _screener_row(sym)
     e = _earn(sym)
     row = {"ticker": sym, "name": sr.get("name") or e.get("name") or sym, "price": round(spot, 2),
            "sma200": sr.get("sma200"), "sma50": sr.get("sma50"), "earn": e.get("earn"),
            "earn_est": e.get("earn_est"), "earn_session": e.get("earn_session"), "puts": puts, "right": right,
-           "holding": _holding(sym) if right == "call" else None,
+           "holding": _holding(sym) if right != "put" else None,
            "settings": settings(), "at": time.time()}
     _one[(sym, right)] = (time.time(), row)
     return row
@@ -271,7 +371,7 @@ def _holding(sym):
 
 def settings():
     return {"max_days": MAX_DAYS, "targets": TARGETS, "min_oi": MIN_OI, "max_spread": MAX_SPREAD,
-            "delta_min": DELTA_MIN, "delta_max": DELTA_MAX, "call_delta": CALL_DELTA, "min_cap": MIN_CAP}
+            "delta_min": DELTA_MIN, "delta_max": DELTA_MAX, "call_delta": CALL_DELTA, "itm_delta": ITM_DELTA, "itm_days": ITM_DAYS, "min_cap": MIN_CAP}
 
 
 # ---------- market scan ----------

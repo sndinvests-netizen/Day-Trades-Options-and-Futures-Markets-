@@ -19,12 +19,16 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 from urllib.parse import quote as _urlquote
+from http.cookies import SimpleCookie
+import hmac
+import ipaddress
 
 import tracker
 import earnings
 import screener
 import leaps
 import putsell
+import smartmoney
 from econ_calendar import usd_events
 from fear_greed import fear_greed
 from breadth import breadth
@@ -75,14 +79,44 @@ def positions():
             "collateral": collateral, "long_cost": long_cost, "holdings": tracker.share_holdings(trades)}
 
 
+LAN_KEY_FILE = os.path.join(HERE, "lan_key.txt")    # exists = home-network mode (kept out of git)
+def private_ip(s):
+    """True for a home-network address like 192.168.0.112 (not loopback, not a host name)."""
+    try:
+        ip = ipaddress.ip_address(s)
+    except ValueError:
+        return False
+    return ip.is_private and not ip.is_loopback
+
+
+def lan_key():
+    try:
+        with open(LAN_KEY_FILE) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+NEWS_WATCH = os.path.join(HERE, "news_watch.json")   # extra tickers to always follow in the News panel (kept out of git)
+
+
+def news_watch():
+    try:
+        with open(NEWS_WATCH) as f:
+            return [str(t).strip().upper() for t in json.load(f) if str(t).strip()]
+    except (OSError, ValueError, TypeError):
+        return []
+
+
 def news_feed(extra):
-    """Headlines for every ticker you hold open plus any asked for (e.g. the chain you're viewing)."""
+    """Headlines for every ticker you hold open, your news list, and any asked for (e.g. the chain you're viewing)."""
     with db_lock:
         trades = tracker.load(DB)
     held = sorted({t["ticker"] for t in trades if t["status"] == "open"})
+    watch = news_watch()
     asked = [x.strip().upper() for x in extra.split(",") if x.strip()][:5]
-    tickers = list(dict.fromkeys(asked + held))
-    return {"tickers": tickers, "held": held, "stories": news(tickers)[:60]}
+    tickers = list(dict.fromkeys(asked + held + watch))
+    return {"tickers": tickers, "held": held, "watch": watch, "stories": news(tickers)[:60]}
 
 
 def earnings_feed():
@@ -195,8 +229,27 @@ class Handler(BaseHTTPRequestHandler):
     def local_host(self):
         # Refuse requests addressed to any other host name (DNS-rebinding protection).
         host = (self.headers.get("Host") or "").rsplit(":", 1)[0]
-        if host in ("127.0.0.1", "localhost"):
+        client = self.client_address[0]
+        if host in ("127.0.0.1", "localhost") and client in ("127.0.0.1", "::1"):
             return True
+        # Home-network mode (lan_key.txt exists): a phone on the same Wi-Fi may connect by this
+        # Mac's private IP, but only with the secret key: once in the link (?key=...), then a cookie.
+        key = lan_key()
+        if key and private_ip(host) and private_ip(client):
+            q = parse_qs(urlparse(self.path).query)
+            given = (q.get("key") or [""])[0]
+            if given and hmac.compare_digest(given, key):
+                self.send_response(302)
+                self.send_header("Set-Cookie", f"trk_key={key}; Max-Age=31536000; Path=/; HttpOnly; SameSite=Strict")
+                self.send_header("Location", "/")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return False
+            jar = SimpleCookie(self.headers.get("Cookie") or "")
+            if "trk_key" in jar and hmac.compare_digest(jar["trk_key"].value, key):
+                return True
+            self.send(403, b"Locked. Open the tracker with the link that has the key.", "text/plain; charset=utf-8")
+            return False
         self.send(403, {"error": "forbidden"})
         return False
 
@@ -251,6 +304,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(lambda: putsell.lookup(q.get("ticker"), q.get("right") or "put"))
         elif url.path == "/api/putsell":
             self.guard(lambda: putsell.scan(q.get("refresh") == "1"))
+        elif url.path == "/api/smartmoney":
+            self.guard(lambda: smartmoney.feed(q.get("refresh") == "1"))
         elif url.path == "/api/leaps":
             self.guard(lambda: leaps.scan(q.get("refresh") == "1", q.get("mode") or "watch", q.get("term") or "leap"))
         else:
@@ -376,6 +431,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(lambda: {"levels": save_vix_levels(body.get("levels"))})
         elif path == "/api/earnings/watch":
             self.guard(lambda: save_earnings_watch(body.get("tickers")))
+        elif path == "/api/smartmoney/alerts":
+            self.guard(lambda: {"alerts": smartmoney.save_alert_settings(body)})
         elif path == "/api/leaps/watch":
             self.guard(lambda: save_leaps_watch(body.get("tickers"), body.get("term")))
         elif path == "/api/positions/close":
@@ -555,9 +612,12 @@ def main():
     p.add_argument("--no-browser", action="store_true")
     args = p.parse_args()
     DB = args.db
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    lan = bool(lan_key())
+    server = ThreadingHTTPServer(("0.0.0.0" if lan else "127.0.0.1", args.port), Handler)
     url = f"http://127.0.0.1:{args.port}"
     print(f"Sound Investment Solutions Option Tracker running at {url}  (Ctrl+C to stop)")
+    if lan:
+        print("Home-network mode is on (lan_key.txt): phones on this Wi-Fi need the link with ?key=")
     if not args.no_browser:
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()
     try:
