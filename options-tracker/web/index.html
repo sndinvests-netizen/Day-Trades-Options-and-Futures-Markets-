@@ -421,6 +421,20 @@ input[type=range].glow:focus-visible { outline: 3px solid rgba(111,174,233,.5); 
 .vx-lv.vx-on { box-shadow: 0 0 0 1px var(--c); }
 .vx-lv.vx-in { animation: lpIn .3s ease both; }
 .lp-actions .grow { flex: 1; }
+/* VXN: Nasdaq-100 volatility badge stacked under the VIX badge, and its cash allocation panel */
+.vol-stack { display: flex; flex-direction: column; gap: 4px; align-items: stretch; }
+.vxn-badge { padding: 3px 11px; }
+.vxn-badge .v { font-size: 14px; }
+.vxn-badge .zone { color: #1a1440; text-shadow: none; }
+.vxn-zones { display: grid; gap: 6px; }
+.vxn-z { display: grid; grid-template-columns: 1fr auto auto; gap: 2px 12px; align-items: center; padding: 8px 10px; border-radius: 10px;
+  background: color-mix(in srgb, var(--c) 22%, var(--well)); border-left: 5px solid var(--c); }
+.vxn-z b { font-size: 13px; letter-spacing: .02em; }
+.vxn-z .sub { grid-column: 1; font-size: 11.5px; font-style: italic; color: var(--muted); }
+.vxn-z .rng { grid-row: 1 / 3; grid-column: 2; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vxn-z .cash { grid-row: 1 / 3; grid-column: 3; font-weight: 700; white-space: nowrap; text-align: right; min-width: 92px; }
+.vxn-z.on { box-shadow: 0 0 0 2px var(--c), 0 0 14px color-mix(in srgb, var(--c) 55%, transparent); }
+.vxn-z.on b::after { content: "  ◀ now"; color: var(--spot); font-size: 11px; }
 
 .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 20; background: var(--panel);
   border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; box-shadow: 0 12px 34px rgba(0,0,0,.3);
@@ -463,6 +477,7 @@ tr.pos-leg td.contract { padding-left: 24px; }
 .earn-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 45; width: min(560px, calc(100vw - 32px));
   max-height: min(70vh, 640px); overflow: auto; box-shadow: 0 14px 36px rgba(0,0,0,.3); }
 .earn-panel[hidden] { display: none; }
+.grid2 > label[hidden] { display: none; }
 .earn-list { list-style: none; margin: 8px 0; padding: 0; }
 .earn-list li { display: grid; grid-template-columns: 64px 1fr auto auto; gap: 4px 10px; align-items: center; padding: 7px 4px; border-top: 1px solid var(--line); }
 .earn-list .tk { font-weight: 700; }
@@ -819,9 +834,14 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
       <button id="tab-smart">Smart Money <span class="sm-badge hidden" id="smBadge"></span></button>
     </div>
     <span class="note">Yahoo Finance data, delayed about 15 min. Greeks and projections use Black-Scholes (4% rate).<span id="mkt-dot" class="mkt-dot closed" role="img" aria-label="Market closed" title="Market closed"></span></span>
+    <div class="vol-stack">
     <button type="button" class="vix-badge" id="vixBadge" title="VIX and your levels. Click to edit levels and alerts.">
       <span class="vix-siren" aria-hidden="true">🚨</span><span class="note">VIX</span><span class="v" id="vixVal">–</span><span id="vixChg" class="note"></span>
       <span class="zone" id="vixZone" hidden></span><span class="next" id="vixNext"></span></button>
+    <button type="button" class="vix-badge vxn-badge" id="vxnBadge" title="VXN (Nasdaq-100 volatility) and your cash allocation levels. Click for details.">
+      <span class="note">VXN</span><span class="v" id="vxnVal">–</span><span id="vxnChg" class="note"></span>
+      <span class="zone" id="vxnZone" hidden></span><span class="next" id="vxnCash"></span></button>
+    </div>
     <div class="earn-wrap">
       <button class="ghost small earn-btn" type="button" id="earnBtn" aria-expanded="false" aria-controls="earnPanel"
         title="Upcoming earnings for your watchlist and open positions">Earnings <span class="earn-count" id="earnCount" hidden></span> ▾</button>
@@ -1402,6 +1422,30 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
   <p class="note" style="margin:0">Levels are your own guide. Not advice.</p>
 </aside>
 
+<aside class="lp-drawer lp-st vx-drawer" id="vxnDrawer" aria-label="VXN cash allocation levels" aria-hidden="true">
+  <div class="lp-dh"><div style="flex:1;min-width:0">
+      <h3>VXN <span id="vxnDlgNow">–</span> <span class="vx-chg" id="vxnDlgChg"></span></h3>
+      <div class="sub">Cboe Nasdaq-100 Volatility Index · Yahoo ^VXN, checked every minute while the tracker is open</div>
+      <div class="px" id="vxnZoneLine"></div></div>
+    <button class="ghost small" type="button" id="vxnClose" aria-label="Close VXN panel">✕</button></div>
+  <div class="lp-sec"><h4>Where VXN sits</h4><div id="vxnGauge"></div></div>
+  <div class="lp-sec"><h4>Cash allocation levels</h4>
+    <p class="note" style="margin:0 0 8px">Deploy cash as fear rises (wheel strategy / cash-secured puts). Slide toward each zone's low end as VXN rises.</p>
+    <div class="vxn-zones" id="vxnZones"></div></div>
+  <div class="lp-sec"><h4>Past year <span class="tabs mini vx-range" id="vxnRange" role="group" aria-label="Chart range">
+      <button type="button" data-n="63">3M</button><button type="button" data-n="126">6M</button><button type="button" data-n="0">1Y</button></span></h4>
+    <div id="vxnChart"><div class="note">Loading VXN history…</div></div>
+    <div class="lp-stats" id="vxnStats"></div></div>
+  <div class="lp-sec"><h4>Alerts</h4>
+    <p class="note" style="margin:0 0 8px">A pop-up appears when VXN moves into a new zone (uses the same desktop notification setting as VIX).</p>
+    <div class="lp-actions" style="margin-top:0"><button class="ghost small" type="button" id="vxnTest">Test pop-up</button>
+      <button class="ghost small" type="button" id="vxnTv">Open VXN on TradingView</button>
+      <button class="ghost small" type="button" id="vxnDraw" title="Draws the zone lines on the VXN chart in Chrome (replaces earlier VXN lines)">Draw levels on TradingView</button></div>
+    <h4 style="margin-top:12px">Recent alerts</h4>
+    <div class="note" id="vxnLog">None yet.</div></div>
+  <p class="note" style="margin:0">Percentile-matched to classic VIX bands using 10 years of Cboe data; VXN runs about 4 points above VIX. Your own guide, not advice.</p>
+</aside>
+
 <div class="toast hidden" id="toast"><span id="toastMsg"></span><button class="primary small" type="button" id="toastGo">Open Builder</button></div>
 
 <dialog id="addDlg">
@@ -1409,11 +1453,11 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
     <h2>Log a trade</h2>
     <div class="grid2">
       <label>Ticker <input name="ticker" required style="text-transform:uppercase"></label>
-      <label>Type <select name="type"><option value="put">Put</option><option value="call">Call</option></select></label>
-      <label>Side <select name="side"><option value="buy">Bought (long)</option><option value="sell">Sold (short)</option></select></label>
-      <label>Contracts <input name="contracts" type="number" min="1" step="1" value="1"></label>
-      <label>Strike <input name="strike" type="number" step="any" required></label>
-      <label>Expiration <input name="exp" type="date" required></label>
+      <label>Type <select name="type"><option value="put">Put</option><option value="call">Call</option><option value="shares">Shares (stock)</option></select></label>
+      <label class="opt-only">Side <select name="side"><option value="buy">Bought (long)</option><option value="sell">Sold (short)</option></select></label>
+      <label><span id="addQtyLbl">Contracts</span> <input name="contracts" type="number" min="1" step="1" value="1"></label>
+      <label class="opt-only">Strike <input name="strike" type="number" step="any" required></label>
+      <label class="opt-only">Expiration <input name="exp" type="date" required></label>
       <label>Price per share <input name="premium" type="number" step="any" min="0" required></label>
       <label>Fees ($ total) <input name="fees" type="number" step="any" min="0" placeholder="auto: Robinhood fees"><span class="note feeest"></span></label>
       <label>Opened <input name="opened" type="date"></label>
@@ -2337,7 +2381,7 @@ function vixNotifyNote() {
     : p === "denied" ? "Desktop notifications are blocked in your browser settings." : "Optional: also show alerts as Mac notifications.";
   $("#vixNotify").hidden = p === "granted" || p === "unsupported";
 }
-$("#vixBadge").onclick = () => vxOpen() ? vxClose() : openVixDlg();
+$("#vixBadge").onclick = () => vxOpen() ? vxClose() : (typeof vxnClose === "function" && vxnClose(), openVixDlg());
 $("#vixAdd").onclick = () => { $("#vixRows").insertAdjacentHTML("beforeend", vixRow(undefined, true)); $("#vixRows").lastElementChild.querySelector("[data-k=price]").focus(); };
 $("#vixRows").onclick = e => { if (e.target.closest("[data-vix-del]")) e.target.closest(".vx-lv").remove(); };
 $("#vixSirenTest").onclick = () => { vixSirenTest = vixSmokeTest = true; vixSmoke(true); vixSiren(true); setTimeout(() => { vixSirenTest = vixSmokeTest = false; const v = vixData ? vixData.level : 0; vixSmoke(v > VIX_SMOKE); vixSiren(v > VIX_SIREN); }, 10000); };
@@ -2358,6 +2402,150 @@ $("#vixSave").onclick = async () => {
   } catch (e) { toast("Couldn't save VIX levels: " + e.message, false); }
 };
 setInterval(loadVix, VIX_EVERY);
+
+/* ================= VXN ================= */
+// Nasdaq-100 volatility with fixed cash allocation zones (owner's VXN chart, 2026-11-09).
+// Each zone runs from its "from" level up to the next zone's. A pop-up fires when VXN moves into a new zone.
+const VXN_ZONES = [
+  { from: 0,  label: "Complacency",  sub: "patient — premium is cheap",        cash: "40–50% cash", color: "#2ee6d6" },
+  { from: 15, label: "Grind zone",   sub: "selective entries",                 cash: "30–40% cash", color: "#7ee08a" },
+  { from: 19, label: "Slight fear",  sub: "selling puts steadily",             cash: "20–30% cash", color: "#d8d2f0" },
+  { from: 25, label: "Fear",         sub: "deploying aggressively",            cash: "10–20% cash", color: "#c77dff" },
+  { from: 30, label: "Very fearful", sub: "heavily invested",                  cash: "5–10% cash",  color: "#f052d2" },
+  { from: 35, label: "Extreme fear", sub: "back up the truck + add new cash",  cash: "0–5% cash",   color: "#b13cf0" },
+];
+const vxnRange = i => { const z = VXN_ZONES[i], n = VXN_ZONES[i + 1]; return i === 0 ? `< ${n.from}` : n ? `${z.from}–${n.from}` : `> ${z.from}`; };
+const vxnIdx = v => { let i = 0; VXN_ZONES.forEach((z, k) => { if (v >= z.from) i = k; }); return i; };
+let vxnData = null, vxnHist = null, vxnHistAt = 0, vxnN = store.get("vxnRange", 126);
+const vxnOpen = () => $("#vxnDrawer").classList.contains("open");
+function renderVxn() {
+  const d = vxnData;
+  if (!d) return;
+  const i = vxnIdx(d.level), z = VXN_ZONES[i];
+  $("#vxnVal").textContent = d.level.toFixed(2);
+  const ch = $("#vxnChg");
+  ch.textContent = (d.change >= 0 ? "▲ " : "▼ ") + Math.abs(d.change).toFixed(2);
+  ch.className = d.change >= 0 ? "down" : "up";
+  const zone = $("#vxnZone");
+  zone.hidden = false; zone.textContent = z.label; zone.style.background = z.color;
+  $("#vxnCash").textContent = z.cash;
+  const nx = VXN_ZONES[i + 1];
+  $("#vxnBadge").title = `${z.label} (VXN ${vxnRange(i)}): ${z.sub}. Keep ${z.cash} on the sidelines.`
+    + (nx ? `\nNext zone up at ${nx.from}: ${nx.label}, ${nx.cash}.` : "") + "\n\nClick for the full table and chart.";
+  if (vxnOpen()) vxnRender();
+}
+function vxnPopup(i, level, test) {
+  const z = VXN_ZONES[i], box = document.createElement("div");
+  box.className = "vix-alert";
+  box.style.setProperty("--c", z.color);
+  box.innerHTML = `<h3>${test ? "Test · " : ""}VXN ${level.toFixed(2)}: ${esc(z.label)}</h3>
+    <p>${esc(z.sub)}. Target <b>${esc(z.cash)}</b> on the sidelines.</p><div class="inline" style="justify-content:space-between">
+    <span class="note">Zone ${vxnRange(i)} · ${new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+    <button class="ghost small" type="button">Dismiss</button></div>`;
+  box.querySelector("button").onclick = () => box.remove();
+  $("#vixAlerts").prepend(box);
+  try {   // two quick low notes, different from the VIX chime
+    const a = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.2].forEach(t => { const o = a.createOscillator(), g = a.createGain(); o.frequency.value = 660;
+      g.gain.setValueAtTime(0.13, a.currentTime + t); g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + t + 0.35);
+      o.connect(g); g.connect(a.destination); o.start(a.currentTime + t); o.stop(a.currentTime + t + 0.35); });
+  } catch {}
+  if (!test && "Notification" in window && Notification.permission === "granted") {
+    try { new Notification(`VXN ${level.toFixed(2)}: ${z.label}`, { body: `${z.sub}. ${z.cash} on the sidelines.`, tag: "vxn-" + i }); } catch {}
+  }
+  if (!test) {
+    const log = store.get("vxnLog", []);
+    log.unshift({ t: Date.now(), i, level });
+    store.set("vxnLog", log.slice(0, 20));
+  }
+}
+async function loadVxn() {
+  try {
+    const d = await api("/api/vxn");
+    const last = store.get("vxnLast", null);
+    const prev = last && Date.now() - last.t < 86400000 ? last.v : null;
+    vxnData = d;
+    if (prev != null && vxnIdx(prev) !== vxnIdx(d.level)) vxnPopup(vxnIdx(d.level), d.level);
+    store.set("vxnLast", { v: d.level, t: Date.now() });
+    renderVxn();
+  } catch (e) {
+    $("#vxnVal").textContent = "–";
+    $("#vxnCash").textContent = "no VXN quote";
+  }
+}
+function vxnRender() {
+  const d = vxnData;
+  if (!d) return;
+  const i = vxnIdx(d.level), z = VXN_ZONES[i];
+  $("#vxnDlgNow").textContent = d.level.toFixed(2);
+  const ch = $("#vxnDlgChg");
+  ch.textContent = `${d.change >= 0 ? "▲" : "▼"} ${Math.abs(d.change).toFixed(2)} (${sgnPct(d.change / d.prev_close)})`;
+  ch.className = "vx-chg " + (d.change >= 0 ? "down" : "up");
+  const up = VXN_ZONES[i + 1], dn = i > 0 ? VXN_ZONES[i] : null;
+  $("#vxnZoneLine").innerHTML = `<span class="vx-pill" style="background:${z.color};color:#1a1440;text-shadow:none">${esc(z.label)}</span>${esc(z.sub)} · <b>${esc(z.cash)}</b>`
+    + `<div class="note" style="margin-top:4px">${[up && `next up ${up.from} ${esc(up.label)} (${sgnPct(up.from / d.level - 1)})`, dn && `drops to ${esc(VXN_ZONES[i - 1].label)} below ${dn.from} (${sgnPct(dn.from / d.level - 1)})`].filter(Boolean).join(" · ")}</div>`;
+  $("#vxnZones").innerHTML = VXN_ZONES.map((x, k) => ({ x, k })).reverse().map(({ x, k }) =>
+    `<div class="vxn-z${k === i ? " on" : ""}" style="--c:${x.color}"><b>${esc(x.label.toUpperCase())}</b><span class="rng">VXN ${vxnRange(k)}</span><span class="cash">${esc(x.cash)}</span><span class="sub">${esc(x.sub)}</span></div>`).join("");
+  $("#vxnGauge").innerHTML = vxnGauge(d.level);
+  for (const b of document.querySelectorAll("#vxnRange button")) b.classList.toggle("on", +b.dataset.n === vxnN);
+  if (!vxnHist) return;
+  const todayNY = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  const lastC = vxnHist.closes[vxnHist.closes.length - 1];
+  const isToday = vxnHist.dates[vxnHist.dates.length - 1] === todayNY;
+  const wkday = !/Sat|Sun/.test(new Date().toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "short" }));
+  const addToday = !isToday && wkday && Math.abs(d.level - lastC) > 0.005;
+  const all = isToday ? vxnHist.closes.slice(0, -1).concat([d.level]) : addToday ? vxnHist.closes.concat([d.level]) : vxnHist.closes;
+  const allDates = addToday ? vxnHist.dates.concat([todayNY]) : vxnHist.dates;
+  const xs = vxnN ? all.slice(-vxnN) : all, dates = vxnN ? allDates.slice(-vxnN) : allDates;
+  const ls = VXN_ZONES.slice(1).map(x => ({ price: x.from, label: x.label, color: x.color }));
+  $("#vxnChart").innerHTML = vxChart(xs, dates, ls).replace("VIX daily closes", "VXN daily closes");
+  const rank = all.filter(v => v <= d.level).length / all.length;
+  const avg20 = all.slice(-20).reduce((a, b) => a + b, 0) / Math.min(20, all.length);
+  const stat = (k, v, cls = "") => `<div class="lp-stat"><div class="k">${k}</div><div class="v ${cls}">${v}</div></div>`;
+  $("#vxnStats").innerHTML = stat("Range high", Math.max(...xs).toFixed(2)) + stat("Range low", Math.min(...xs).toFixed(2))
+    + stat("20-day avg", avg20.toFixed(2), d.level > avg20 ? "down" : "up") + stat("1-year rank", pct(rank, 0), rank > 0.8 ? "down" : rank < 0.2 ? "up" : "");
+  const log = store.get("vxnLog", []);
+  $("#vxnLog").innerHTML = log.length ? log.map(x => `<div><span class="vx-pill" style="background:${VXN_ZONES[x.i].color};color:#1a1440;text-shadow:none">${x.level.toFixed(2)}</span>${new Date(x.t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · ${esc(VXN_ZONES[x.i].label)} (${esc(VXN_ZONES[x.i].cash)})</div>`).join("") : "None yet.";
+}
+function vxnGauge(v) {
+  const W = 440, H = 78, pl = 8, pr = 8, y0 = 34, h = 12, lo = 10, top = Math.max(45, v * 1.1);
+  const X = x => pl + (Math.max(lo, Math.min(top, x)) - lo) / (top - lo) * (W - pl - pr);
+  let segs = "", ticks = "";
+  VXN_ZONES.forEach((z, i) => {
+    const a = X(Math.max(lo, z.from)), b = X(i + 1 < VXN_ZONES.length ? VXN_ZONES[i + 1].from : top);
+    segs += `<rect x="${a.toFixed(1)}" y="${y0}" width="${Math.max(0, b - a).toFixed(1)}" height="${h}" fill="${z.color}" opacity=".85"/>`;
+    if (i) ticks += `<line x1="${a}" x2="${a}" y1="${y0 - 3}" y2="${y0 + h + 3}" stroke="var(--text)" stroke-width="1"/>
+      <text x="${a}" y="${i % 2 ? y0 - 6 : y0 - 19}" text-anchor="middle" font-size="10" fill="var(--muted)">${z.from} ${esc(z.label)}</text>`;
+  });
+  const mx = X(v);
+  return `<svg class="vx-gauge" viewBox="0 0 ${W} ${H}" role="img" aria-label="VXN ${v.toFixed(2)} on the cash allocation scale">
+    <rect x="${pl}" y="${y0}" width="${W - pl - pr}" height="${h}" rx="6" fill="var(--well)"/>${segs}${ticks}
+    <path d="M${mx - 7} ${y0 + h + 12}L${mx + 7} ${y0 + h + 12}L${mx} ${y0 + h + 2}Z" fill="var(--spot)"/>
+    <line x1="${mx}" x2="${mx}" y1="${y0 - 2}" y2="${y0 + h + 2}" stroke="var(--spot)" stroke-width="2.5"/>
+    <text x="${Math.min(W - 30, Math.max(30, mx))}" y="${H - 3}" text-anchor="middle" font-size="11" font-weight="700" fill="var(--spot)">now ${v.toFixed(2)}</text></svg>`;
+}
+function openVxn() {
+  if (vxOpen()) vxClose();
+  $("#vxnDrawer").classList.add("open");
+  $("#vxnDrawer").setAttribute("aria-hidden", "false");
+  vxnRender();
+  if (!vxnHist || Date.now() - vxnHistAt > 3600e3) api("/api/vxn/history").then(h => { vxnHist = h; vxnHistAt = Date.now(); vxnRender(); }).catch(e => { $("#vxnChart").innerHTML = `<div class="note">No VXN history: ${esc(e.message)}</div>`; });
+}
+function vxnClose() { $("#vxnDrawer").classList.remove("open"); $("#vxnDrawer").setAttribute("aria-hidden", "true"); }
+$("#vxnBadge").onclick = () => vxnOpen() ? vxnClose() : openVxn();
+$("#vxnClose").onclick = vxnClose;
+document.addEventListener("keydown", e => { if (escOk(e) && vxnOpen()) { e.preventDefault(); vxnClose(); } });
+$("#vxnRange").onclick = e => { const b = e.target.closest("button[data-n]"); if (!b) return; vxnN = +b.dataset.n; store.set("vxnRange", vxnN); vxnRender(); };
+$("#vxnTest").onclick = () => { const v = vxnData ? vxnData.level : 20; vxnPopup(vxnIdx(v), v, true); };
+$("#vxnTv").onclick = async () => { try { await api("/api/open-chart", { symbol: "CBOE:VXN" }); } catch (err) { toast("Couldn't open VXN in Chrome: " + err.message, false); } };
+$("#vxnDraw").onclick = async () => {
+  toast("Drawing the VXN zone lines on TradingView…", false);
+  try {
+    await api("/api/tv-line", { symbol: "VXN", clear_prefix: "VXN ·", lines: VXN_ZONES.slice(1).map(z => ({ price: z.from, kind: "level", color: z.color, label: `VXN · ${z.label} ${z.from} (${z.cash.replace("–", "-")})` })) });
+    toast("Drew the VXN zone lines on the TradingView VXN chart in Chrome", false);
+  } catch (err) { toast("Couldn't draw the VXN lines: " + err.message, false); }
+};
+setInterval(loadVxn, VIX_EVERY);
 
 /* ================= tabs ================= */
 const TABS = ["chain", "builder", "trades", "screener", "leaps", "puts", "smart"];
@@ -4297,14 +4485,27 @@ function openAdd(v) {
   for (const [k, val] of Object.entries(v)) if (f.elements[k]) f.elements[k].value = val;
   f.elements.opened.value = today();
   $("#addErr").textContent = "";
+  addTypeSync();
   $("#addDlg").showModal();
   feeAdd();
 }
+// Type "Shares": no side, strike or expiration; quantity is lots of 100 shares (same as "Add shares").
+function addTypeSync() {
+  const f = $("#addForm"), shares = f.elements.type.value === "shares";
+  for (const el of f.querySelectorAll(".opt-only")) el.hidden = shares;
+  f.elements.strike.required = f.elements.exp.required = !shares;
+  $("#addQtyLbl").textContent = shares ? "Lots of 100 shares" : "Contracts";
+  f.elements.fees.placeholder = shares ? "0" : "auto: Robinhood fees";
+}
+$("#addForm").elements.type.addEventListener("change", () => { addTypeSync(); feeAdd(); });
 $("#addForm").onsubmit = async e => {
   e.preventDefault();
   const body = Object.fromEntries(new FormData(e.target));
   try {
-    await api("/api/trades", body);
+    if (body.type === "shares")
+      await api("/api/shares", { ticker: body.ticker, lots: body.contracts, price: body.premium,
+                                 fees: body.fees || 0, opened: body.opened, notes: body.notes });
+    else await api("/api/trades", body);
     $("#addDlg").close();
     showTab("trades");
   } catch (err) { $("#addErr").textContent = err.message; }
@@ -4594,6 +4795,7 @@ function wireFees(form, getOrder) {
 }
 const feeAdd = wireFees($("#addForm"), () => {
   const e = $("#addForm").elements;
+  if (e.type.value === "shares") return null;   // stock trades: no options fees
   return { ticker: e.ticker.value, legs: [{ type: e.type.value, action: e.side.value, price: e.premium.value, contracts: e.contracts.value }] };
 });
 const feeSave = wireFees($("#saveForm"), () => ({ ticker: B.ticker,
@@ -5781,6 +5983,7 @@ econShown(store.get("econ", true));
 fngShown(store.get("fng", true));
 brdShown(store.get("brd", true));
 loadVix();
+loadVxn();
 </script>
 <script>
 // Market status dot: live during regular NYSE hours (9:30-4:00 ET, 1:00 on early-close days), closed otherwise.

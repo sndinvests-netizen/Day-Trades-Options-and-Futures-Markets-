@@ -232,35 +232,53 @@ def spot_price(ticker):
     return _cached(("spot", ticker), fetch)
 
 
-def vix():
-    """The CBOE Volatility Index from Yahoo (^VIX): level, previous close and change."""
+def _vol_quote(sym, name):
+    """A Cboe volatility index from Yahoo (^VIX, ^VXN): level, previous close and change."""
     yf = _yf()
 
     def fetch():
         try:
-            fi = yf.Ticker("^VIX").fast_info
+            fi = yf.Ticker("^" + sym).fast_info
             return float(fi["last_price"]), float(fi["previous_close"])
         except Exception as e:
-            raise QuoteError(f"VIX: no quote ({e})")
-    level, prev = _cached(("vix",), fetch)
+            raise QuoteError(f"{name}: no quote ({e})")
+    level, prev = _cached((sym.lower(),), fetch)
     return {"level": level, "prev_close": prev, "change": level - prev,
             "as_of": datetime.now(ET).isoformat(timespec="seconds")}
 
 
-def vix_history():
-    """One year of ^VIX daily closes (for the VIX panel's chart and where today ranks in the year)."""
+def _vol_history(sym, name):
+    """One year of daily closes for a volatility index (panel chart and where today ranks in the year)."""
     yf = _yf()
 
     def fetch():
         try:
-            h = yf.Ticker("^VIX").history(period="1y", interval="1d")
+            h = yf.Ticker("^" + sym).history(period="1y", interval="1d")
         except Exception as e:
-            raise QuoteError(f"VIX: no history ({e})")
+            raise QuoteError(f"{name}: no history ({e})")
         rows = [(d.strftime("%Y-%m-%d"), round(float(c), 2)) for d, c in zip(h.index, h["Close"]) if c == c and c > 0]
         if len(rows) < 20:
-            raise QuoteError("VIX: not enough history")
+            raise QuoteError(f"{name}: not enough history")
         return {"dates": [d for d, _ in rows], "closes": [c for _, c in rows]}
-    return _cached(("vixhist",), fetch, ttl=15 * 60)
+    return _cached((sym.lower() + "hist",), fetch, ttl=15 * 60)
+
+
+def vix():
+    """The CBOE Volatility Index (^VIX)."""
+    return _vol_quote("VIX", "VIX")
+
+
+def vix_history():
+    return _vol_history("VIX", "VIX")
+
+
+def vxn():
+    """The Cboe Nasdaq-100 Volatility Index (^VXN)."""
+    return _vol_quote("VXN", "VXN")
+
+
+def vxn_history():
+    return _vol_history("VXN", "VXN")
 
 
 def historical_vol(ticker):

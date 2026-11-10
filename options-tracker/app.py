@@ -33,7 +33,7 @@ from econ_calendar import usd_events
 from fear_greed import fear_greed
 from breadth import breadth
 from fees import order_fees
-from options_data import GEX_DAYS, GEX_MAX_EXPS, QuoteError, chain, gex, news, quote, vix, vix_history
+from options_data import GEX_DAYS, GEX_MAX_EXPS, QuoteError, chain, gex, news, quote, vix, vix_history, vxn, vxn_history
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 INDEX = os.path.join(HERE, "web", "index.html")
@@ -286,6 +286,10 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(lambda: dict(vix(), levels=vix_levels()))
         elif url.path == "/api/vix/history":
             self.guard(vix_history)
+        elif url.path == "/api/vxn":
+            self.guard(vxn)
+        elif url.path == "/api/vxn/history":
+            self.guard(vxn_history)
         elif url.path == "/api/econ":
             self.guard(usd_events)
         elif url.path == "/api/feargreed":
