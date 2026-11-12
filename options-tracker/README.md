@@ -125,6 +125,13 @@ If the Mac is asleep at 6:30 it runs when the Mac wakes up; if the Mac is shut d
 - **Patterns found:** double and triple tops and bottoms, head and shoulders, triangles, wedges, channels, rectangles, flags and gaps, each with its trigger, measured target and the level that proves it wrong. A pattern is "forming" until a close through its trigger. Rounded bases, cup and handle and V reversals are not detected.
 - **Potential paths:** bull, base and bear paths on the daily chart with rough odds, triggers and targets, the expected range, the next earnings date and a chart. This part runs the `stock-direction-map` script from `~/.claude/skills/` and is skipped where that isn't installed.
 
+**ETF Profile tab.** What a fund is, what it costs, what it holds and how it has done.
+- Type an ETF ticker or click a chip. A stock ticker gets a plain "not an ETF" message.
+- **Tiles:** price and last reported NAV, fund size and average volume, expense ratio (and what it costs per $10,000), yield, where the price sits in its 52-week range, and 3-year beta.
+- **Leveraged and inverse funds** (TSLL, SOXL, TQQQ, SQQQ and the like) get a warning box explaining the daily reset.
+- **Top holdings, sectors and asset mix** as bars, and price returns from 1 week to 5 years. Click a holding to open it in the Chart Analyzer.
+- Data is Yahoo's; holdings and sector weights are as last reported by the fund.
+
 ## Command line
 
 The same trades file also works from the terminal (use `.venv/bin/python` or any Python with yfinance):

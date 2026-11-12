@@ -31,6 +31,7 @@ import putsell
 import smartmoney
 import seasonality
 import analyzer
+import etf
 from econ_calendar import usd_events
 from fear_greed import fear_greed
 from breadth import breadth
@@ -300,6 +301,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(breadth)
         elif url.path == "/api/seasonality":
             self.guard(lambda: seasonality.seasonality(q.get("ticker"), q.get("years") or 10))
+        elif url.path == "/api/etf":
+            self.guard(lambda: etf.profile(q.get("ticker")))
         elif url.path == "/api/analyze":
             self.guard(lambda: analyzer.analyze(q.get("ticker"), q.get("tf") or "1d"))
         elif url.path == "/api/analyze/paths":

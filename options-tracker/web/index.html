@@ -790,6 +790,17 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
 .sm-row > .sm-side-col { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 0; }
 #view-smart td, #view-smart th { text-align: left; }
 #view-smart td.num, #view-smart th.num { text-align: right; }
+/* etf profile */
+.etf-warn { background: var(--warn-bg); color: var(--warn); border-radius: 10px; padding: 10px 14px; margin-top: 12px; font-size: 13px; }
+.etf-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.etf-cols .panel { margin-bottom: 0; }
+.etf-row { display: grid; grid-template-columns: minmax(120px, 1.3fr) 2fr 56px; gap: 8px; align-items: center; font-size: 12px; padding: 3px 0; }
+.etf-row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.etf-row .nm b { margin-right: 6px; }
+.etf-row .bar { background: var(--well); border-radius: 4px; height: 10px; overflow: hidden; }
+.etf-row .bar i { display: block; height: 100%; background: #2962ff; border-radius: 4px; }
+.etf-row .pc { text-align: right; font-variant-numeric: tabular-nums; }
+.etf-row button.lnk { background: none; border: 0; box-shadow: none; padding: 0; color: inherit; font-weight: 700; cursor: pointer; text-decoration: underline dotted; }
 /* chart analyzer */
 .ana-chart { width: 100%; height: auto; display: block; background: var(--well); border-radius: 10px; }
 .ana-chart text { font-size: 10px; fill: var(--muted); font-variant-numeric: tabular-nums; }
@@ -871,6 +882,7 @@ table.sea td.part { font-style: italic; }
       <button id="tab-smart">Smart Money <span class="sm-badge hidden" id="smBadge"></span></button>
       <button id="tab-season">Seasonality</button>
       <button id="tab-analyze">Chart Analyzer</button>
+      <button id="tab-etf">ETF Profile</button>
     </div>
     <span class="note">Yahoo Finance data, delayed about 15 min. Greeks and projections use Black-Scholes (4% rate).<span id="mkt-dot" class="mkt-dot closed" role="img" aria-label="Market closed" title="Market closed"></span></span>
     <div class="vol-stack">
@@ -1481,6 +1493,26 @@ table.sea td.part { font-style: italic; }
       <div id="anaPaths"><div class="note">Loading…</div></div>
     </div>
     <p class="note">This is a mechanical read of past price action: swing structure, fitted trend lines and a fixed signal score. It is a map of possibilities with rough odds, not a forecast and not advice. Rounded bases, cup and handle and V reversals are not detected; check those by eye.</p>
+  </section>
+
+  <section id="view-etf" class="hidden">
+    <div class="panel">
+      <div class="lp-top">
+        <h2>ETF Profile</h2>
+        <span class="lp-meta" id="etfMeta">What a fund is, what it costs, what it holds and how it has done.</span>
+        <span class="grow"></span>
+        <form id="etfForm" style="display:flex;gap:6px;align-items:center">
+          <input id="etfTicker" type="text" spellcheck="false" autocapitalize="characters" placeholder="ETF ticker" aria-label="ETF ticker" style="width:110px">
+          <button class="small" type="submit">Go</button>
+        </form>
+      </div>
+      <div class="chips" id="etfChips" style="margin-top:10px"></div>
+      <div id="etfHead"></div>
+      <div class="sea-sum" id="etfSum"></div>
+    </div>
+    <div id="etfErr" class="err hidden"></div>
+    <div class="etf-cols" id="etfCols"></div>
+    <p class="note" style="margin-top:12px">Fund data from Yahoo; holdings and sector weights are as last reported by the fund and can be weeks old. Returns are price returns with dividends added back.</p>
   </section>
   </main>
 
@@ -2662,7 +2694,7 @@ $("#vxnDraw").onclick = async () => {
 setInterval(loadVxn, VIX_EVERY);
 
 /* ================= tabs ================= */
-const TABS = ["chain", "builder", "trades", "screener", "leaps", "puts", "smart", "season", "analyze"];
+const TABS = ["chain", "builder", "trades", "screener", "leaps", "puts", "smart", "season", "analyze", "etf"];
 function showTab(name) {
   for (const t of TABS) {
     $("#tab-" + t).classList.toggle("on", t === name);
@@ -2677,9 +2709,74 @@ function showTab(name) {
   if (name === "smart") loadSmart();
   if (name === "season") seaOpen();
   if (name === "analyze") anaOpen();
+  if (name === "etf") etfOpen();
 }
 for (const t of TABS) $("#tab-" + t).onclick = () => showTab(t);
 const tabOn = name => !$("#view-" + name).classList.contains("hidden");
+
+/* ================= ETF profile ================= */
+const ETF_QUICK = ["SPY", "QQQ", "IWM", "DIA", "TSLL", "SOXL", "TQQQ", "SQQQ", "SCHD", "XLK", "XLF", "XLE", "SMH", "GLD", "TLT"];
+let etfSeq = 0, etfData = null;
+const etfBig = v => v == null ? "–" : v >= 1e12 ? "$" + (v / 1e12).toFixed(2) + "T" : v >= 1e9 ? "$" + (v / 1e9).toFixed(1) + "B" : v >= 1e6 ? "$" + (v / 1e6).toFixed(0) + "M" : "$" + Math.round(v).toLocaleString("en-US");
+const etfPct = (v, d = 1) => v == null ? "–" : (v > 0 ? "+" : "") + v.toFixed(d) + "%";
+const etfCol = v => v == null ? "text" : v >= 0 ? "up" : "down";
+function etfChips() {
+  const cur = store.get("etfTicker", "SPY");
+  $("#etfChips").innerHTML = ETF_QUICK.map(t => `<button type="button" class="chip${t === cur ? " on" : ""}" data-t="${t}">${t}</button>`).join("");
+}
+function etfOpen() { etfChips(); if (!etfData || etfData.ticker !== store.get("etfTicker", "SPY")) loadEtf(); }
+async function loadEtf(ticker) {
+  ticker = (ticker || store.get("etfTicker", "SPY")).trim().toUpperCase();
+  if (!ticker) return;
+  const seq = ++etfSeq;
+  $("#etfMeta").textContent = "Loading " + ticker + "…";
+  try {
+    const d = await api(`/api/etf?ticker=${encodeURIComponent(ticker)}`);
+    if (seq !== etfSeq) return;
+    etfData = d;
+    store.set("etfTicker", d.ticker);
+    $("#etfTicker").value = d.ticker;
+    $("#etfErr").classList.add("hidden");
+    etfChips();
+    renderEtf();
+  } catch (err) {
+    if (seq !== etfSeq) return;
+    $("#etfMeta").textContent = "";
+    $("#etfErr").textContent = err.message;
+    $("#etfErr").classList.remove("hidden");
+  }
+}
+function renderEtf() {
+  const d = etfData, lv = d.leverage;
+  $("#etfMeta").textContent = [d.ticker, d.family, d.category, d.inception ? "since " + d.inception : ""].filter(Boolean).join(" · ");
+  const card = (label, big, sub, col) => `<div class="sea-card"><span>${label}</span><b${col ? ` style="color:var(--${col})"` : ""}>${big}</b><span>${sub || ""}</span></div>`;
+  $("#etfHead").innerHTML = `<h2 style="margin:14px 0 4px">${esc(d.name)}</h2>`
+    + (d.summary ? `<p class="note" style="margin:0;max-width:110ch">${esc(d.summary)}</p>` : "")
+    + (lv ? `<div class="etf-warn"><b>${lv.factor}× ${lv.direction === "inverse" ? "inverse" : "leveraged"} fund.</b> It aims for ${lv.direction === "inverse" ? "−" : ""}${lv.factor}× the move of what it tracks for <b>one day at a time</b>. Because it resets daily, over weeks it can lose value in a choppy market even when the underlying ends flat, and its holdings are mostly swaps and cash, not the stock itself.</div>` : "");
+  const r = d.returns || {};
+  $("#etfSum").innerHTML =
+    card("Price", d.price == null ? "–" : "$" + d.price.toFixed(2), `${etfPct(d.change_pct, 2)} today · last reported NAV ${d.nav == null ? "–" : "$" + d.nav.toFixed(2)}`, etfCol(d.change_pct))
+    + card("Fund size", etfBig(d.assets), `average volume ${d.avg_volume == null ? "–" : (d.avg_volume / 1e6).toFixed(1) + "M shares a day"}`)
+    + card("Expense ratio", d.expense_pct == null ? "–" : d.expense_pct.toFixed(2) + "%", d.expense_pct == null ? "" : `$${(d.expense_pct * 100).toFixed(0)} a year per $10,000` + (d.turnover_pct ? ` · turnover ${d.turnover_pct}%` : ""))
+    + card("Yield", d.yield_pct == null ? "–" : d.yield_pct.toFixed(2) + "%", "trailing 12-month distributions")
+    + card("52-week range", d.range_pos == null ? "–" : d.range_pos + "% of the way up", `low $${d.low52 == null ? "–" : d.low52.toFixed(2)} · high $${d.high52 == null ? "–" : d.high52.toFixed(2)}`)
+    + card("Beta (3 years)", d.beta3y == null ? "–" : d.beta3y.toFixed(2), "1.00 moves with the market" + (d.pe ? ` · P/E ${d.pe.toFixed(1)}` : ""));
+  const bars = (rows, max, nameFn) => rows.map(x => `<div class="etf-row"><span class="nm" title="${esc(x.name)}">${nameFn(x)}</span><span class="bar"><i style="width:${Math.max(0, Math.min(100, x.pct / max * 100))}%"></i></span><span class="pc">${x.pct.toFixed(1)}%</span></div>`).join("");
+  const perf = [["1 week", r["1 week"]], ["1 month", r["1 month"]], ["3 months", r["3 months"]], ["6 months", r["6 months"]], ["1 year", r["1 year"]], ["Year to date", d.ytd_pct], ["3 years, per year", d.avg3y_pct], ["5 years, per year", d.avg5y_pct]].filter(x => x[1] != null);
+  const hMax = Math.max(1, ...d.holdings.map(h => h.pct)), sMax = Math.max(1, ...d.sectors.map(h => h.pct)), aMax = Math.max(1, ...d.asset_mix.map(h => Math.abs(h.pct)));
+  $("#etfCols").innerHTML =
+    `<div class="panel"><h2 style="margin:0 0 6px">Top holdings <span class="lp-meta">${d.top10_pct == null ? "" : "top 10 are " + d.top10_pct + "% of the fund"}</span></h2>${d.holdings.length ? bars(d.holdings, hMax, x => `<button type="button" class="lnk" data-t="${esc(x.symbol)}" title="Open ${esc(x.symbol)} in the Chart Analyzer">${esc(x.symbol)}</button> ${esc(x.name)}`) : `<div class="note">No stock holdings reported. ${lv ? "Leveraged and inverse funds get their exposure through swaps." : ""}</div>`}</div>`
+    + `<div class="panel"><h2 style="margin:0 0 6px">Sectors</h2>${d.sectors.length ? bars(d.sectors, sMax, x => esc(x.name)) : `<div class="note">No sector breakdown reported.</div>`}<h2 style="margin:14px 0 6px">What it's made of</h2>${d.asset_mix.length ? bars(d.asset_mix.map(x => ({ ...x, pct: x.pct })), aMax, x => esc(x.name)) : `<div class="note">Not reported.</div>`}</div>`
+    + `<div class="panel"><h2 style="margin:0 0 6px">Performance</h2>${perf.length ? `<table><tbody>${perf.map(([l, v]) => `<tr><td style="text-align:left">${l}</td><td style="color:var(--${etfCol(v)});font-weight:700">${etfPct(v)}</td></tr>`).join("")}</tbody></table>` : `<div class="note">No price history.</div>`}<p style="margin:10px 0 0"><button type="button" class="small" id="etfToAna">Open ${esc(d.ticker)} in the Chart Analyzer</button> <button type="button" class="ghost small" id="etfToSea">Seasonality</button></p></div>`;
+}
+$("#etfForm").onsubmit = e => { e.preventDefault(); loadEtf($("#etfTicker").value); };
+$("#etfChips").onclick = e => { const t = e.target.dataset.t; if (t) loadEtf(t); };
+$("#etfCols").onclick = e => {
+  const t = e.target.dataset.t || (e.target.id === "etfToAna" || e.target.id === "etfToSea" ? etfData.ticker : null);
+  if (!t) return;
+  if (e.target.id === "etfToSea") { store.set("seaTicker", t); showTab("season"); }
+  else { store.set("anaTicker", t.replace(".", "-")); showTab("analyze"); }
+};
 
 /* ================= chart analyzer ================= */
 const ANA_QUICK = [["SPY", "SPY"], ["QQQ", "QQQ"], ["NQ=F", "NQ futures"], ["ES=F", "ES futures"], ["IWM", "IWM"]];
