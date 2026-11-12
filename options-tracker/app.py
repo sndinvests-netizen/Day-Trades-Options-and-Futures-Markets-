@@ -30,6 +30,7 @@ import leaps
 import putsell
 import smartmoney
 import seasonality
+import analyzer
 from econ_calendar import usd_events
 from fear_greed import fear_greed
 from breadth import breadth
@@ -299,6 +300,15 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(breadth)
         elif url.path == "/api/seasonality":
             self.guard(lambda: seasonality.seasonality(q.get("ticker"), q.get("years") or 10))
+        elif url.path == "/api/analyze":
+            self.guard(lambda: analyzer.analyze(q.get("ticker"), q.get("tf") or "1d"))
+        elif url.path == "/api/analyze/paths":
+            self.guard(lambda: analyzer.paths(q.get("ticker")))
+        elif url.path == "/api/analyze/chart.png":
+            try:
+                self.send(200, analyzer.chart_png(q.get("ticker")), "image/png")
+            except QuoteError as e:
+                self.send(404, {"error": str(e)})
         elif url.path == "/api/earnings":
             self.guard(earnings_feed)
         elif url.path == "/api/news":

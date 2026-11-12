@@ -118,6 +118,13 @@ If the Mac is asleep at 6:30 it runs when the Mac wakes up; if the Mac is shut d
 - **Month by month table:** each year's monthly percent change, shaded green or red by size, with the year's total and rows for the average, median and percent of years up.
 - **How it's calculated:** the change from the prior month's last close to the month's last close, from Yahoo daily prices, the same way TradingView's Seasonals view works. Dividends are not added back, and the unfinished current month is left out of the averages.
 
+**Chart Analyzer tab.** Reads a ticker's market structure, looks for the patterns in [CHART_PATTERNS.md](../CHART_PATTERNS.md) and maps the potential paths. A mechanical read of past price action, not a forecast or advice.
+- Type any ticker or click a chip, and pick the 15-minute, 1-hour, daily or weekly chart.
+- **Tiles:** the lean on that timeframe and why, the swing structure with the last break, the swing high and low that would change the picture, and the nearest support and resistance.
+- **Chart:** the last 150 candles with each swing marked HH, HL, LH or LL, breaks of structure (BOS) and changes of character (CHoCH), support and resistance with two or more touches, and any detected pattern drawn in purple.
+- **Patterns found:** double and triple tops and bottoms, head and shoulders, triangles, wedges, channels, rectangles, flags and gaps, each with its trigger, measured target and the level that proves it wrong. A pattern is "forming" until a close through its trigger. Rounded bases, cup and handle and V reversals are not detected.
+- **Potential paths:** bull, base and bear paths on the daily chart with rough odds, triggers and targets, the expected range, the next earnings date and a chart. This part runs the `stock-direction-map` script from `~/.claude/skills/` and is skipped where that isn't installed.
+
 ## Command line
 
 The same trades file also works from the terminal (use `.venv/bin/python` or any Python with yfinance):

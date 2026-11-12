@@ -790,6 +790,24 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
 .sm-row > .sm-side-col { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 0; }
 #view-smart td, #view-smart th { text-align: left; }
 #view-smart td.num, #view-smart th.num { text-align: right; }
+/* chart analyzer */
+.ana-chart { width: 100%; height: auto; display: block; background: var(--well); border-radius: 10px; }
+.ana-chart text { font-size: 10px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.ana-chart .lbl { font-size: 9px; font-weight: 700; }
+.ana-hover { font-size: 12px; color: var(--muted); min-height: 18px; font-variant-numeric: tabular-nums; margin: 6px 0; }
+.ana-why { margin: 6px 0 0; padding-left: 16px; font-size: 12px; color: var(--muted); }
+.ana-tag { display: inline-block; border-radius: 999px; padding: 1px 9px; font-size: 11px; font-weight: 700; }
+.ana-tag.bullish { background: color-mix(in srgb, var(--up) 22%, transparent); color: var(--up); }
+.ana-tag.bearish { background: color-mix(in srgb, var(--down) 22%, transparent); color: var(--down); }
+.ana-tag.neutral { background: var(--well); color: var(--muted); }
+table.ana td, table.ana th { text-align: left; white-space: normal; vertical-align: top; }
+table.ana td.n, table.ana th.n { text-align: right; white-space: nowrap; }
+.ana-paths { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin: 10px 0; }
+.ana-path { background: var(--well); border-radius: 10px; padding: 10px 12px; font-size: 12px; border-left: 4px solid var(--muted); }
+.ana-path.top { outline: 2px solid var(--spot); }
+.ana-path b.o { font-size: 20px; display: block; }
+.ana-path p { margin: 4px 0 0; }
+.ana-img { width: 100%; max-width: 1100px; border-radius: 10px; display: block; margin-top: 10px; }
 /* seasonality */
 .sea-sum { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-top: 12px; }
 .sea-card { background: var(--well); border-radius: 10px; padding: 10px 12px; }
@@ -852,6 +870,7 @@ table.sea td.part { font-style: italic; }
       <button id="tab-puts">Sell Puts &amp; Calls</button>
       <button id="tab-smart">Smart Money <span class="sm-badge hidden" id="smBadge"></span></button>
       <button id="tab-season">Seasonality</button>
+      <button id="tab-analyze">Chart Analyzer</button>
     </div>
     <span class="note">Yahoo Finance data, delayed about 15 min. Greeks and projections use Black-Scholes (4% rate).<span id="mkt-dot" class="mkt-dot closed" role="img" aria-label="Market closed" title="Market closed"></span></span>
     <div class="vol-stack">
@@ -1420,6 +1439,48 @@ table.sea td.part { font-style: italic; }
       <div class="sea-wrap"><table class="sea" id="seaTable"></table></div>
       <p class="note" style="margin:8px 0 0">Calculated from daily closing prices (Yahoo), the same way TradingView's Seasonals view does it. Dividends are not added back. The current month is unfinished and is left out of the averages. Past years describe history; they don't predict this year.</p>
     </div>
+  </section>
+
+  <section id="view-analyze" class="hidden">
+    <div class="panel">
+      <div class="lp-top">
+        <h2>Chart Analyzer</h2>
+        <span class="lp-meta" id="anaMeta">Market structure, chart patterns and the potential paths for any ticker.</span>
+        <span class="grow"></span>
+        <form id="anaForm" style="display:flex;gap:6px;align-items:center">
+          <input id="anaTicker" type="text" spellcheck="false" autocapitalize="characters" placeholder="Ticker" aria-label="Ticker to analyze" style="width:110px">
+          <button class="small" type="submit">Analyze</button>
+        </form>
+        <div class="tabs mini" id="anaTf" role="group" aria-label="Timeframe">
+          <button type="button" data-tf="15m">15 min</button>
+          <button type="button" data-tf="1h">1 hour</button>
+          <button type="button" data-tf="1d" class="on">Daily</button>
+          <button type="button" data-tf="1wk">Weekly</button>
+        </div>
+      </div>
+      <div class="chips" id="anaChips" style="margin-top:10px"></div>
+      <div class="sea-sum" id="anaSum"></div>
+    </div>
+    <div id="anaErr" class="err hidden"></div>
+    <div class="panel">
+      <h2 style="margin:0">Structure and patterns <span class="lp-meta" id="anaChartMeta"></span></h2>
+      <div class="ana-hover" id="anaHover">Hover the chart for a bar's prices.</div>
+      <svg class="ana-chart" id="anaChart" viewBox="0 0 1000 440" role="img" aria-label="Price chart with swing structure and patterns"></svg>
+      <p class="note" style="margin:8px 0 0">HH, HL, LH and LL mark each swing against the one before it. BOS is a break of structure (the trend continued); CHoCH is a change of character (the trend may be turning). Dashed grey lines are support and resistance with two or more touches. Purple lines are a detected pattern.</p>
+    </div>
+    <div class="panel">
+      <h2 style="margin:0 0 6px">Patterns found <span class="lp-meta">from the top 20 list; a pattern is "forming" until a close through its trigger</span></h2>
+      <div id="anaPatterns"></div>
+    </div>
+    <div class="panel">
+      <div class="lp-top">
+        <h2>Potential paths <span class="lp-meta" id="anaPathsMeta">daily chart, next 1 to 4 weeks</span></h2>
+        <span class="grow"></span>
+        <button class="ghost small" type="button" id="anaPathsGo">Refresh paths</button>
+      </div>
+      <div id="anaPaths"><div class="note">Loading…</div></div>
+    </div>
+    <p class="note">This is a mechanical read of past price action: swing structure, fitted trend lines and a fixed signal score. It is a map of possibilities with rough odds, not a forecast and not advice. Rounded bases, cup and handle and V reversals are not detected; check those by eye.</p>
   </section>
   </main>
 
@@ -2601,7 +2662,7 @@ $("#vxnDraw").onclick = async () => {
 setInterval(loadVxn, VIX_EVERY);
 
 /* ================= tabs ================= */
-const TABS = ["chain", "builder", "trades", "screener", "leaps", "puts", "smart", "season"];
+const TABS = ["chain", "builder", "trades", "screener", "leaps", "puts", "smart", "season", "analyze"];
 function showTab(name) {
   for (const t of TABS) {
     $("#tab-" + t).classList.toggle("on", t === name);
@@ -2615,9 +2676,131 @@ function showTab(name) {
   if (name === "puts") psOpen();
   if (name === "smart") loadSmart();
   if (name === "season") seaOpen();
+  if (name === "analyze") anaOpen();
 }
 for (const t of TABS) $("#tab-" + t).onclick = () => showTab(t);
 const tabOn = name => !$("#view-" + name).classList.contains("hidden");
+
+/* ================= chart analyzer ================= */
+const ANA_QUICK = [["SPY", "SPY"], ["QQQ", "QQQ"], ["NQ=F", "NQ futures"], ["ES=F", "ES futures"], ["IWM", "IWM"]];
+let anaSeq = 0, anaData = null, anaPathSeq = 0, anaPathsFor = null;
+const anaNum = v => v == null ? "–" : (Math.abs(v) >= 1000 ? v.toLocaleString("en-US", { maximumFractionDigits: 2 }) : v.toFixed(2));
+function anaChips() {
+  const cur = store.get("anaTicker", "SPY");
+  const extra = [...new Set([...store.get("recent", []), ...WATCHLIST])].filter(t => !ANA_QUICK.some(q => q[0] === t)).slice(0, 9).map(t => [t, t]);
+  $("#anaChips").innerHTML = [...ANA_QUICK, ...extra].map(([t, l]) => `<button type="button" class="chip${t === cur ? " on" : ""}" data-t="${esc(t)}">${esc(l)}</button>`).join("");
+}
+function anaOpen() {
+  const tf = store.get("anaTf", "1d");
+  for (const b of $("#anaTf").children) b.classList.toggle("on", b.dataset.tf === tf);
+  anaChips();
+  if (!anaData || anaData.ticker !== store.get("anaTicker", "SPY") || anaData.tf !== tf) loadAnalyze();
+}
+async function loadAnalyze(ticker) {
+  ticker = (ticker || store.get("anaTicker", "SPY")).trim().toUpperCase();
+  if (!ticker) return;
+  const seq = ++anaSeq, tf = store.get("anaTf", "1d");
+  $("#anaMeta").textContent = "Reading " + ticker + "…";
+  try {
+    const d = await api(`/api/analyze?ticker=${encodeURIComponent(ticker)}&tf=${tf}`);
+    if (seq !== anaSeq) return;
+    anaData = d;
+    store.set("anaTicker", d.ticker);
+    $("#anaTicker").value = d.ticker;
+    $("#anaErr").classList.add("hidden");
+    anaChips();
+    renderAnalyze();
+    if (anaPathsFor !== d.ticker) loadPaths();
+  } catch (err) {
+    if (seq !== anaSeq) return;
+    $("#anaMeta").textContent = "";
+    $("#anaErr").textContent = err.message;
+    $("#anaErr").classList.remove("hidden");
+  }
+}
+function renderAnalyze() {
+  const d = anaData, st = d.structure, rd = d.read, ev = st.events[st.events.length - 1];
+  $("#anaMeta").textContent = `${d.ticker} · ${d.tf_label} · last bar ${d.asof} · ${anaNum(d.close)}`;
+  const evTxt = e => `${e.type === "BOS" ? "Break of structure" : "Change of character"} ${e.dir} through ${anaNum(e.price)} (${d.bars[e.i].t})`;
+  const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+  $("#anaSum").innerHTML =
+    `<div class="sea-card"><span>Lean on this timeframe</span><b style="color:var(--${rd.lean === "bullish" ? "up" : rd.lean === "bearish" ? "down" : "text"})">${cap(rd.lean)}</b><ul class="ana-why">${rd.why.map(w => `<li>${esc(w)}</li>`).join("")}</ul></div>`
+    + `<div class="sea-card"><span>Swing structure</span><b>${cap(st.trend)}</b><span>${ev ? evTxt(ev) : "No break of structure in view"}</span></div>`
+    + `<div class="sea-card"><span>Levels that change the picture</span><b>${anaNum(st.swing_high)} / ${anaNum(st.swing_low)}</b><span>a close above the last swing high (${anaNum(st.swing_high)}) breaks structure up; below the last swing low (${anaNum(st.swing_low)}) breaks it down</span></div>`
+    + `<div class="sea-card"><span>Nearest support and resistance</span><b>${anaNum(rd.next_resistance)} / ${anaNum(rd.next_support)}</b><span>resistance above, support below (2+ touches) · average bar range ${anaNum(d.atr)}</span></div>`;
+  anaDraw();
+  const tag = b => `<span class="ana-tag ${b}">${cap(b)}</span>`;
+  const rows = d.patterns.map(p => `<tr><td><b>${esc(p.name)}</b><br><span class="note">${esc(p.note)}</span></td><td>${tag(p.bias)}</td><td>${esc(cap(p.status))}</td><td class="n">${anaNum(p.trigger)}</td><td class="n">${anaNum(p.target)}</td><td class="n">${anaNum(p.invalid)}</td></tr>`).join("");
+  const gaps = d.gaps.map(g => `<li>${cap(g.kind)} gap ${g.dir} on ${esc(g.date)}, ${anaNum(g.from)} to ${anaNum(g.to)}: ${g.filled ? "filled" : "<b>not filled</b>"}</li>`).join("");
+  $("#anaPatterns").innerHTML = (rows
+    ? `<div class="sea-wrap"><table class="ana"><thead><tr><th>Pattern</th><th>Leans</th><th>Status</th><th class="n">Trigger</th><th class="n">Measured target</th><th class="n">Wrong if past</th></tr></thead><tbody>${rows}</tbody></table></div>`
+    : `<div class="note">No pattern from the list is forming on the ${esc(d.tf_label)} chart right now. Try another timeframe.</div>`)
+    + (gaps ? `<h2 style="margin:12px 0 4px;font-size:13px">Recent gaps</h2><ul class="ana-why" style="margin-top:0">${gaps}</ul>` : "");
+}
+function anaDraw() {
+  const d = anaData, B = d.bars, n = B.length, W = 1000, H = 440, pl = 6, pr = 62, pt = 14, pb = 20;
+  let lo = Math.min(...B.map(b => b.l)), hi = Math.max(...B.map(b => b.h));
+  const padv = (hi - lo) * 0.06; lo -= padv; hi += padv;
+  const cw = (W - pl - pr) / n, x = i => pl + (i + 0.5) * cw, y = p => pt + (hi - p) / (hi - lo) * (H - pt - pb);
+  const clampY = p => Math.max(pt, Math.min(H - pb, y(p)));
+  let g = "";
+  for (let k = 0; k <= 5; k++) { const p = lo + (hi - lo) * k / 5; g += `<line x1="${pl}" x2="${W - pr}" y1="${y(p)}" y2="${y(p)}" stroke="var(--line)" stroke-width="0.6"/><text x="${W - pr + 4}" y="${y(p) + 3}">${anaNum(p)}</text>`; }
+  for (let k = 0; k < 6; k++) { const i = Math.min(n - 1, Math.round(k * (n - 1) / 5)); g += `<text x="${x(i)}" y="${H - 6}" text-anchor="${k === 0 ? "start" : k === 5 ? "end" : "middle"}">${esc(B[i].t.slice(5))}</text>`; }
+  for (const l of d.levels) if (l.price > lo && l.price < hi) g += `<line x1="${pl}" x2="${W - pr}" y1="${y(l.price)}" y2="${y(l.price)}" stroke="var(--muted)" stroke-width="0.8" stroke-dasharray="5 4"/><text x="${pl + 3}" y="${y(l.price) - 3}">${l.side === "resistance" ? "R" : "S"} ${anaNum(l.price)} · ${l.touches} touches</text>`;
+  B.forEach((b, i) => { const up = b.c >= b.o, col = up ? "var(--up)" : "var(--down)", top = y(Math.max(b.o, b.c)), h = Math.max(1, Math.abs(y(b.o) - y(b.c)));
+    g += `<line x1="${x(i)}" x2="${x(i)}" y1="${y(b.h)}" y2="${y(b.l)}" stroke="${col}" stroke-width="1"/><rect x="${x(i) - cw * 0.34}" y="${top}" width="${cw * 0.68}" height="${h}" fill="${col}"/>`; });
+  for (const e of d.structure.events.slice(-3)) { const col = e.dir === "up" ? "var(--up)" : "var(--down)";
+    g += `<line x1="${x(e.from)}" x2="${x(e.i)}" y1="${y(e.price)}" y2="${y(e.price)}" stroke="${col}" stroke-width="1.4" stroke-dasharray="2 3"/><text class="lbl" x="${(x(e.from) + x(e.i)) / 2}" y="${y(e.price) + (e.dir === "up" ? -4 : 11)}" text-anchor="middle" style="fill:${col}">${e.type}</text>`; }
+  for (const p of d.pivots.slice(-16)) g += `<text class="lbl" x="${x(p.i)}" y="${p.kind === "H" ? y(p.price) - 5 : y(p.price) + 12}" text-anchor="middle" style="fill:${p.label === "HH" || p.label === "HL" ? "var(--up)" : p.label === "H" || p.label === "L" ? "var(--muted)" : "var(--down)"}">${p.label}</text>`;
+  for (const p of d.patterns) {
+    for (const [a, pa, b2, pb2] of p.lines) g += a === b2
+      ? `<circle cx="${x(a)}" cy="${clampY(pa)}" r="4" fill="none" stroke="var(--flag)" stroke-width="1.6"/>`
+      : `<line x1="${x(a)}" y1="${clampY(pa)}" x2="${x(b2)}" y2="${clampY(pb2)}" stroke="var(--flag)" stroke-width="1.8"/>`;
+    const [a, pa] = p.lines[0];
+    g += `<text class="lbl" x="${Math.min(x(a) + 4, W - pr - 150)}" y="${Math.max(pt + 10, clampY(pa) - 7)}" style="fill:var(--flag);font-size:11px">${esc(p.name)} (${esc(p.status)})</text>`;
+  }
+  g += `<line x1="${pl}" x2="${W - pr}" y1="${y(d.close)}" y2="${y(d.close)}" stroke="var(--spot)" stroke-width="0.8" stroke-dasharray="1 3"/><rect x="${W - pr}" y="${y(d.close) - 8}" width="${pr}" height="16" fill="var(--spot)"/><text x="${W - pr + 4}" y="${y(d.close) + 4}" style="fill:#111;font-weight:700">${anaNum(d.close)}</text>`;
+  const svg = $("#anaChart");
+  svg.innerHTML = g;
+  $("#anaChartMeta").textContent = `${d.ticker} ${d.tf_label}, last ${n} bars`;
+  svg.onmousemove = e => { const r = svg.getBoundingClientRect(), i = Math.floor(((e.clientX - r.left) / r.width * W - pl) / cw); const b = B[i];
+    if (b) $("#anaHover").textContent = `${b.t}   open ${anaNum(b.o)}   high ${anaNum(b.h)}   low ${anaNum(b.l)}   close ${anaNum(b.c)}   change ${i ? ((b.c / B[i - 1].c - 1) * 100).toFixed(2) + "%" : "–"}`; };
+  svg.onmouseleave = () => { $("#anaHover").textContent = "Hover the chart for a bar's prices."; };
+}
+async function loadPaths(force) {
+  const d = anaData; if (!d) return;
+  const seq = ++anaPathSeq, t = d.ticker;
+  if (!d.paths_available) { $("#anaPaths").innerHTML = `<div class="note">Potential paths need the stock-direction-map script, which isn't installed on this computer.</div>`; return; }
+  $("#anaPaths").innerHTML = `<div class="note">Mapping the paths for ${esc(t)}… this takes up to half a minute.</div>`;
+  try {
+    const p = await api(`/api/analyze/paths?ticker=${encodeURIComponent(t)}`);
+    if (seq !== anaPathSeq) return;
+    anaPathsFor = t;
+    const names = { bull: ["Bull", "var(--up)"], base: ["Base (range)", "#2962ff"], bear: ["Bear", "var(--down)"] };
+    const order = ["bull", "base", "bear"].sort((a, b) => (p[b].odds_pct || 0) - (p[a].odds_pct || 0));
+    const tg = x => (x.targets || []).map(t2 => `${anaNum(t2.price)} (${esc(t2.label)}, ${t2.pct > 0 ? "+" : ""}${t2.pct}%)`).join(", ") || "–";
+    const cards = order.map((k, i) => `<div class="ana-path${i === 0 ? " top" : ""}" style="border-left-color:${names[k][1]}"><span>${names[k][0]}${i === 0 ? " · most likely" : ""}</span><b class="o" style="color:${names[k][1]}">${p[k].odds_pct}%</b><p><b>Trigger:</b> ${esc(p[k].trigger || "–")}</p><p><b>Targets:</b> ${tg(p[k])}</p><p><b>Wrong if:</b> ${esc(p[k].invalidation || "–")}</p></div>`).join("");
+    const em = p.expected && p.expected["1_week"], im = p.implied;
+    const facts = [
+      `Signal score ${p.score} of ±${p.score_max} (${esc(p.lean || "")})`,
+      em ? `Expected 1-week range ±${em.pct}% (${anaNum(em.low)} to ${anaNum(em.high)})` : "",
+      im ? `Options imply ±${im.move_pct}% by ${esc(im.expiry)}` : "",
+      p.earnings ? `Next earnings ${esc(p.earnings)}` : "",
+      p.intraday ? "Today's bar is still trading, so levels and odds can change by the close" : ""].filter(Boolean).join(" · ");
+    const sig = (p.signals || []).map(s2 => `<li>${esc(s2.signal)}: ${s2.points > 0 ? "+" : ""}${s2.points} (${esc(s2.why)})</li>`).join("");
+    $("#anaPathsMeta").textContent = `daily chart, next 1 to 4 weeks · as of ${p.as_of}`;
+    $("#anaPaths").innerHTML = `<div class="ana-paths">${cards}</div><div class="note">${facts}</div>`
+      + (p.png ? `<img class="ana-img" alt="Chart of the three potential paths for ${esc(t)}" src="/api/analyze/chart.png?ticker=${encodeURIComponent(t)}&v=${Date.now()}">` : "")
+      + (sig ? `<details style="margin-top:8px"><summary class="note" style="cursor:pointer">The signals behind the odds</summary><ul class="ana-why">${sig}</ul></details>` : "");
+  } catch (err) {
+    if (seq !== anaPathSeq) return;
+    $("#anaPaths").innerHTML = `<div class="err" style="margin:8px 0 0">${esc(err.message)}</div>`;
+  }
+}
+$("#anaForm").onsubmit = e => { e.preventDefault(); loadAnalyze($("#anaTicker").value); };
+$("#anaChips").onclick = e => { const t = e.target.dataset.t; if (t) loadAnalyze(t); };
+$("#anaTf").onclick = e => { const tf = e.target.dataset.tf; if (!tf) return; store.set("anaTf", tf); for (const b of $("#anaTf").children) b.classList.toggle("on", b === e.target); loadAnalyze(); };
+$("#anaPathsGo").onclick = () => loadPaths(true);
 
 /* ================= seasonality ================= */
 const SEA_QUICK = [["SPY", "SPY"], ["QQQ", "QQQ"], ["IWM", "IWM"], ["DIA", "DIA"], ["NQ=F", "NQ futures"], ["ES=F", "ES futures"], ["VIX", "VIX"]];
