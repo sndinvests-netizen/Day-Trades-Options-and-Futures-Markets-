@@ -790,6 +790,16 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
 .sm-row > .sm-side-col { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 0; }
 #view-smart td, #view-smart th { text-align: left; }
 #view-smart td.num, #view-smart th.num { text-align: right; }
+/* fundamentals */
+.fund-kv { width: 100%; }
+.fund-kv td { padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.fund-kv td:first-child { text-align: left; color: var(--muted); }
+.fund-kv td:last-child { font-weight: 700; }
+.fund-bars { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; align-items: end; height: 120px; margin: 6px 0 2px; }
+.fund-bars div { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; font-size: 11px; color: var(--muted); }
+.fund-bars i { display: block; width: 60%; border-radius: 3px 3px 0 0; min-height: 2px; }
+.fund-notes { margin: 10px 0 0; padding-left: 18px; font-size: 13px; }
+.fund-notes li { margin: 3px 0; }
 /* etf profile */
 .etf-warn { background: var(--warn-bg); color: var(--warn); border-radius: 10px; padding: 10px 14px; margin-top: 12px; font-size: 13px; }
 .etf-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
@@ -882,6 +892,7 @@ table.sea td.part { font-style: italic; }
       <button id="tab-smart">Smart Money <span class="sm-badge hidden" id="smBadge"></span></button>
       <button id="tab-season">Seasonality</button>
       <button id="tab-analyze">Chart Analyzer</button>
+      <button id="tab-fund">Fundamentals</button>
       <button id="tab-etf">ETF Profile</button>
     </div>
     <span class="note">Yahoo Finance data, delayed about 15 min. Greeks and projections use Black-Scholes (4% rate).<span id="mkt-dot" class="mkt-dot closed" role="img" aria-label="Market closed" title="Market closed"></span></span>
@@ -1493,6 +1504,26 @@ table.sea td.part { font-style: italic; }
       <div id="anaPaths"><div class="note">Loading…</div></div>
     </div>
     <p class="note">This is a mechanical read of past price action: swing structure, fitted trend lines and a fixed signal score. It is a map of possibilities with rough odds, not a forecast and not advice. Rounded bases, cup and handle and V reversals are not detected; check those by eye.</p>
+  </section>
+
+  <section id="view-fund" class="hidden">
+    <div class="panel">
+      <div class="lp-top">
+        <h2>Fundamentals</h2>
+        <span class="lp-meta" id="fundMeta">What a company does, how it's valued, how profitable and how indebted it is.</span>
+        <span class="grow"></span>
+        <form id="fundForm" style="display:flex;gap:6px;align-items:center">
+          <input id="fundTicker" type="text" spellcheck="false" autocapitalize="characters" placeholder="Ticker" aria-label="Company ticker" style="width:110px">
+          <button class="small" type="submit">Go</button>
+        </form>
+      </div>
+      <div class="chips" id="fundChips" style="margin-top:10px"></div>
+      <div id="fundHead"></div>
+      <div class="sea-sum" id="fundSum"></div>
+    </div>
+    <div id="fundErr" class="err hidden"></div>
+    <div class="etf-cols" id="fundCols"></div>
+    <p class="note" style="margin-top:12px">Company data from Yahoo; figures are trailing 12 months unless marked. "Things to notice" only points at numbers that stand out; it is not a rating or advice. For intrinsic value estimates, use the Alpha Spread link.</p>
   </section>
 
   <section id="view-etf" class="hidden">
@@ -2694,7 +2725,7 @@ $("#vxnDraw").onclick = async () => {
 setInterval(loadVxn, VIX_EVERY);
 
 /* ================= tabs ================= */
-const TABS = ["chain", "builder", "trades", "screener", "leaps", "puts", "smart", "season", "analyze", "etf"];
+const TABS = ["chain", "builder", "trades", "screener", "leaps", "puts", "smart", "season", "analyze", "fund", "etf"];
 function showTab(name) {
   for (const t of TABS) {
     $("#tab-" + t).classList.toggle("on", t === name);
@@ -2710,9 +2741,104 @@ function showTab(name) {
   if (name === "season") seaOpen();
   if (name === "analyze") anaOpen();
   if (name === "etf") etfOpen();
+  if (name === "fund") fundOpen();
 }
 for (const t of TABS) $("#tab-" + t).onclick = () => showTab(t);
 const tabOn = name => !$("#view-" + name).classList.contains("hidden");
+
+/* ================= fundamentals ================= */
+let fundSeq = 0, fundData = null;
+const fundX = (v, d = 1) => v == null ? "–" : v.toFixed(d);
+function fundChips() {
+  const cur = store.get("fundTicker", "AAPL");
+  const all = [...new Set([...store.get("recent", []), ...WATCHLIST, "NVDA", "SOFI", "LNT"])].slice(0, 14);
+  $("#fundChips").innerHTML = all.map(t => `<button type="button" class="chip${t === cur ? " on" : ""}" data-t="${esc(t)}">${esc(t)}</button>`).join("");
+}
+function fundOpen() { fundChips(); if (!fundData || fundData.ticker !== store.get("fundTicker", "AAPL")) loadFund(); }
+async function loadFund(ticker) {
+  ticker = (ticker || store.get("fundTicker", "AAPL")).trim().toUpperCase();
+  if (!ticker) return;
+  const seq = ++fundSeq;
+  $("#fundMeta").textContent = "Loading " + ticker + "…";
+  try {
+    const d = await api(`/api/fundamentals?ticker=${encodeURIComponent(ticker)}`);
+    if (seq !== fundSeq) return;
+    fundData = d;
+    store.set("fundTicker", d.ticker);
+    $("#fundTicker").value = d.ticker;
+    $("#fundErr").classList.add("hidden");
+    fundChips();
+    renderFund();
+  } catch (err) {
+    if (seq !== fundSeq) return;
+    $("#fundMeta").textContent = "";
+    $("#fundErr").textContent = err.message;
+    $("#fundErr").classList.remove("hidden");
+  }
+}
+function renderFund() {
+  const d = fundData, v = d.valuation, p = d.profit, h = d.health, dv = d.dividend, a = d.analysts;
+  $("#fundMeta").textContent = [d.ticker, d.sector, d.industry].filter(Boolean).join(" · ");
+  const card = (label, big, sub, col) => `<div class="sea-card"><span>${label}</span><b${col ? ` style="color:var(--${col})"` : ""}>${big}</b><span>${sub || ""}</span></div>`;
+  const usdp = x => x == null ? "–" : "$" + x.toFixed(2);
+  const pc = (x, dd = 1) => x == null ? "–" : x.toFixed(dd) + "%";
+  $("#fundHead").innerHTML = `<h2 style="margin:14px 0 4px">${esc(d.name)}</h2>`
+    + (d.summary ? `<details><summary class="note" style="cursor:pointer;max-width:110ch">${esc(d.summary.slice(0, 220))}${d.summary.length > 220 ? "…" : ""}</summary><p class="note" style="margin:6px 0 0;max-width:110ch">${esc(d.summary)}</p></details>` : "")
+    + (d.notes.length ? `<ul class="fund-notes">${d.notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul>` : "");
+  $("#fundSum").innerHTML =
+    card("Price", usdp(d.price), `${etfPct(d.change_pct, 2)} today · ${d.range_pos == null ? "" : d.range_pos + "% of the way up its 52-week range"}`, etfCol(d.change_pct))
+    + card("Market value", etfBig(d.market_cap), `with debt: ${etfBig(d.enterprise_value)}`)
+    + card("P/E", fundX(v.pe), `forward ${fundX(v.forward_pe)} · EPS ${d.eps == null ? "–" : d.eps.toFixed(2)}`)
+    + card("Dividend yield", dv.rate ? pc(dv.yield_pct, 2) : "None", dv.rate ? `$${dv.rate.toFixed(2)} a year · ${pc(dv.payout_pct, 0)} of earnings` : "pays no dividend")
+    + card("Analyst target", usdp(a.target_mean), a.count ? `${etfPct(a.upside_pct)} vs price · ${a.count} analysts · ${esc((a.rating || "").replace("_", " "))}` : "no analyst coverage", etfCol(a.upside_pct))
+    + card("Next earnings", d.next_earnings ? esc(d.next_earnings) : "–", d.next_earnings ? "" : "not scheduled yet");
+  const kv = rows => `<table class="fund-kv"><tbody>${rows.filter(r => r).map(([k, val, tip]) => `<tr${tip ? ` title="${esc(tip)}"` : ""}><td>${k}</td><td>${val}</td></tr>`).join("")}</tbody></table>`;
+  const sign = (x, f) => x == null ? "–" : `<span style="color:var(--${x >= 0 ? "up" : "down"})">${f(x)}</span>`;
+  const yrs = d.years || [];
+  const bars = (key, col) => { const mx = Math.max(1, ...yrs.map(y => Math.abs(y[key] || 0))); return `<div class="fund-bars">${yrs.map(y => `<div title="${y.year}: ${etfBig(Math.abs(y[key] || 0))}${(y[key] || 0) < 0 ? " loss" : ""}"><span>${y[key] == null ? "–" : ((y[key] < 0 ? "−" : "") + etfBig(Math.abs(y[key])))}</span><i style="height:${Math.abs(y[key] || 0) / mx * 70}%;background:${(y[key] || 0) < 0 ? "var(--down)" : col}"></i><b style="color:var(--text)">${y.year}</b></div>`).join("")}</div>`; };
+  $("#fundCols").innerHTML =
+    `<div class="panel"><h2 style="margin:0 0 6px">Valuation</h2>${kv([
+      ["Price / earnings (P/E)", fundX(v.pe), "Price divided by the last 12 months of earnings per share"],
+      ["Forward P/E", fundX(v.forward_pe), "Price divided by next year's expected earnings"],
+      ["PEG", fundX(v.peg, 2), "P/E divided by expected earnings growth; under 1 is cheap for the growth"],
+      ["Price / sales", fundX(v.ps, 2)], ["Price / book", fundX(v.pb, 2)],
+      ["EV / EBITDA", fundX(v.ev_ebitda), "Company value including debt, divided by operating earnings before depreciation"],
+      ["EV / revenue", fundX(v.ev_revenue, 2)]])}
+      <h2 style="margin:14px 0 6px">Analysts</h2>${kv([
+      ["Rating", a.rating ? esc(a.rating.replace("_", " ")) + (a.score ? ` (${a.score.toFixed(1)} on a 1 to 5 scale, 1 is best)` : "") : "–"],
+      ["Target: low / average / high", `${usdp(a.target_low)} / ${usdp(a.target_mean)} / ${usdp(a.target_high)}`],
+      ["Analysts", a.count == null ? "–" : a.count]])}</div>`
+    + `<div class="panel"><h2 style="margin:0 0 6px">Profitability and growth</h2>${kv([
+      ["Revenue (12 months)", etfBig(p.revenue)], ["Revenue growth, year over year", sign(p.revenue_growth_pct, x => etfPct(x))],
+      ["Earnings growth, year over year", sign(p.earnings_growth_pct, x => etfPct(x))],
+      ["Gross margin", pc(p.gross_margin_pct)], ["Operating margin", pc(p.operating_margin_pct)], ["Net margin", pc(p.net_margin_pct)],
+      ["Return on equity", pc(p.roe_pct)], ["Return on assets", pc(p.roa_pct)]])}
+      <h2 style="margin:14px 0 6px">Financial health</h2>${kv([
+      ["Debt", etfBig(h.debt)], ["Cash", etfBig(h.cash)],
+      ["Debt to equity", h.debt_to_equity == null ? "–" : (h.debt_to_equity / 100).toFixed(2) + "×"],
+      ["Current ratio", fundX(h.current_ratio, 2), "Short-term assets divided by short-term bills; under 1 means bills exceed assets"],
+      ["Operating cash flow", sign(h.op_cash, x => (x < 0 ? "−" : "") + etfBig(Math.abs(x)))],
+      ["Free cash flow", sign(h.fcf, x => (x < 0 ? "−" : "") + etfBig(Math.abs(x))), "Operating cash flow less investment spending"]])}</div>`
+    + `<div class="panel"><h2 style="margin:0 0 6px">Revenue by year</h2>${yrs.length ? bars("revenue", "#2962ff") + `<h2 style="margin:14px 0 6px">Net income by year</h2>` + bars("net_income", "var(--up)") : `<div class="note">No annual statements available.</div>`}
+      <h2 style="margin:14px 0 6px">Dividend and ownership</h2>${kv([
+      ["Dividend", dv.rate ? `$${dv.rate.toFixed(2)} a year (${pc(dv.yield_pct, 2)})` : "None"],
+      dv.rate ? ["5-year average yield", pc(dv.avg5y_yield_pct, 2)] : null,
+      dv.rate ? ["Last ex-dividend date", dv.ex_date ? esc(dv.ex_date) : "–"] : null,
+      ["Beta", fundX(d.beta, 2), "1.00 moves with the market"],
+      ["50-day / 200-day average", `${usdp(d.ma50)} / ${usdp(d.ma200)}`],
+      ["52-week low / high", `${usdp(d.low52)} / ${usdp(d.high52)}`],
+      ["Sold short", pc(d.short_pct_float), "Share of the tradable float sold short"],
+      ["Held by institutions / insiders", `${pc(d.institutions_pct, 0)} / ${pc(d.insiders_pct, 1)}`]])}
+      <p style="margin:12px 0 0"><button type="button" class="small" id="fundToAna">Chart Analyzer</button> <button type="button" class="ghost small" id="fundToChain">Option chain</button> <button type="button" class="ghost small" id="fundToSea">Seasonality</button>${d.alphaspread ? ` <a class="note" href="${esc(d.alphaspread)}" target="_blank" rel="noopener">Intrinsic value on Alpha Spread</a>` : ""}</p></div>`;
+}
+$("#fundForm").onsubmit = e => { e.preventDefault(); loadFund($("#fundTicker").value); };
+$("#fundChips").onclick = e => { const t = e.target.dataset.t; if (t) loadFund(t); };
+$("#fundCols").onclick = e => {
+  if (!fundData) return; const t = fundData.ticker;
+  if (e.target.id === "fundToAna") { store.set("anaTicker", t); showTab("analyze"); }
+  else if (e.target.id === "fundToSea") { store.set("seaTicker", t); showTab("season"); }
+  else if (e.target.id === "fundToChain") { $("#ticker").value = t; showTab("chain"); loadChain(t); }
+};
 
 /* ================= ETF profile ================= */
 const ETF_QUICK = ["SPY", "QQQ", "IWM", "DIA", "TSLL", "SOXL", "TQQQ", "SQQQ", "SCHD", "XLK", "XLF", "XLE", "SMH", "GLD", "TLT"];
