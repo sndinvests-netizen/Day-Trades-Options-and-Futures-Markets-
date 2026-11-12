@@ -1465,8 +1465,8 @@ table.sea td.part { font-style: italic; }
     <div class="panel">
       <h2 style="margin:0">Structure and patterns <span class="lp-meta" id="anaChartMeta"></span></h2>
       <div class="ana-hover" id="anaHover">Hover the chart for a bar's prices.</div>
-      <svg class="ana-chart" id="anaChart" viewBox="0 0 1000 440" role="img" aria-label="Price chart with swing structure and patterns"></svg>
-      <p class="note" style="margin:8px 0 0">HH, HL, LH and LL mark each swing against the one before it. BOS is a break of structure (the trend continued); CHoCH is a change of character (the trend may be turning). Dashed grey lines are support and resistance with two or more touches. Purple lines are a detected pattern.</p>
+      <svg class="ana-chart" id="anaChart" viewBox="0 0 1000 560" role="img" aria-label="Price chart with swing structure and patterns, and Stochastic RSI below"></svg>
+      <p class="note" style="margin:8px 0 0">HH, HL, LH and LL mark each swing against the one before it. BOS is a break of structure (the trend continued); CHoCH is a change of character (the trend may be turning). Dashed grey lines are support and resistance with two or more touches. Purple lines are a detected pattern. Stochastic RSI below the chart: above 80 is overbought, below 20 is oversold; a %K cross up out of oversold or down out of overbought counts one point toward the lean.</p>
     </div>
     <div class="panel">
       <h2 style="margin:0 0 6px">Patterns found <span class="lp-meta">from the top 20 list; a pattern is "forming" until a close through its trigger</span></h2>
@@ -2727,7 +2727,8 @@ function renderAnalyze() {
     `<div class="sea-card"><span>Lean on this timeframe</span><b style="color:var(--${rd.lean === "bullish" ? "up" : rd.lean === "bearish" ? "down" : "text"})">${cap(rd.lean)}</b><ul class="ana-why">${rd.why.map(w => `<li>${esc(w)}</li>`).join("")}</ul></div>`
     + `<div class="sea-card"><span>Swing structure</span><b>${cap(st.trend)}</b><span>${ev ? evTxt(ev) : "No break of structure in view"}</span></div>`
     + `<div class="sea-card"><span>Levels that change the picture</span><b>${anaNum(st.swing_high)} / ${anaNum(st.swing_low)}</b><span>a close above the last swing high (${anaNum(st.swing_high)}) breaks structure up; below the last swing low (${anaNum(st.swing_low)}) breaks it down</span></div>`
-    + `<div class="sea-card"><span>Nearest support and resistance</span><b>${anaNum(rd.next_resistance)} / ${anaNum(rd.next_support)}</b><span>resistance above, support below (2+ touches) · average bar range ${anaNum(d.atr)}</span></div>`;
+    + `<div class="sea-card"><span>Nearest support and resistance</span><b>${anaNum(rd.next_resistance)} / ${anaNum(rd.next_support)}</b><span>resistance above, support below (2+ touches) · average bar range ${anaNum(d.atr)}</span></div>`
+    + (d.stoch && d.stoch.now ? (sn => `<div class="sea-card"><span>Stochastic RSI (14, 14, 3, 3)</span><b style="color:var(--${sn.zone === "oversold" ? "up" : sn.zone === "overbought" ? "down" : "text"})">${sn.k.toFixed(0)} · ${cap(sn.zone)}</b><span>%K ${sn.k.toFixed(1)}, %D ${sn.d.toFixed(1)} · ${sn.cross ? `%K crossed ${sn.cross.dir} ${sn.cross.bars_ago ? sn.cross.bars_ago + (sn.cross.bars_ago === 1 ? " bar ago" : " bars ago") : "on the last bar"} from ${sn.cross.from}` : "no cross in the last 3 bars"}</span></div>`)(d.stoch.now) : "");
   anaDraw();
   const tag = b => `<span class="ana-tag ${b}">${cap(b)}</span>`;
   const rows = d.patterns.map(p => `<tr><td><b>${esc(p.name)}</b><br><span class="note">${esc(p.note)}</span></td><td>${tag(p.bias)}</td><td>${esc(cap(p.status))}</td><td class="n">${anaNum(p.trigger)}</td><td class="n">${anaNum(p.target)}</td><td class="n">${anaNum(p.invalid)}</td></tr>`).join("");
@@ -2760,11 +2761,20 @@ function anaDraw() {
     g += `<text class="lbl" x="${Math.min(x(a) + 4, W - pr - 150)}" y="${Math.max(pt + 10, clampY(pa) - 7)}" style="fill:var(--flag);font-size:11px">${esc(p.name)} (${esc(p.status)})</text>`;
   }
   g += `<line x1="${pl}" x2="${W - pr}" y1="${y(d.close)}" y2="${y(d.close)}" stroke="var(--spot)" stroke-width="0.8" stroke-dasharray="1 3"/><rect x="${W - pr}" y="${y(d.close) - 8}" width="${pr}" height="16" fill="var(--spot)"/><text x="${W - pr + 4}" y="${y(d.close) + 4}" style="fill:#111;font-weight:700">${anaNum(d.close)}</text>`;
+  // Stochastic RSI pane under the price chart
+  const st = d.stoch, s0 = 456, s1 = 548, sy = v => s1 - v / 100 * (s1 - s0);
+  if (st) {
+    g += `<rect x="${pl}" y="${sy(80)}" width="${W - pl - pr}" height="${sy(20) - sy(80)}" fill="var(--flag)" opacity="0.07"/>`;
+    for (const v of [20, 50, 80]) g += `<line x1="${pl}" x2="${W - pr}" y1="${sy(v)}" y2="${sy(v)}" stroke="var(--line)" stroke-width="0.6" ${v === 50 ? "" : 'stroke-dasharray="4 3"'}/><text x="${W - pr + 4}" y="${sy(v) + 3}">${v}</text>`;
+    const path = xs => { let o = "", pen = false; xs.forEach((v, i) => { if (v == null) { pen = false; return; } o += `${pen ? "L" : "M"}${x(i).toFixed(1)} ${sy(v).toFixed(1)}`; pen = true; }); return o; };
+    g += `<path d="${path(st.d)}" fill="none" stroke="#ff9800" stroke-width="1.2"/><path d="${path(st.k)}" fill="none" stroke="#2962ff" stroke-width="1.4"/>`;
+    g += `<text x="${pl + 3}" y="${s0 - 3}">Stochastic RSI (14, 14, 3, 3) · <tspan style="fill:#2962ff">%K</tspan> <tspan style="fill:#ff9800">%D</tspan></text>`;
+  }
   const svg = $("#anaChart");
   svg.innerHTML = g;
   $("#anaChartMeta").textContent = `${d.ticker} ${d.tf_label}, last ${n} bars`;
   svg.onmousemove = e => { const r = svg.getBoundingClientRect(), i = Math.floor(((e.clientX - r.left) / r.width * W - pl) / cw); const b = B[i];
-    if (b) $("#anaHover").textContent = `${b.t}   open ${anaNum(b.o)}   high ${anaNum(b.h)}   low ${anaNum(b.l)}   close ${anaNum(b.c)}   change ${i ? ((b.c / B[i - 1].c - 1) * 100).toFixed(2) + "%" : "–"}`; };
+    if (b) $("#anaHover").textContent = `${b.t}   open ${anaNum(b.o)}   high ${anaNum(b.h)}   low ${anaNum(b.l)}   close ${anaNum(b.c)}   change ${i ? ((b.c / B[i - 1].c - 1) * 100).toFixed(2) + "%" : "–"}` + (st && st.k[i] != null ? `   Stoch RSI %K ${st.k[i].toFixed(1)}${st.d[i] != null ? " %D " + st.d[i].toFixed(1) : ""}` : ""); };
   svg.onmouseleave = () => { $("#anaHover").textContent = "Hover the chart for a bar's prices."; };
 }
 async function loadPaths(force) {

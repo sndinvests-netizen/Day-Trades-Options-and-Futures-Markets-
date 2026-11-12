@@ -62,6 +62,56 @@ def _atr(b, n=14):
     return sum(trs) / len(trs) if trs else 0.0
 
 
+def _stoch_rsi(closes, rsi_n=14, stoch_n=14, k_n=3, d_n=3):
+    """Stochastic RSI (14, 14, 3, 3), the TradingView default: %K and %D lists aligned to closes, None while warming up."""
+    n = len(closes)
+    rsi = [None] * n
+    up = dn = 0.0
+    for i in range(1, n):
+        ch = closes[i] - closes[i - 1]
+        g, l = max(ch, 0.0), max(-ch, 0.0)
+        if i <= rsi_n:
+            up, dn = up + g / rsi_n, dn + l / rsi_n
+        else:
+            up, dn = (up * (rsi_n - 1) + g) / rsi_n, (dn * (rsi_n - 1) + l) / rsi_n
+        if i >= rsi_n:
+            rsi[i] = 100.0 if dn == 0 else 100 - 100 / (1 + up / dn)
+    st = [None] * n
+    for i in range(n):
+        win = rsi[i - stoch_n + 1:i + 1] if i >= stoch_n - 1 else []
+        if len(win) == stoch_n and None not in win:
+            lo, hi = min(win), max(win)
+            st[i] = 50.0 if hi == lo else (rsi[i] - lo) / (hi - lo) * 100
+
+    def sma(xs, m):
+        out = [None] * n
+        for i in range(n):
+            win = xs[i - m + 1:i + 1] if i >= m - 1 else []
+            if len(win) == m and None not in win:
+                out[i] = sum(win) / m
+        return out
+    k = sma(st, k_n)
+    return k, sma(k, d_n)
+
+
+def _stoch_read(k, d):
+    """Where %K sits and the latest %K / %D cross within the last 3 bars."""
+    if not k or k[-1] is None or d[-1] is None:
+        return None
+    zone = "overbought" if k[-1] >= 80 else "oversold" if k[-1] <= 20 else "mid-range"
+    cross = None
+    for j in range(len(k) - 1, max(len(k) - 4, 0), -1):
+        if None in (k[j], d[j], k[j - 1], d[j - 1]):
+            break
+        if k[j - 1] <= d[j - 1] and k[j] > d[j]:
+            cross = {"dir": "up", "bars_ago": len(k) - 1 - j, "from": "oversold" if min(k[j - 1], d[j - 1]) <= 20 else "overbought" if max(k[j - 1], d[j - 1]) >= 80 else "mid-range"}
+            break
+        if k[j - 1] >= d[j - 1] and k[j] < d[j]:
+            cross = {"dir": "down", "bars_ago": len(k) - 1 - j, "from": "overbought" if max(k[j - 1], d[j - 1]) >= 80 else "oversold" if min(k[j - 1], d[j - 1]) <= 20 else "mid-range"}
+            break
+    return {"k": round(k[-1], 1), "d": round(d[-1], 1), "zone": zone, "cross": cross}
+
+
 def _pivots(b, w=PIVOT_W):
     """Alternating swing highs and lows: [(index, 'H'|'L', price)]."""
     raw = []
@@ -341,7 +391,7 @@ def _gaps(b, atr):
     return out[-3:]
 
 
-def _read(struct, patterns, gaps, levels, close, atr, label):
+def _read(struct, patterns, gaps, levels, close, atr, label, stoch=None):
     score, why = 0, []
     t = struct["trend"]
     if t == "uptrend":
@@ -364,6 +414,14 @@ def _read(struct, patterns, gaps, levels, close, atr, label):
         score += w * d
         if d:
             why.append(f"{p['name'].lower()} ({p['status']})")
+    if stoch:
+        cr = stoch["cross"]
+        if cr and cr["dir"] == "up" and cr["from"] == "oversold":
+            score += 1; why.append(f"Stochastic RSI crossed up out of oversold ({stoch['k']:.0f})")
+        elif cr and cr["dir"] == "down" and cr["from"] == "overbought":
+            score -= 1; why.append(f"Stochastic RSI crossed down out of overbought ({stoch['k']:.0f})")
+        else:
+            why.append(f"Stochastic RSI is {stoch['zone']} ({stoch['k']:.0f})")
     lean = "bullish" if score >= 2 else "bearish" if score <= -2 else "neutral"
     res = min((l["price"] for l in levels if l["price"] > close), default=None)
     sup = max((l["price"] for l in levels if l["price"] < close), default=None)
@@ -385,12 +443,17 @@ def analyze(ticker, tf="1d"):
     patterns = _tops(b, zz, atr, 1) + _tops(b, zz, atr, -1) + _lines(b, zz, atr) + _flag(b, atr)
     gaps = _gaps(b, atr)
     label = TIMEFRAMES[tf][2]
+    k, dd = _stoch_rsi([x["c"] for x in allb])
+    k, dd = k[-len(b):], dd[-len(b):]
+    stoch = _stoch_read(k, dd)
+    r1 = lambda xs: [None if v is None else round(v, 1) for v in xs]
     struct_out = dict(struct, events=struct["events"][-4:])
     return {"ticker": ticker.upper().strip(), "symbol": sym, "tf": tf, "tf_label": label,
             "asof": b[-1]["t"], "close": round(close, 4), "atr": round(atr, 4),
             "bars": [{k: (round(v, 4) if k != "t" else v) for k, v in x.items()} for x in b],
             "pivots": _label(zz), "structure": struct_out, "levels": levels, "patterns": patterns, "gaps": gaps,
-            "read": _read(struct, patterns, gaps, levels, close, atr, label.capitalize()),
+            "read": _read(struct, patterns, gaps, levels, close, atr, label.capitalize(), stoch),
+            "stoch": {"k": r1(k), "d": r1(dd), "now": stoch},
             "paths_available": os.path.exists(MAP_PY) and os.path.exists(MAP_PYTHON)}
 
 
