@@ -111,6 +111,13 @@ If the Mac is asleep at 6:30 it runs when the Mac wakes up; if the Mac is shut d
 - **Options flow:** the latest open scans from the unusual-activity scanner (`~/.claude/scripts/uoa_scan.py`).
 - **Text me when:** the checkboxes are saved in `smart_alerts.json`. `python smartmoney.py alert` texts each new matching item once (`smart_alerted.json` remembers what was sent); run it each morning.
 
+**Seasonality tab.** How a ticker has done in each calendar month, year by year. History, not a forecast.
+- Type any ticker or click a chip (SPY, QQQ, IWM, DIA, NQ and ES futures, VIX, your recent tickers). Choose 5, 10, 15 or 20 years, or Max.
+- **Tiles:** this month and next month (average change, how many years it finished up, best and worst), the month so far this year, the strongest and weakest months, and the average full year.
+- **Average month chart:** one bar per month with the share of years it finished up; the current month is outlined.
+- **Month by month table:** each year's monthly percent change, shaded green or red by size, with the year's total and rows for the average, median and percent of years up.
+- **How it's calculated:** the change from the prior month's last close to the month's last close, from Yahoo daily prices, the same way TradingView's Seasonals view works. Dividends are not added back, and the unfinished current month is left out of the averages.
+
 ## Command line
 
 The same trades file also works from the terminal (use `.venv/bin/python` or any Python with yfinance):

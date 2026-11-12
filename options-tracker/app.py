@@ -29,6 +29,7 @@ import screener
 import leaps
 import putsell
 import smartmoney
+import seasonality
 from econ_calendar import usd_events
 from fear_greed import fear_greed
 from breadth import breadth
@@ -296,6 +297,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guard(fear_greed)
         elif url.path == "/api/breadth":
             self.guard(breadth)
+        elif url.path == "/api/seasonality":
+            self.guard(lambda: seasonality.seasonality(q.get("ticker"), q.get("years") or 10))
         elif url.path == "/api/earnings":
             self.guard(earnings_feed)
         elif url.path == "/api/news":

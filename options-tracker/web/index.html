@@ -790,6 +790,25 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
 .sm-row > .sm-side-col { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 0; }
 #view-smart td, #view-smart th { text-align: left; }
 #view-smart td.num, #view-smart th.num { text-align: right; }
+/* seasonality */
+.sea-sum { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-top: 12px; }
+.sea-card { background: var(--well); border-radius: 10px; padding: 10px 12px; }
+.sea-card b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+.sea-card span { font-size: 12px; color: var(--muted); }
+.sea-bars { display: grid; grid-template-columns: repeat(12, 1fr); gap: 6px; align-items: stretch; margin-top: 8px; }
+.sea-bar { display: flex; flex-direction: column; align-items: center; font-size: 11px; color: var(--muted); border-radius: 8px; padding: 4px 2px; }
+.sea-bar.now { outline: 2px solid var(--spot); }
+.sea-bar .v { font-weight: 700; font-variant-numeric: tabular-nums; }
+.sea-bar .col { height: 120px; width: 100%; position: relative; }
+.sea-bar .col i { position: absolute; left: 22%; right: 22%; border-radius: 3px; }
+.sea-bar .col::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid var(--line); }
+.sea-wrap { overflow-x: auto; }
+table.sea td, table.sea th { padding: 5px 8px; text-align: right; }
+table.sea th:first-child, table.sea td:first-child { text-align: left; font-weight: 700; position: sticky; left: 0; background: var(--panel); }
+table.sea th.now, table.sea td.now { box-shadow: inset 2px 0 0 var(--spot), inset -2px 0 0 var(--spot); }
+table.sea tr.sea-agg td { font-weight: 700; border-top: 2px solid var(--line); }
+table.sea td.tot { border-left: 2px solid var(--line); font-weight: 700; }
+table.sea td.part { font-style: italic; }
 #view-smart td .tk { font-weight: 700; cursor: pointer; }
 #view-smart td .tk:hover, .sm-hit .t b:hover { text-decoration: underline; }
 #view-smart tr.mine td { background: var(--itm); }
@@ -832,6 +851,7 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
       <button id="tab-leaps">LEAPS</button>
       <button id="tab-puts">Sell Puts &amp; Calls</button>
       <button id="tab-smart">Smart Money <span class="sm-badge hidden" id="smBadge"></span></button>
+      <button id="tab-season">Seasonality</button>
     </div>
     <span class="note">Yahoo Finance data, delayed about 15 min. Greeks and projections use Black-Scholes (4% rate).<span id="mkt-dot" class="mkt-dot closed" role="img" aria-label="Market closed" title="Market closed"></span></span>
     <div class="vol-stack">
@@ -1367,6 +1387,39 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
       <div id="smFlow" style="margin-top:8px"></div>
     </div>
     <p class="note" id="smFoot">Sources: House Clerk financial disclosures, SEC EDGAR Form 4, the unusual-activity scanner. A screen of public filings, not advice.</p>
+  </section>
+
+  <section id="view-season" class="hidden">
+    <div class="panel">
+      <div class="lp-top">
+        <h2>Seasonality</h2>
+        <span class="lp-meta" id="seaMeta">How each month has done, year by year.</span>
+        <span class="grow"></span>
+        <form id="seaForm" style="display:flex;gap:6px;align-items:center">
+          <input id="seaTicker" type="text" spellcheck="false" autocapitalize="characters" placeholder="Ticker" aria-label="Ticker for seasonality" style="width:110px">
+          <button class="small" type="submit">Go</button>
+        </form>
+        <div class="tabs mini" id="seaYears" role="group" aria-label="Years of history">
+          <button type="button" data-y="5">5 yr</button>
+          <button type="button" data-y="10" class="on">10 yr</button>
+          <button type="button" data-y="15">15 yr</button>
+          <button type="button" data-y="20">20 yr</button>
+          <button type="button" data-y="40">Max</button>
+        </div>
+      </div>
+      <div class="chips" id="seaChips" style="margin-top:10px"></div>
+      <div class="sea-sum" id="seaSum"></div>
+    </div>
+    <div id="seaErr" class="err hidden"></div>
+    <div class="panel" id="seaBarsBox">
+      <h2 style="margin:0">Average month <span class="lp-meta" id="seaBarsMeta"></span></h2>
+      <div class="sea-bars" id="seaBars"></div>
+    </div>
+    <div class="panel">
+      <h2 style="margin:0 0 6px">Month by month <span class="lp-meta">percent change from the prior month's close</span></h2>
+      <div class="sea-wrap"><table class="sea" id="seaTable"></table></div>
+      <p class="note" style="margin:8px 0 0">Calculated from daily closing prices (Yahoo), the same way TradingView's Seasonals view does it. Dividends are not added back. The current month is unfinished and is left out of the averages. Past years describe history; they don't predict this year.</p>
+    </div>
   </section>
   </main>
 
@@ -2548,7 +2601,7 @@ $("#vxnDraw").onclick = async () => {
 setInterval(loadVxn, VIX_EVERY);
 
 /* ================= tabs ================= */
-const TABS = ["chain", "builder", "trades", "screener", "leaps", "puts", "smart"];
+const TABS = ["chain", "builder", "trades", "screener", "leaps", "puts", "smart", "season"];
 function showTab(name) {
   for (const t of TABS) {
     $("#tab-" + t).classList.toggle("on", t === name);
@@ -2561,9 +2614,80 @@ function showTab(name) {
   if (name === "leaps") loadLeaps();
   if (name === "puts") psOpen();
   if (name === "smart") loadSmart();
+  if (name === "season") seaOpen();
 }
 for (const t of TABS) $("#tab-" + t).onclick = () => showTab(t);
 const tabOn = name => !$("#view-" + name).classList.contains("hidden");
+
+/* ================= seasonality ================= */
+const SEA_QUICK = [["SPY", "SPY"], ["QQQ", "QQQ"], ["IWM", "IWM"], ["DIA", "DIA"], ["NQ=F", "NQ futures"], ["ES=F", "ES futures"], ["VIX", "VIX"]];
+let seaSeq = 0, seaData = null;
+const seaPct = (v, d = 1) => v == null ? "–" : (v > 0 ? "+" : "") + v.toFixed(d) + "%";
+const seaBg = v => v == null ? "" : `background:color-mix(in srgb, var(--${v >= 0 ? "up" : "down"}) ${Math.round(Math.min(1, Math.abs(v) / 10) * 55 + (v ? 8 : 0))}%, transparent)`;
+function seaChips() {
+  const cur = store.get("seaTicker", "SPY");
+  const extra = [...new Set([...store.get("recent", []), ...WATCHLIST])].filter(t => !SEA_QUICK.some(q => q[0] === t)).slice(0, 8).map(t => [t, t]);
+  $("#seaChips").innerHTML = [...SEA_QUICK, ...extra].map(([t, l]) => `<button type="button" class="chip${t === cur ? " on" : ""}" data-t="${esc(t)}">${esc(l)}</button>`).join("");
+}
+function seaOpen() {
+  const y = String(store.get("seaYears", 10));
+  for (const b of $("#seaYears").children) b.classList.toggle("on", b.dataset.y === y);
+  seaChips();
+  if (!seaData || seaData.ticker !== store.get("seaTicker", "SPY") || String(seaData.years) !== y) loadSeason();
+}
+async function loadSeason(ticker) {
+  ticker = (ticker || store.get("seaTicker", "SPY")).trim().toUpperCase();
+  if (!ticker) return;
+  const seq = ++seaSeq, years = store.get("seaYears", 10);
+  $("#seaMeta").textContent = "Loading " + ticker + "…";
+  try {
+    const d = await api(`/api/seasonality?ticker=${encodeURIComponent(ticker)}&years=${years}`);
+    if (seq !== seaSeq) return;
+    seaData = d;
+    store.set("seaTicker", d.ticker);
+    $("#seaTicker").value = d.ticker;
+    $("#seaErr").classList.add("hidden");
+    seaChips();
+    renderSeason();
+  } catch (err) {
+    if (seq !== seaSeq) return;
+    $("#seaMeta").textContent = "";
+    $("#seaErr").textContent = err.message;
+    $("#seaErr").classList.remove("hidden");
+  }
+}
+function renderSeason() {
+  const d = seaData, M = d.months, bm = d.by_month, tm = d.this_month - 1, nm = d.next_month - 1;
+  $("#seaMeta").textContent = `${d.ticker} · ${d.first_year} to today · prices through ${d.asof}`;
+  const card = (title, i) => { const s = bm[i]; return `<div class="sea-card"><span>${title}: ${M[i]}</span><b style="color:var(--${s.avg >= 0 ? "up" : "down"})">${seaPct(s.avg)}</b><span>average · up ${Math.round(s.win * s.n / 100)} of ${s.n} years · best ${seaPct(s.best)}, worst ${seaPct(s.worst)}</span></div>`; };
+  const cur = d.rows[0] && d.rows[0].partial ? d.rows[0].months[tm] : null;
+  const ys = d.year_stats;
+  $("#seaSum").innerHTML = card("This month", tm)
+    + (cur == null ? "" : `<div class="sea-card"><span>${M[tm]} so far this year</span><b style="color:var(--${cur >= 0 ? "up" : "down"})">${seaPct(cur)}</b><span>month to date, unfinished</span></div>`)
+    + card("Next month", nm)
+    + (d.best_month ? card("Strongest month", d.best_month - 1) + card("Weakest month", d.worst_month - 1) : "")
+    + (ys.n ? `<div class="sea-card"><span>Full years</span><b style="color:var(--${ys.avg >= 0 ? "up" : "down"})">${seaPct(ys.avg)}</b><span>average year · up ${Math.round(ys.win * ys.n / 100)} of ${ys.n}</span></div>` : "");
+  const top = Math.max(1, ...bm.map(s => Math.abs(s.avg || 0)));
+  $("#seaBarsMeta").textContent = `average change and how often the month finished up, completed months since ${d.first_year}`;
+  $("#seaBars").innerHTML = bm.map((s, i) => {
+    const h = s.avg == null ? 0 : Math.abs(s.avg) / top * 50;
+    const bar = s.avg == null ? "" : `<i style="${s.avg >= 0 ? `bottom:50%;height:${h}%` : `top:50%;height:${h}%`};background:var(--${s.avg >= 0 ? "up" : "down"})"></i>`;
+    return `<div class="sea-bar${i === tm ? " now" : ""}" title="${M[i]}: average ${seaPct(s.avg, 2)}, median ${seaPct(s.median, 2)}, ${s.n} years"><span class="v" style="color:var(--${s.avg >= 0 ? "up" : "down"})">${seaPct(s.avg)}</span><div class="col">${bar}</div><b style="color:var(--text)">${M[i]}</b><span>${s.win == null ? "–" : s.win + "% up"}</span></div>`;
+  }).join("");
+  const th = M.map((m, i) => `<th class="${i === tm ? "now" : ""}">${m}</th>`).join("");
+  const body = d.rows.map(r => `<tr><td>${r.year}</td>` + r.months.map((v, i) =>
+    `<td class="${i === tm ? "now " : ""}${r.partial && i === tm ? "part" : ""}" style="${seaBg(v)}"${r.partial && i === tm ? ' title="Month to date, unfinished"' : ""}>${seaPct(v)}</td>`).join("")
+    + `<td class="tot${r.partial ? " part" : ""}" style="${seaBg(r.total == null ? null : r.total / 3)}"${r.partial ? ' title="Year to date"' : ""}>${seaPct(r.total)}</td></tr>`).join("");
+  const agg = (label, f, yv) => `<tr class="sea-agg"><td>${label}</td>` + bm.map((s, i) => `<td class="${i === tm ? "now" : ""}" style="${f.bg ? seaBg(f.val(s)) : ""}">${f.txt(s)}</td>`).join("") + `<td class="tot">${yv}</td></tr>`;
+  $("#seaTable").innerHTML = `<thead><tr><th>Year</th>${th}<th>Year</th></tr></thead><tbody>${body}`
+    + agg("Average", { bg: 1, val: s => s.avg, txt: s => seaPct(s.avg) }, seaPct(ys.avg))
+    + agg("Median", { bg: 1, val: s => s.median, txt: s => seaPct(s.median) }, seaPct(ys.median))
+    + agg("% of years up", { txt: s => s.win == null ? "–" : s.win + "%" }, ys.win == null ? "–" : ys.win + "%")
+    + `</tbody>`;
+}
+$("#seaForm").onsubmit = e => { e.preventDefault(); loadSeason($("#seaTicker").value); };
+$("#seaChips").onclick = e => { const t = e.target.dataset.t; if (t) loadSeason(t); };
+$("#seaYears").onclick = e => { const y = e.target.dataset.y; if (!y) return; store.set("seaYears", +y); for (const b of $("#seaYears").children) b.classList.toggle("on", b === e.target); loadSeason(); };
 
 /* ================= chain ================= */
 let current = null, timer = null, reqSeq = 0, busy = false;
