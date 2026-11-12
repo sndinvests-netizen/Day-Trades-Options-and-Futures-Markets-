@@ -104,7 +104,7 @@ If the Mac is asleep at 6:30 it runs when the Mac wakes up; if the Mac is shut d
 - Earnings within 14 days are flagged. Hover a score for its breakdown, click ▸ for up to 4 alternate contracts, and **Builder** loads the call into the Builder. **Download CSV** saves the table.
 - The scan takes about 2 seconds per ticker in the background and is reused for 4 hours (**Refresh** rescans). The last watchlist scan is kept in `leaps_cache.json` (not in git).
 
-**Smart Money tab.** What Congress, company insiders and big option traders are buying. A screen of public filings, not advice.
+**Smart Money tab.** What Congress, company insiders and big option traders are buying. A screen of public filings, not advice. Click a ticker for its option chain; right-click it for its fundamentals.
 
 - **Congress:** House trade reports (PTRs) from the last 60 days, read from the House Clerk's filing PDFs (`smartmoney.py`; parsed filings are cached in `smartmoney_ptr/`). Stocks and stock options only. Amounts are the reported ranges, and **Days late** is the gap between the trade and the filing (members get up to 45 days). **Clusters** are stocks two or more members bought within 30 days. House only: the Senate's disclosure site blocks automated access.
 - **Insiders:** open-market buys from the last 6 months for the tickers in `smart_watch.json` (not in git), from SEC EDGAR Form 4 (open-market purchases, code P). The SEC asks automated tools to name a contact, so put an email in `sec_contact.txt` (not in git); without it the tab falls back to Yahoo, which misses some filings.

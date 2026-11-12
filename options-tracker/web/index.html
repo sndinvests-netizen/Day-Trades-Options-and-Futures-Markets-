@@ -6418,7 +6418,7 @@ let smData = null, smTimer = null, smSeq = 0;
 const smDate = iso => iso ? new Date(iso + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
 const smMoney = v => v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `$${Math.round(v / 1e3)}K` : `$${Math.round(v)}`;
 const smSide = s => `<span class="sm-side ${s === "Buy" ? "buy" : s === "Sell" ? "sell" : "ex"}">${esc(s)}</span>`;
-const smTk = t => `<span class="tk" data-smchain="${esc(t)}" title="Open ${esc(t)}'s option chain">${esc(t)}</span>`;
+const smTk = t => `<span class="tk" data-smchain="${esc(t)}" title="Click: ${esc(t)}'s option chain · Right-click: fundamentals">${esc(t)}</span>`;
 async function loadSmart(refresh) {
   const seq = ++smSeq;
   clearTimeout(smTimer);
@@ -6514,6 +6514,14 @@ for (const a of document.querySelectorAll("#view-smart [data-a]")) a.onchange = 
 $("#view-smart").addEventListener("click", e => {
   const t = e.target.closest("[data-smchain]"); if (!t) return;
   $("#ticker").value = t.dataset.smchain; showTab("chain"); loadChain(t.dataset.smchain);
+});
+// Right-click a ticker anywhere on the Smart Money tab: open its fundamentals
+$("#view-smart").addEventListener("contextmenu", e => {
+  const t = e.target.closest("[data-smchain]");
+  if (!t) return;
+  e.preventDefault();
+  store.set("fundTicker", t.dataset.smchain);
+  showTab("fund");
 });
 
 const startTab = store.get("tab", "chain");
