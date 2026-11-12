@@ -790,6 +790,16 @@ table.gx-oi tr.gx-spot-tr td { color: var(--spot); font-weight: 700; background:
 .sm-row > .sm-side-col { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 0; }
 #view-smart td, #view-smart th { text-align: left; }
 #view-smart td.num, #view-smart th.num { text-align: right; }
+/* share lots drop-down in My Trades */
+details.lots { font-size: 12px; }
+details.lots > summary { cursor: pointer; color: var(--muted); list-style: none; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; user-select: none; }
+details.lots > summary::-webkit-details-marker { display: none; }
+details.lots > summary::after { content: "▾"; font-size: 10px; }
+details.lots[open] > summary::after { content: "▴"; }
+details.lots .lot { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 7px 0; border-bottom: 1px solid var(--line); color: var(--muted); }
+details.lots .lot:first-of-type { margin-top: 6px; }
+details.lots .lot:last-child { border-bottom: 0; }
+details.lots .lot-acts { display: inline-flex; gap: 6px; white-space: nowrap; }
 /* fundamentals */
 .fund-kv { width: 100%; }
 .fund-kv td { padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
@@ -4638,8 +4648,8 @@ function renderTrades() {
       return `<tr><td class="left"><b>${esc(h.ticker)}</b></td><td>${int(h.shares)}</td><td><b>${f2(h.avg_cost)}</b></td><td>${f2(h.net_avg_cost)}</td>
         <td>${spot == null ? "–" : f2(spot)}</td><td>${usd(h.cost)}</td><td class="${un == null ? "" : signed(un)}">${un == null ? "–" : usd(un, true)}</td>
         <td class="${spot == null ? "" : signed(spot - h.net_avg_cost)}">${spot == null ? "–" : pct((spot - h.net_avg_cost) / h.net_avg_cost, 1)}</td>
-        <td class="left">${mine.map(t => `<div class="note">#${t.id} ${t.contracts * 100} @ ${f2(t.premium)}${t.assigned_from ? " (assigned #" + t.assigned_from + ")" : ""}
-          <button class="ghost small" data-close-key="t${t.id}">Sell</button> <button class="ghost small" data-partial-key="t${t.id}">Partial</button> <button class="ghost small danger" data-del-id="${t.id}">Delete</button></div>`).join("")}${
+        <td class="left">${mine.length ? `<details class="lots" data-lots="${esc(h.ticker)}"${lotsOpen.has(h.ticker) ? " open" : ""}><summary>${mine.length} lot${mine.length === 1 ? "" : "s"}</summary>${mine.map(t => `<div class="lot"><span>#${t.id} · ${int(t.contracts * 100)} sh @ ${f2(t.premium)}${t.assigned_from ? " · assigned from #" + t.assigned_from : ""}</span>
+          <span class="lot-acts"><button class="ghost small" data-close-key="t${t.id}">Sell</button> <button class="ghost small" data-partial-key="t${t.id}">Partial</button> <button class="ghost small danger" data-del-id="${t.id}">Delete</button></span></div>`).join("")}</details>` : ""}${
           d.holdings.length && h.ids.length > mine.length ? '<div class="note">+ shares inside a covered call (see below)</div>' : ""}</td></tr>`;
     }).join("") + "</tbody></table></div>";
 
@@ -4700,6 +4710,8 @@ function renderTrades() {
 /* My Trades filters and the position detail panel */
 const trCats = new Set(store.get("trCats", ["Hop", "Skip", "Leap"]));
 let trOnlyTarget = false, trOnlyAlerts = false, trSel = null;
+const lotsOpen = new Set();   // tickers whose share lots are expanded (kept open across quote refreshes)
+document.addEventListener("toggle", e => { const d = e.target; if (d.matches && d.matches("details.lots")) d.open ? lotsOpen.add(d.dataset.lots) : lotsOpen.delete(d.dataset.lots); }, true);
 function trSyncChips() {
   for (const b of document.querySelectorAll("#trFilters [data-tcat]")) b.setAttribute("aria-pressed", trCats.has(b.dataset.tcat));
   $("#trTarget").setAttribute("aria-pressed", trOnlyTarget);
