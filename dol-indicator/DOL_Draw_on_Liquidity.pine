@@ -1,0 +1,362 @@
+//@version=6
+// ─────────────────────────────────────────────────────────────────────────────
+// Draw on Liquidity (DOL) Magnet
+//
+// Marks resting liquidity on the chart and picks the one level price is most
+// likely being pulled toward: the DOL "magnet".
+//
+//   Buy-side liquidity (BSL, green)  = stops resting ABOVE old highs
+//   Sell-side liquidity (SSL, red)   = stops resting BELOW old lows
+//
+// Pools it tracks (only ones not yet taken out):
+//   • Swing highs / lows            weight 1.0
+//   • Equal highs / lows (EQH/EQL)  weight 2.0, +0.5 per extra touch (max 3.0)
+//   • Asia / London session H/L     weight 1.5
+//   • Prior day high / low          weight 2.0
+//   • Prior week high / low         weight 2.5
+//
+// Magnet score = weight / (1 + distance in daily ATRs). Closer and more
+// obvious pools score higher. The DOL is the top-scoring pool on the side of
+// the bias (Auto = last break of market structure). Once price trades through
+// a pool it is swept and drops off, and the next magnet takes over.
+//
+// Alerts: "DOL reached" and "New DOL" (or "Any alert() function call" for
+// alerts that include the level and price).
+// ─────────────────────────────────────────────────────────────────────────────
+indicator("Draw on Liquidity (DOL) Magnet", shorttitle = "DOL", overlay = true, max_lines_count = 500, max_labels_count = 500)
+
+// ── Inputs ───────────────────────────────────────────────────────────────────
+grpS      = "Swing liquidity"
+pivLen    = input.int(5, "Swing strength (bars each side)", minval = 2, group = grpS)
+eqTolAtr  = input.float(0.10, "Equal highs/lows tolerance (x ATR)", minval = 0.0, step = 0.05, group = grpS)
+maxPools  = input.int(30, "Max swing pools kept per side", minval = 5, maxval = 100, group = grpS)
+showSwept = input.bool(false, "Show swept swing pools (gray)", group = grpS)
+
+grpH   = "Key levels"
+useD   = input.bool(true, "Prior day high / low (PDH / PDL)", group = grpH)
+useW   = input.bool(true, "Prior week high / low (PWH / PWL)", group = grpH)
+useAs  = input.bool(true, "Asia session high / low", group = grpH)
+asSess = input.session("2000-0000", "Asia session", group = grpH)
+useLo  = input.bool(true, "London session high / low", group = grpH)
+loSess = input.session("0200-0500", "London session", group = grpH)
+tz     = input.string("America/New_York", "Session time zone", group = grpH)
+
+grpB     = "Magnet / bias"
+biasMode = input.string("Auto (market structure)", "Bias", options = ["Auto (market structure)", "Bullish", "Bearish", "Strongest either side"], group = grpB)
+maxDistD = input.float(2.0, "Only consider pools within (x daily ATR)", minval = 0.25, step = 0.25, group = grpB)
+
+grpV      = "Style"
+colBsl    = input.color(#26a69a, "Buy-side liquidity", group = grpV)
+colSsl    = input.color(#ef5350, "Sell-side liquidity", group = grpV)
+colDol    = input.color(#ffd600, "DOL magnet", group = grpV)
+showOpp   = input.bool(true, "Show opposite-side draw", group = grpV)
+showTable = input.bool(true, "Show DOL panel", group = grpV)
+plotDol   = input.bool(true, "Plot DOL history (step line)", group = grpV)
+
+// ── Types & helpers ──────────────────────────────────────────────────────────
+type Pool
+    float price
+    int   bar
+    bool  isHigh
+    int   touches  = 1
+    bool  swept    = false
+    int   sweptBar = na
+
+// Mark pools that price traded through on this bar.
+sweepPools(array<Pool> arr) =>
+    if arr.size() > 0
+        for i = arr.size() - 1 to 0
+            Pool q = arr.get(i)
+            if not q.swept
+                bool hit = q.isHigh ? high > q.price : low < q.price
+                if hit
+                    q.swept    := true
+                    q.sweptBar := bar_index
+                    if not showSwept
+                        arr.remove(i)
+
+// Add a new swing pool, merging it into an existing pool when they are "equal".
+addPool(array<Pool> arr, float p, int b, bool isH, float tol) =>
+    bool merged = false
+    if arr.size() > 0 and not na(tol)
+        for i = arr.size() - 1 to 0
+            Pool q = arr.get(i)
+            if not q.swept and math.abs(q.price - p) <= tol
+                q.touches := q.touches + 1
+                q.price   := isH ? math.max(q.price, p) : math.min(q.price, p)
+                merged    := true
+                break
+    if not merged
+        arr.push(Pool.new(p, b, isH))
+    if arr.size() > maxPools
+        arr.shift()
+
+// High / low of a session once it has closed, plus whether each was swept since.
+sessLevels(bool inS) =>
+    var float h    = na
+    var float l    = na
+    var bool  hS   = false
+    var bool  lS   = false
+    var bool  done = false
+    var int   sb   = na
+    if inS and not inS[1]
+        h    := high
+        l    := low
+        hS   := false
+        lS   := false
+        done := false
+        sb   := bar_index
+    else if inS
+        h := math.max(h, high)
+        l := math.min(l, low)
+    else if not na(h)
+        done := true
+        if high > h
+            hS := true
+        if low < l
+            lS := true
+    [h, l, hS, lS, done, sb]
+
+// ── Data ─────────────────────────────────────────────────────────────────────
+atr  = ta.atr(14)
+dAtr = request.security(syminfo.tickerid, "D", ta.atr(14)[1], lookahead = barmerge.lookahead_on)
+norm = nz(dAtr, atr * 10)
+
+[pdh, pdl] = request.security(syminfo.tickerid, "D", [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[pwh, pwl] = request.security(syminfo.tickerid, "W", [high[1], low[1]], lookahead = barmerge.lookahead_on)
+
+// Track today's / this week's range so we know if PDH/PDL/PWH/PWL got taken.
+var int   dayStart     = 0
+var int   prevDayStart = 0
+var int   wkStart      = 0
+var int   prevWkStart  = 0
+var float dayHi = na
+var float dayLo = na
+var float wkHi  = na
+var float wkLo  = na
+if timeframe.change("D")
+    prevDayStart := dayStart
+    dayStart     := bar_index
+    dayHi        := high
+    dayLo        := low
+else
+    dayHi := math.max(nz(dayHi, high), high)
+    dayLo := math.min(nz(dayLo, low), low)
+if timeframe.change("W")
+    prevWkStart := wkStart
+    wkStart     := bar_index
+    wkHi        := high
+    wkLo        := low
+else
+    wkHi := math.max(nz(wkHi, high), high)
+    wkLo := math.min(nz(wkLo, low), low)
+
+inAs = not na(time(timeframe.period, asSess, tz))
+inLo = not na(time(timeframe.period, loSess, tz))
+[asH, asL, asHS, asLS, asDone, asBar] = sessLevels(inAs)
+[loH, loL, loHS, loLS, loDone, loBar] = sessLevels(inLo)
+
+// ── Swing pools ──────────────────────────────────────────────────────────────
+var highs = array.new<Pool>()
+var lows  = array.new<Pool>()
+
+sweepPools(highs)
+sweepPools(lows)
+
+ph  = ta.pivothigh(high, pivLen, pivLen)
+pl  = ta.pivotlow(low, pivLen, pivLen)
+tol = atr * eqTolAtr
+if not na(ph)
+    addPool(highs, ph, bar_index - pivLen, true, tol)
+if not na(pl)
+    addPool(lows, pl, bar_index - pivLen, false, tol)
+
+// ── Market structure (for Auto bias) ─────────────────────────────────────────
+var float lastSH = na
+var float lastSL = na
+var int   trend  = 0
+if not na(ph)
+    lastSH := ph
+if not na(pl)
+    lastSL := pl
+if not na(lastSH) and close > lastSH
+    trend  := 1
+    lastSH := na
+if not na(lastSL) and close < lastSL
+    trend  := -1
+    lastSL := na
+
+// ── Collect candidate magnets ────────────────────────────────────────────────
+var cP = array.new<float>()   // price
+var cS = array.new<float>()   // magnet score
+var cN = array.new<string>()  // name
+var cH = array.new<bool>()    // buy-side?
+var cX = array.new<int>()     // bar the level starts at (for drawing)
+var cE = array.new<bool>()    // strong level (solid line)
+cP.clear()
+cS.clear()
+cN.clear()
+cH.clear()
+cX.clear()
+cE.clear()
+
+consider(float p, float w, string n, bool isH, int x1, bool strong) =>
+    if not na(p) and norm > 0 and (isH ? p > close : p < close)
+        float d = math.abs(p - close)
+        if d <= maxDistD * norm
+            cP.push(p)
+            cS.push(w / (1.0 + d / norm))
+            cN.push(n)
+            cH.push(isH)
+            cX.push(x1)
+            cE.push(strong)
+
+eqWeight(int t) => t >= 2 ? math.min(2.0 + 0.5 * (t - 2), 3.0) : 1.0
+
+for q in highs
+    if not q.swept
+        consider(q.price, eqWeight(q.touches), q.touches >= 2 ? "EQH x" + str.tostring(q.touches) : "Swing H", true, q.bar, q.touches >= 2)
+for q in lows
+    if not q.swept
+        consider(q.price, eqWeight(q.touches), q.touches >= 2 ? "EQL x" + str.tostring(q.touches) : "Swing L", false, q.bar, q.touches >= 2)
+
+if useD
+    if dayHi <= pdh
+        consider(pdh, 2.0, "PDH", true, prevDayStart, true)
+    if dayLo >= pdl
+        consider(pdl, 2.0, "PDL", false, prevDayStart, true)
+if useW
+    if wkHi <= pwh
+        consider(pwh, 2.5, "PWH", true, prevWkStart, true)
+    if wkLo >= pwl
+        consider(pwl, 2.5, "PWL", false, prevWkStart, true)
+if useAs and asDone
+    if not asHS
+        consider(asH, 1.5, "Asia H", true, asBar, true)
+    if not asLS
+        consider(asL, 1.5, "Asia L", false, asBar, true)
+if useLo and loDone
+    if not loHS
+        consider(loH, 1.5, "London H", true, loBar, true)
+    if not loLS
+        consider(loL, 1.5, "London L", false, loBar, true)
+
+// ── Pick the magnet ──────────────────────────────────────────────────────────
+float  upP = na
+float  upS = 0.0
+string upN = ""
+float  dnP = na
+float  dnS = 0.0
+string dnN = ""
+if cP.size() > 0
+    for i = 0 to cP.size() - 1
+        float s = cS.get(i)
+        if cH.get(i)
+            if s > upS
+                upS := s
+                upP := cP.get(i)
+                upN := cN.get(i)
+        else
+            if s > dnS
+                dnS := s
+                dnP := cP.get(i)
+                dnN := cN.get(i)
+
+int bias = switch biasMode
+    "Bullish"                 => 1
+    "Bearish"                 => -1
+    "Auto (market structure)" => trend
+    => 0
+
+bool dolUp    = bias == 1 ? true : bias == -1 ? false : upS >= dnS
+bool fallback = false
+if biasMode == "Auto (market structure)"
+    if dolUp and na(upP) and not na(dnP)
+        dolUp    := false
+        fallback := true
+    else if not dolUp and na(dnP) and not na(upP)
+        dolUp    := true
+        fallback := true
+
+float  dolP = dolUp ? upP : dnP
+float  dolS = dolUp ? upS : dnS
+string dolN = dolUp ? upN : dnN
+float  oppP = dolUp ? dnP : upP
+string oppN = dolUp ? dnN : upN
+
+// ── Alerts ───────────────────────────────────────────────────────────────────
+bool reached = not na(dolP[1]) and (dolUp[1] ? high >= dolP[1] : low <= dolP[1])
+bool newDol  = not na(dolP) and (na(dolP[1]) or dolP != dolP[1])
+alertcondition(reached, "DOL reached", "{{ticker}}: price reached the draw on liquidity")
+alertcondition(newDol, "New DOL", "{{ticker}}: new draw on liquidity")
+if reached
+    alert(syminfo.ticker + ": price reached the DOL at " + str.tostring(dolP[1], format.mintick), alert.freq_once_per_bar)
+if newDol and barstate.isconfirmed
+    alert(syminfo.ticker + ": new DOL " + dolN + " at " + str.tostring(dolP, format.mintick), alert.freq_once_per_bar_close)
+
+plot(plotDol ? dolP : na, "DOL", color.new(colDol, 40), 1, plot.style_steplinebr)
+
+// ── Drawing (last bar only) ──────────────────────────────────────────────────
+var lns = array.new<line>()
+var lbs = array.new<label>()
+
+if barstate.islast
+    for l in lns
+        l.delete()
+    lns.clear()
+    for b in lbs
+        b.delete()
+    lbs.clear()
+
+    int xr   = bar_index + 15
+    int xMin = bar_index - 4999
+
+    // Swept swing pools (optional)
+    if showSwept
+        for q in highs
+            if q.swept
+                lns.push(line.new(math.max(q.bar, xMin), q.price, math.max(q.sweptBar, xMin), q.price, color = color.new(color.gray, 50), style = line.style_dashed))
+        for q in lows
+            if q.swept
+                lns.push(line.new(math.max(q.bar, xMin), q.price, math.max(q.sweptBar, xMin), q.price, color = color.new(color.gray, 50), style = line.style_dashed))
+
+    // Live pools in range
+    if cP.size() > 0
+        for i = 0 to cP.size() - 1
+            float p   = cP.get(i)
+            bool  isH = cH.get(i)
+            color c   = isH ? colBsl : colSsl
+            lns.push(line.new(math.max(cX.get(i), xMin), p, xr, p, color = color.new(c, cE.get(i) ? 10 : 40), style = cE.get(i) ? line.style_solid : line.style_dotted, width = 1))
+            if p != dolP
+                lbs.push(label.new(xr, p, cN.get(i), style = label.style_label_left, color = color.new(color.black, 100), textcolor = c, size = size.small))
+
+    // The magnet
+    if not na(dolP)
+        lns.push(line.new(bar_index - 30, dolP, xr, dolP, color = colDol, width = 3))
+        lns.push(line.new(bar_index, close, bar_index + 12, dolP, color = colDol, width = 2, style = line.style_arrow_right))
+        lbs.push(label.new(xr, dolP, "🧲 DOL  " + dolN + "  " + str.tostring(dolP, format.mintick), style = label.style_label_left, color = colDol, textcolor = color.black, size = size.normal))
+
+    // Secondary draw on the other side
+    if showOpp and not na(oppP)
+        lns.push(line.new(bar_index, close, bar_index + 12, oppP, color = color.new(color.gray, 40), width = 1, style = line.style_arrow_right))
+        lbs.push(label.new(xr, oppP, "2nd draw  " + oppN, style = label.style_label_left, color = color.new(color.black, 100), textcolor = color.gray, size = size.small))
+
+// ── Panel ────────────────────────────────────────────────────────────────────
+var table tb = table.new(position.top_right, 2, 5, bgcolor = color.new(#131722, 10), border_color = color.new(color.gray, 70), border_width = 1)
+if barstate.islast and showTable
+    color  w     = color.white
+    string bTxt  = bias == 1 ? "Bullish ▲" : bias == -1 ? "Bearish ▼" : "Neutral"
+    color  bCol  = bias == 1 ? colBsl : bias == -1 ? colSsl : color.gray
+    string dTxt  = na(dolP) ? "none within " + str.tostring(maxDistD) + " dATR" : (dolUp ? "BSL · " : "SSL · ") + dolN + "  " + str.tostring(dolP, format.mintick)
+    string dist  = na(dolP) ? "—" : str.tostring(dolP - close, format.mintick) + "  (" + str.tostring(math.abs(dolP - close) / norm, "#.##") + " dATR)"
+    string oTxt  = na(oppP) ? "—" : oppN + "  " + str.tostring(oppP, format.mintick)
+    table.cell(tb, 0, 0, "Bias", text_color = w, text_halign = text.align_left, text_size = size.small)
+    table.cell(tb, 1, 0, bTxt + (fallback ? " (no pool that side)" : ""), text_color = bCol, text_halign = text.align_left, text_size = size.small)
+    table.cell(tb, 0, 1, "🧲 DOL", text_color = w, text_halign = text.align_left, text_size = size.small)
+    table.cell(tb, 1, 1, dTxt, text_color = colDol, text_halign = text.align_left, text_size = size.small)
+    table.cell(tb, 0, 2, "Distance", text_color = w, text_halign = text.align_left, text_size = size.small)
+    table.cell(tb, 1, 2, dist, text_color = w, text_halign = text.align_left, text_size = size.small)
+    table.cell(tb, 0, 3, "Magnet score", text_color = w, text_halign = text.align_left, text_size = size.small)
+    table.cell(tb, 1, 3, na(dolP) ? "—" : str.tostring(dolS, "#.##"), text_color = w, text_halign = text.align_left, text_size = size.small)
+    table.cell(tb, 0, 4, "2nd draw", text_color = w, text_halign = text.align_left, text_size = size.small)
+    table.cell(tb, 1, 4, oTxt, text_color = color.gray, text_halign = text.align_left, text_size = size.small)
