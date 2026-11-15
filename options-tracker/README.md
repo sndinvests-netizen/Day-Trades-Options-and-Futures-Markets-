@@ -171,6 +171,9 @@ python3 tracker.py delete 7
 python3 tracker.py delete 7 --yes
 ```
 
+To check the app still works (offline, uses a temporary trades file, never yours): `python3 selftest.py`.
+
+
 ## Notes
 
 - **Greeks** are calculated with Black-Scholes from Yahoo's implied volatility, a 4% rate and no dividends. Yahoo's IV is sometimes missing or near zero (deep in the money, or outside market hours); those strikes show "–".
