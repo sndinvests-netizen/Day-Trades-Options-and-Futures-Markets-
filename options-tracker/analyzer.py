@@ -22,7 +22,11 @@ MAP_DIR = os.path.expanduser("~/.claude/skills/stock-direction-map")
 MAP_PY = os.path.join(MAP_DIR, "scripts", "map.py")
 MAP_PYTHON = os.path.join(MAP_DIR, ".venv", "bin", "python")
 TIMEFRAMES = {"15m": ("10d", "15m", "15-minute"), "1h": ("60d", "1h", "hourly"),
-              "1d": ("1y", "1d", "daily"), "1wk": ("5y", "1wk", "weekly")}
+              "1d": ("1y", "1d", "daily"), "1wk": ("5y", "1wk", "weekly"),
+              # 1-month and 3-month candles (owner request 2026-11-19). 3-month bars are built from monthly bars
+              # by calendar quarter, because Yahoo's own 3mo interval returns misaligned bars.
+              "1mo": ("max", "1mo", "monthly"), "3mo": ("max", "1mo", "3-month")}
+MIN_BARS = {"1mo": 24, "3mo": 16}   # long-period charts of younger stocks have fewer bars; everything else needs 40
 SHOW = 150            # bars sent to the page
 PIVOT_W = 3           # a swing high/low is the extreme of this many bars on each side
 PATHS_TTL = 20 * 60
@@ -50,10 +54,26 @@ def _bars(sym, tf):
                 o = o if o == o and o > 0 else c
                 out.append({"t": d.strftime("%Y-%m-%d %H:%M") if interval in ("15m", "1h") else d.strftime("%Y-%m-%d"),
                             "o": float(o), "h": float(hi), "l": float(lo), "c": float(c), "v": float(v) if v == v else 0.0})
-        if len(out) < 40:
+        if tf == "3mo":
+            out = _quarters(out)
+        if len(out) < MIN_BARS.get(tf, 40):
             raise QuoteError(f"{sym}: not enough price history on this timeframe")
         return out
     return _cached(("analyzer", sym, tf), fetch, ttl=120 if interval in ("15m", "1h") else 600)
+
+
+def _quarters(months):
+    """Merge monthly bars into calendar-quarter bars (Jan-Mar, Apr-Jun, Jul-Sep, Oct-Dec), dated by the quarter's first month."""
+    out = []
+    for m in months:
+        y, mo = int(m["t"][:4]), int(m["t"][5:7])
+        key = f"{y}-{(mo - 1) // 3 * 3 + 1:02d}-01"
+        if out and out[-1]["t"] == key:
+            q = out[-1]
+            q["h"], q["l"], q["c"], q["v"] = max(q["h"], m["h"]), min(q["l"], m["l"]), m["c"], q["v"] + m["v"]
+        else:
+            out.append(dict(m, t=key))
+    return out
 
 
 def _atr(b, n=14):
